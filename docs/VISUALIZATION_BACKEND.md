@@ -94,9 +94,13 @@ This writes `visualization.json` with:
 - `tracks.places`: place lanes across events
 - `tracks.albums`: album lanes and covers
 - `places`: normalized display records for location UIs
+- `place_contexts`: scoped place buckets such as `Madison, Wisconsin context`
+  containing child places like `home`, `classroom`, or `park`
 - `people`: display records for people UIs
 - `relationships.nodes` and `relationships.edges`: graph-ready relationship and
   context edges
+- `relationships.place_context_edges`: filtered place-to-place context edges for
+  location review and map UIs
 - `relationships.face_identity_candidates`: face-to-person candidates
 - `assets.visual`, `assets.faces`, and `assets.face_clusters`: raw asset records
 
@@ -110,6 +114,10 @@ Location display should be conservative:
 - Parent and nearby place links are shown as context, not GPS truth.
 - Coordinates are included only when a place has reviewed/geocoded latitude and
   longitude fields.
+- Place contexts group scoped places together for visualization without turning
+  the group into a confirmed address. For example, `home`, `classroom`, and
+  `park` can all appear under `Madison, Wisconsin context`, while a later
+  `home` under `Oregon context` remains separate.
 
 This avoids flattening different eras of `home` into one location and avoids
 pretending a generic visual place like `lake` or `classroom` is a confirmed

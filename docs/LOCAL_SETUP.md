@@ -145,7 +145,8 @@ Extract scene/event thumbnails and optional face thumbnails:
 
 `export-visualization` writes `visualization.json`, a UI-ready aggregate for
 event timelines, scene timelines, people tracks, place tracks, relationship
-graphs, visual assets, face clusters, and face-review queues.
+graphs, scoped place contexts, visual assets, face clusters, and face-review
+queues.
 
 ## Upload To TwelveLabs
 

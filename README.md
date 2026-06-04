@@ -41,8 +41,8 @@ separate photo-library family-graph product concept that reuses the same
 evidence/review architecture.
 
 See [docs/VISUALIZATION_BACKEND.md](docs/VISUALIZATION_BACKEND.md) for the
-scene/event thumbnails, face observations, normalized location display, and
-UI-ready visualization export.
+scene/event thumbnails, face observations, scoped place contexts, normalized
+location display, and UI-ready visualization export.
 
 See [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) for the
 family-review evaluation packet, SQL learning workflow, annotation scoring, and

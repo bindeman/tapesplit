@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,10 +45,12 @@ def export_visualization_data(
     people_by_event = _rows_by_event(people)
     places_by_event = _rows_by_event(places)
     dates_by_event = _rows_by_event(dates)
+    places_by_id = {str(place.get("id")): place for place in places if place.get("id")}
     assets_by_subject = _assets_by_subject(visual_assets)
     faces_by_person = _faces_by_person(face_observations)
     clusters_by_person_candidate = _clusters_by_person_candidate(face_clusters)
     edge_metrics_by_edge = {str(metric.get("edge_id")): metric for metric in edge_metrics if metric.get("edge_id")}
+    place_contexts = _place_context_groups(places, events_by_id)
 
     data = {
         "schema_version": 1,
@@ -88,6 +91,7 @@ def export_visualization_data(
             ],
         },
         "places": [_place_node(place, events_by_id) for place in sorted(places, key=lambda row: _place_sort_key(row))],
+        "place_contexts": place_contexts,
         "people": [
             _person_node(person, faces_by_person)
             | {
@@ -99,6 +103,7 @@ def export_visualization_data(
             "nodes": _graph_nodes(people, places, context_edges),
             "edges": _graph_edges(context_edges, edge_metrics_by_edge),
             "candidates": [_relationship_candidate(row, events_by_id) for row in relationships],
+            "place_context_edges": _place_context_edges(context_edges, places_by_id, edge_metrics_by_edge),
             "face_identity_candidates": face_identity_candidates,
         },
         "assets": {
@@ -116,6 +121,7 @@ def export_visualization_data(
             "places": len(places),
             "relationships": len(relationships),
             "context_edges": len(context_edges),
+            "place_contexts": len(place_contexts),
             "visual_assets": len(visual_assets),
             "face_observations": len(face_observations),
             "face_clusters": len(face_clusters),
@@ -215,6 +221,7 @@ def _place_track(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]])
         "label": str(place.get("label") or ""),
         "display_label": _place_display_label(place),
         "normalized_key": _place_normalized_key(place),
+        "context": _place_context_identity(place),
         "kind": place.get("kind"),
         "place_type": place.get("place_type"),
         "scope_label": place.get("scope_label"),
@@ -225,6 +232,109 @@ def _place_track(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]])
         "appearance_count": len(entries),
         "review_status": place.get("review_status") or "unreviewed",
     }
+
+
+def _place_context_groups(places: list[dict[str, Any]], events_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for place in places:
+        identity = _place_context_identity(place)
+        bucket = buckets.setdefault(
+            identity["id"],
+            {
+                **identity,
+                "place_ids": [],
+                "places": [],
+                "event_ids": [],
+                "source_video_ids": [],
+                "date_years": [],
+            },
+        )
+        if _place_context_basis_rank(identity["basis"]) > _place_context_basis_rank(bucket["basis"]):
+            bucket.update({"label": identity["label"], "basis": identity["basis"], "key": identity["key"]})
+        place_id = str(place.get("id") or "")
+        if place_id and place_id not in bucket["place_ids"]:
+            bucket["place_ids"].append(place_id)
+            bucket["places"].append(_place_context_place(place, events_by_id))
+        for event_id in place.get("canonical_event_ids") or []:
+            event_id_text = str(event_id)
+            if event_id_text and event_id_text not in bucket["event_ids"]:
+                bucket["event_ids"].append(event_id_text)
+            event = events_by_id.get(event_id_text)
+            if event:
+                bucket["source_video_ids"] = _unique_items([*bucket["source_video_ids"], *_event_source_video_ids(event)])
+        bucket["source_video_ids"] = _unique_items(
+            [*bucket["source_video_ids"], *[str(item) for item in place.get("source_video_ids") or [] if item]]
+        )
+        bucket["date_years"] = _unique_items([*bucket["date_years"], *_place_date_years(place)])
+
+    groups = []
+    for bucket in buckets.values():
+        bucket["places"] = sorted(bucket["places"], key=lambda row: row["display_label"].casefold())
+        bucket["events"] = _event_entries(bucket["event_ids"], events_by_id)
+        bucket["event_count"] = len(bucket["events"])
+        bucket["place_count"] = len(bucket["places"])
+        groups.append(bucket)
+    return sorted(
+        groups,
+        key=lambda row: (
+            _number_or_large((row.get("events") or [{}])[0].get("start_s")),
+            str(row.get("label") or "").casefold(),
+        ),
+    )
+
+
+def _place_context_place(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    appearances = _event_entries(place.get("canonical_event_ids") or [], events_by_id)
+    return {
+        "id": str(place.get("id") or ""),
+        "label": str(place.get("label") or ""),
+        "display_label": _place_display_label(place),
+        "kind": place.get("kind"),
+        "place_type": place.get("place_type"),
+        "appearance_count": len(appearances),
+        "first_start_s": appearances[0]["start_s"] if appearances else None,
+        "last_end_s": appearances[-1]["end_s"] if appearances else None,
+        "review_status": place.get("review_status") or "unreviewed",
+        "not_exportable_as_gps": bool(place.get("not_exportable_as_gps", not _place_coordinates(place))),
+    }
+
+
+def _place_context_edges(
+    context_edges: list[dict[str, Any]],
+    places_by_id: dict[str, dict[str, Any]],
+    edge_metrics_by_edge: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    edges = []
+    for edge in context_edges:
+        subject_id = str(edge.get("subject_entity_id") or "")
+        object_id = str(edge.get("object_entity_id") or "")
+        subject = places_by_id.get(subject_id)
+        object_ = places_by_id.get(object_id)
+        if not subject or not object_:
+            continue
+        metric = edge_metrics_by_edge.get(str(edge.get("id") or "")) or {}
+        metadata = edge.get("metadata") if isinstance(edge.get("metadata"), dict) else {}
+        edges.append(
+            {
+                "id": str(edge.get("id") or ""),
+                "source": subject_id,
+                "target": object_id,
+                "source_label": _place_display_label(subject),
+                "target_label": _place_display_label(object_),
+                "source_context": _place_context_identity(subject),
+                "target_context": _place_context_identity(object_),
+                "predicate": str(edge.get("predicate") or ""),
+                "label": _place_context_edge_label(edge),
+                "weight": metric.get("computed_weight", edge.get("confidence")),
+                "confidence": edge.get("confidence"),
+                "review_status": edge.get("review_status") or "unreviewed",
+                "canonical_event_ids": (edge.get("scope") or {}).get("canonical_event_ids") if isinstance(edge.get("scope"), dict) else [],
+                "source_video_ids": (edge.get("scope") or {}).get("source_video_ids") if isinstance(edge.get("scope"), dict) else [],
+                "basis": metadata.get("basis") or [],
+                "not_exportable_as_gps": bool(metadata.get("not_exportable_as_gps", True)),
+            }
+        )
+    return sorted(edges, key=lambda row: (str(row["predicate"]), str(row["source_label"]), str(row["target_label"])))
 
 
 def _album_track(
@@ -446,6 +556,67 @@ def _place_display_label(place: dict[str, Any]) -> str:
     return label
 
 
+def _place_context_identity(place: dict[str, Any]) -> dict[str, str]:
+    label = str(place.get("label") or "Unknown place")
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {}
+    admin_keys = _string_list(scope.get("admin_context_keys"))
+    admin_labels = _string_list(scope.get("admin_context_labels"))
+    if admin_keys:
+        key_parts = [item.removeprefix("region:") for item in admin_keys]
+        key = f"context:{'|'.join(key_parts)}"
+        context_label = f"{', '.join(admin_labels[:2])} context" if admin_labels else str(place.get("scope_label") or label)
+        basis = "admin_context"
+    else:
+        parent_labels = _string_list(place.get("parent_place_labels"))
+        if parent_labels:
+            key = f"context:{'|'.join(_normalize_context_text(item) for item in parent_labels)}"
+            context_label = f"{', '.join(parent_labels[:2])} context"
+            basis = "parent_place_context"
+        else:
+            scope_label = str(place.get("scope_label") or "").strip()
+            if scope_label:
+                key = f"scope:{_normalize_context_text(scope_label)}"
+                context_label = scope_label
+                basis = "scope_label"
+            elif str(place.get("place_type") or "") == "region":
+                key = f"context:{_place_normalized_key(place)}"
+                context_label = label
+                basis = "region_place"
+            else:
+                key = f"place:{str(place.get('id') or _place_normalized_key(place))}"
+                context_label = _place_display_label(place)
+                basis = "place"
+    return {
+        "id": f"place_context_{hashlib.sha1(key.encode('utf-8')).hexdigest()[:12]}",
+        "key": key,
+        "label": context_label or label,
+        "basis": basis,
+    }
+
+
+def _place_context_edge_label(edge: dict[str, Any]) -> str:
+    predicate = str(edge.get("predicate") or "").replace("_", " ")
+    return f"{edge.get('subject_label')} {predicate} {edge.get('object_label')}"
+
+
+def _place_context_basis_rank(basis: Any) -> int:
+    ranks = {
+        "admin_context": 4,
+        "parent_place_context": 3,
+        "scope_label": 2,
+        "region_place": 1,
+        "place": 0,
+    }
+    return ranks.get(str(basis), 0)
+
+
+def _place_date_years(place: dict[str, Any]) -> list[str]:
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    scope = metadata.get("scope") if isinstance(metadata.get("scope"), dict) else {}
+    return [str(item) for item in scope.get("date_years") or [] if item not in (None, "")]
+
+
 def _place_normalized_key(place: dict[str, Any]) -> str:
     metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
     value = str(metadata.get("normalized_key") or place.get("label") or "")
@@ -495,6 +666,16 @@ def _place_sort_key(place: dict[str, Any]) -> tuple[str, str]:
 def _label_contains_any(label: str, values: list[str]) -> bool:
     label_key = label.casefold()
     return any(value.casefold() in label_key or label_key in value.casefold() for value in values)
+
+
+def _string_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if value not in (None, "")]
+
+
+def _normalize_context_text(value: Any) -> str:
+    return " ".join(str(value or "").casefold().replace(",", " ").split())
 
 
 def _first_path(rows: list[dict[str, Any]], key: str) -> str:
