@@ -26,6 +26,9 @@ smoke-test commands.
 See [docs/TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md) for
 the longer-term data model and reasoning architecture.
 
+See [docs/ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) for the alias,
+relationship, and role-resolution model.
+
 Current local review pipeline:
 
 ```bash
