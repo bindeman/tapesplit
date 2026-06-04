@@ -181,6 +181,19 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
                 "confidence": 0.7,
                 "scope": {"canonical_event_ids": ["canonical_event_000001"], "source_video_ids": ["video_000001"]},
                 "metadata": {"basis": ["same_event_place_context"], "not_exportable_as_gps": True},
+            },
+            {
+                "id": "context_edge_000003",
+                "subject_entity_id": "place_group_000002",
+                "subject_type": "place",
+                "subject_label": "Madison, Wisconsin",
+                "predicate": "nearby_time_place_context",
+                "object_entity_id": "place_group_000001",
+                "object_type": "place",
+                "object_label": "home",
+                "confidence": 0.48,
+                "scope": {"canonical_event_ids": ["canonical_event_000001"], "source_video_ids": ["video_000001"]},
+                "metadata": {"basis": ["nearby_time_place_context"], "not_exportable_as_gps": True},
             }
         ],
     )
@@ -205,12 +218,19 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
         "place_group_000002",
     }
     assert payload["relationships"]["edges"][0]["weight"] == 0.62
-    assert payload["relationships"]["place_context_edges"][0]["source_label"] == "home (Madison, Wisconsin context)"
+    place_context_edge = next(
+        edge for edge in payload["relationships"]["place_context_edges"] if edge["id"] == "context_edge_000002"
+    )
+    assert place_context_edge["source_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
     assert payload["review_queue"][0]["task_type"] == "confirm_face_identity"
     assert {item["task_type"] for item in payload["review_queue"]} == {
         "confirm_face_identity",
         "confirm_place_context",
+    }
+    assert {item["source_id"] for item in payload["review_queue"]} == {
+        "face_identity_candidate_000001",
+        "context_edge_000002",
     }
     assert payload["summary"]["review_items"] == 2
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"

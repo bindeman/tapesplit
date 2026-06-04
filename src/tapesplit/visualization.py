@@ -512,11 +512,7 @@ def _review_queue(
             }
         )
 
-    for edge in place_context_edges:
-        if _review_closed(edge):
-            continue
-        if not edge.get("not_exportable_as_gps") and not _needs_review(edge):
-            continue
+    for edge in _place_context_edges_for_review(place_context_edges):
         event_ids = [str(item) for item in edge.get("canonical_event_ids") or []]
         items.append(
             {
@@ -525,7 +521,7 @@ def _review_queue(
                 "source_id": str(edge.get("id") or ""),
                 "title": f"Confirm place context: {edge.get('source_label')} -> {edge.get('target_label')}",
                 "prompt": "Does this broader/nearby place relationship help locate the footage, or should it remain only a loose clue?",
-                "priority": 76,
+                "priority": _place_context_review_priority(edge),
                 "confidence": edge.get("confidence"),
                 "review_status": edge.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
@@ -904,6 +900,65 @@ def _needs_review(row: dict[str, Any]) -> bool:
 
 def _review_closed(row: dict[str, Any]) -> bool:
     return str(row.get("review_status") or "").casefold() in {"confirmed", "rejected", "excluded"}
+
+
+def _place_context_edges_for_review(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str], dict[str, Any]] = {}
+    for edge in edges:
+        if not _place_context_edge_reviewable(edge):
+            continue
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        if not source or not target:
+            continue
+        key = tuple(sorted([source, target]))
+        current = buckets.get(key)
+        if current is None or _place_context_edge_review_rank(edge) > _place_context_edge_review_rank(current):
+            buckets[key] = edge
+    return sorted(
+        buckets.values(),
+        key=lambda row: (
+            -_place_context_review_priority(row),
+            -(_number_or_none(row.get("confidence")) or 0.0),
+            str(row.get("source_label") or "").casefold(),
+            str(row.get("target_label") or "").casefold(),
+        ),
+    )
+
+
+def _place_context_edge_reviewable(edge: dict[str, Any]) -> bool:
+    if _review_closed(edge):
+        return False
+    predicate = str(edge.get("predicate") or "")
+    confidence = _number_or_none(edge.get("confidence")) or 0.0
+    if predicate in {"inside_place_candidate", "within_region_candidate"}:
+        return True
+    if predicate == "same_event_place_context":
+        return confidence >= 0.6
+    if predicate == "nearby_time_place_context":
+        return confidence >= 0.56
+    return _needs_review(edge) and bool(edge.get("not_exportable_as_gps"))
+
+
+def _place_context_edge_review_rank(edge: dict[str, Any]) -> tuple[int, float]:
+    predicate_rank = {
+        "inside_place_candidate": 4,
+        "within_region_candidate": 3,
+        "same_event_place_context": 2,
+        "nearby_time_place_context": 1,
+    }
+    return (predicate_rank.get(str(edge.get("predicate") or ""), 0), _number_or_none(edge.get("confidence")) or 0.0)
+
+
+def _place_context_review_priority(edge: dict[str, Any]) -> int:
+    predicate = str(edge.get("predicate") or "")
+    if predicate in {"inside_place_candidate", "within_region_candidate"}:
+        return 70
+    if predicate == "same_event_place_context":
+        return 48
+    if predicate == "nearby_time_place_context":
+        return 40
+    return 42
 
 
 def _review_item_sort_key(row: dict[str, Any]) -> tuple[int, float, float, str]:
