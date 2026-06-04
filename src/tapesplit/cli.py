@@ -33,6 +33,11 @@ from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
+from tapesplit.scenes import (
+    DEFAULT_MIN_SCENE_SECONDS,
+    DEFAULT_SCENE_THRESHOLD,
+    detect_scenes_for_project,
+)
 from tapesplit.search import (
     DEFAULT_EMBEDDING_MODEL,
     build_search_index,
@@ -290,6 +295,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Minimum merged non-content range duration. Default: 4.",
     )
 
+    scenes_parser = subparsers.add_parser(
+        "detect-scenes",
+        help="Detect local visual scene intervals and write scenes.jsonl.",
+    )
+    scenes_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    scenes_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    scenes_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=DEFAULT_SCENE_THRESHOLD,
+        help=f"ffmpeg scene-change threshold. Default: {DEFAULT_SCENE_THRESHOLD}.",
+    )
+    scenes_parser.add_argument(
+        "--min-scene-seconds",
+        type=float,
+        default=DEFAULT_MIN_SCENE_SECONDS,
+        help=f"Merge content scenes shorter than this duration. Default: {DEFAULT_MIN_SCENE_SECONDS}.",
+    )
+
     metadata_parser = subparsers.add_parser(
         "metadata",
         help="Extract local media metadata.",
@@ -481,6 +505,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "place_group",
             "relationship_candidate",
             "relationship_review_task",
+            "scene",
             "transcript",
         ],
         help="Disambiguate source ids shared across record types.",
@@ -742,6 +767,20 @@ def main(argv: list[str] | None = None) -> int:
                         args.project,
                         sample_interval_s=args.sample_interval,
                         min_range_s=args.min_range,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "detect-scenes":
+            print(
+                json.dumps(
+                    detect_scenes_for_project(
+                        args.project,
+                        source_video_id=args.source_video_id,
+                        threshold=args.threshold,
+                        min_scene_seconds=args.min_scene_seconds,
                     ),
                     indent=2,
                     sort_keys=True,

@@ -175,6 +175,33 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
 
     evidence_rows = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     evidence_by_id = {row.get("id"): row for row in evidence_rows if row.get("id")}
+    for row in read_jsonl(project / "scenes.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        docs.append(
+            _document(
+                "scene",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("start_s"),
+                end_s=row.get("end_s"),
+                title=f"Scene {_range_label(row.get('start_s'), row.get('end_s'))}",
+                text=" ".join(
+                    [
+                        str(row.get("scene_type") or ""),
+                        str(row.get("label") or ""),
+                        " ".join(_string_list(row.get("start_boundary_reasons"))),
+                        " ".join(_string_list(row.get("end_boundary_reasons"))),
+                    ]
+                ),
+                metadata={
+                    "scene_type": row.get("scene_type"),
+                    "label": row.get("label"),
+                    "method": row.get("method"),
+                },
+            )
+        )
+
     for row in evidence_rows:
         if row.get("kind") == "non_content_range":
             continue

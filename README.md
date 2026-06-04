@@ -48,6 +48,8 @@ Current local review pipeline:
 
 ```bash
 .venv/bin/tapesplit ingest /path/to/video-or-folder
+.venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
+.venv/bin/tapesplit detect-scenes /path/to/project.tapesplit
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit
 .venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit

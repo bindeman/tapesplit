@@ -15,6 +15,7 @@ def export_review_report(project_dir: Path) -> dict:
     tapes = read_jsonl(project / "tapes.jsonl")
     all_evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     evidence_by_id = {row.get("id"): row for row in all_evidence if row.get("id")}
+    scenes = [row for row in read_jsonl(project / "scenes.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
     evidence = [row for row in all_evidence if visibility.visible_row(row)]
     claims = [
         row
@@ -53,6 +54,7 @@ def export_review_report(project_dir: Path) -> dict:
     output.write_text(
         _render_html(
             tapes=tapes,
+            scenes=scenes,
             evidence=evidence,
             claims=claims,
             events=events,
@@ -77,6 +79,7 @@ def export_review_report(project_dir: Path) -> dict:
     return {
         "project": str(project),
         "output": str(output),
+        "scenes": len(scenes),
         "evidence": len(evidence),
         "claims": len(claims),
         "events": len(events),
@@ -98,6 +101,7 @@ def export_review_report(project_dir: Path) -> dict:
 def _render_html(
     *,
     tapes: list[dict[str, Any]],
+    scenes: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
     claims: list[dict[str, Any]],
     events: list[dict[str, Any]],
@@ -195,6 +199,7 @@ def _render_html(
   <section>
     <div class="grid">
       <div class="metric"><span class="muted">Estimated Cost</span><strong>${costs.get("estimated_total_cost_usd", 0):.4f}</strong></div>
+      <div class="metric"><span class="muted">Scenes</span><strong>{len(scenes)}</strong></div>
       <div class="metric"><span class="muted">Albums</span><strong>{len(albums)}</strong></div>
       <div class="metric"><span class="muted">Evidence Records</span><strong>{len(evidence)}</strong></div>
       <div class="metric"><span class="muted">Non-Content Ranges</span><strong>{len(non_content)}</strong></div>
@@ -210,6 +215,11 @@ def _render_html(
   <section>
     <h2>Album Candidates</h2>
     {_album_cards(albums)}
+  </section>
+
+  <section>
+    <h2>Detected Scenes</h2>
+    <div class="table-wrap">{_table(scenes[:200], ["id", "source_video_id", "index", "scene_type", "label", "start_s", "end_s", "duration_s", "method"])}</div>
   </section>
 
   <section>

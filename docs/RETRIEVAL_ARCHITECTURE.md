@@ -18,7 +18,7 @@ The local MVP uses one SQLite database:
 
 ```text
 search.sqlite
-  documents          transcript/evidence/event/group/context records
+  documents          scene/transcript/evidence/event/group/context records
   documents_fts      SQLite FTS5 text index when available
   doc_terms          dependency-free sparse vectors
   doc_norms          sparse vector norms

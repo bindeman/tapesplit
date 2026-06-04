@@ -105,6 +105,29 @@ keyframes/
 thumbnails/
 ```
 
+## Local Scene Detection
+
+Detect blue/black/static non-content first, then detect visual scenes:
+
+```bash
+.venv/bin/tapesplit detect-non-content /path/to/family-videos.tapesplit
+.venv/bin/tapesplit detect-scenes /path/to/family-videos.tapesplit
+```
+
+`detect-scenes` uses ffmpeg's scene-change signal and writes `scenes.jsonl`. If
+`non_content_ranges.jsonl` exists, blue screens, black screens, and static ranges
+become explicit `non_content` scenes and are excluded from customer-facing
+search/report output by the visibility filter.
+
+For a bounded test on one tape:
+
+```bash
+.venv/bin/tapesplit detect-scenes /path/to/family-videos.tapesplit \
+  --source-video-id video_000001 \
+  --threshold 0.35 \
+  --min-scene-seconds 1.0
+```
+
 ## Upload To TwelveLabs
 
 Estimate indexing cost before upload:
@@ -170,6 +193,8 @@ Run the full chunk pass, import it into reviewable events/evidence, and export
 the static report:
 
 ```bash
+.venv/bin/tapesplit detect-non-content /path/to/family-videos.tapesplit
+.venv/bin/tapesplit detect-scenes /path/to/family-videos.tapesplit
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
   --chunk-seconds 900 \
   --chunk-overlap-seconds 15
