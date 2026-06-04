@@ -23,6 +23,7 @@ def build_context_graph(project_dir: Path) -> dict[str, Any]:
     people_by_event = _rows_by_event(people_groups)
     places_by_event = _rows_by_event(place_groups)
     dates_by_event = _rows_by_event(date_groups)
+    places_by_id = {str(place.get("id")): place for place in place_groups if place.get("id")}
 
     buckets: dict[tuple[str, str, str], dict[str, Any]] = {}
 
@@ -121,6 +122,9 @@ def build_context_graph(project_dir: Path) -> dict[str, Any]:
                 supporting_signal=f"{_label(event)} belongs to {_label(event_group)}",
             )
 
+    for place in place_groups:
+        _add_place_context_edges(buckets, place, places_by_id, events_by_id)
+
     for relationship in relationship_candidates:
         _add_relationship_edge(buckets, relationship, events_by_id)
 
@@ -142,6 +146,44 @@ def build_context_graph(project_dir: Path) -> dict[str, Any]:
             "edge_metrics": str(edge_metrics_output),
         },
     }
+
+
+def _add_place_context_edges(
+    buckets: dict[tuple[str, str, str], dict[str, Any]],
+    place: dict[str, Any],
+    places_by_id: dict[str, dict[str, Any]],
+    events_by_id: dict[str, dict[str, Any]],
+) -> None:
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    candidates = [
+        *(metadata.get("parent_place_candidates") or []),
+        *(metadata.get("nearby_place_candidates") or []),
+    ]
+    for candidate in candidates:
+        object_place = places_by_id.get(str(candidate.get("place_group_id") or ""))
+        relation = str(candidate.get("relation") or "")
+        if not object_place or not relation or object_place.get("id") == place.get("id"):
+            continue
+        event_ids = [str(item) for item in candidate.get("canonical_event_ids") or place.get("canonical_event_ids") or []]
+        if not event_ids:
+            event_ids = [""]
+        for event_id in event_ids:
+            event = events_by_id.get(event_id)
+            _add_edge(
+                buckets,
+                subject=_node("place", place),
+                predicate=relation,
+                object_=_node("place", object_place),
+                event=event,
+                evidence_ids=_unique_items([*(place.get("evidence_ids") or []), *(object_place.get("evidence_ids") or [])]),
+                confidence=_number_or_none(candidate.get("confidence")),
+                source="place_context_candidates",
+                supporting_signal=f"{_label(place)} has {relation} relationship to {_label(object_place)}",
+                metadata={
+                    "basis": candidate.get("basis") or [],
+                    "not_exportable_as_gps": bool(candidate.get("not_exportable_as_gps", True)),
+                },
+            )
 
 
 def _add_relationship_edge(
@@ -413,6 +455,21 @@ def _count_by(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
         value = str(row.get(key) or "unknown")
         counts[value] = counts.get(value, 0) + 1
     return counts
+
+
+def _unique_items(values: Any) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        text = str(value)
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
 
 
 def _number_or_none(value: Any) -> float | None:

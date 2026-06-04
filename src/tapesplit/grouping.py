@@ -55,21 +55,97 @@ ROOM_PLACE_TOKENS = {
 }
 
 GENERIC_PLACE_TOKENS = ROOM_PLACE_TOKENS | {
+    "apartment",
+    "apartment complex",
     "beach",
     "botanical garden",
+    "chapel",
+    "community garden",
+    "community gardens",
     "crater",
     "garden",
+    "gym",
+    "hall",
     "hot springs",
+    "indoor hall",
+    "indoor hall gym",
+    "kindergarten",
+    "lake",
     "library",
     "ocean",
+    "outdoor snowy area",
     "park",
+    "playground",
     "rainforest",
     "restaurant",
     "school",
+    "school hall",
     "street",
     "sulfur springs",
     "volcano",
     "waterfalls",
+}
+
+US_STATE_KEYS = {
+    "alabama",
+    "alaska",
+    "arizona",
+    "arkansas",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "florida",
+    "georgia",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "pennsylvania",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+}
+
+COUNTRY_KEYS = {
+    "canada",
+    "mexico",
+    "russia",
+    "ukraine",
+    "united states",
+    "usa",
 }
 
 MENTIONED_PLACE_CONTEXT_TOKENS = {
@@ -251,18 +327,24 @@ def _build_place_groups(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    place_aliases = _place_admin_alias_resolution(
+        place for event in events for place in _metadata_list(event, "place_candidates")
+    )
+    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases)
     buckets: dict[str, dict[str, Any]] = {}
     for event in events:
         for place in _metadata_list(event, "place_candidates"):
-            key = _normalize_key(place)
-            if not key:
+            normalized = _normalize_key(place)
+            if not normalized:
                 continue
             kind = _place_kind(place, event)
+            key = _place_resolution_key(place, kind, event, event_contexts, place_aliases)
             bucket = buckets.setdefault(
                 key,
                 {
                     "kind": kind,
                     "labels": [],
+                    "normalized_names": [],
                     "events": [],
                     "mentions": [],
                 },
@@ -271,6 +353,8 @@ def _build_place_groups(
                 bucket["kind"] = kind
             if place not in bucket["labels"]:
                 bucket["labels"].append(place)
+            if normalized not in bucket["normalized_names"]:
+                bucket["normalized_names"].append(normalized)
             bucket["events"].append(event)
             bucket["mentions"].append(
                 {
@@ -285,6 +369,7 @@ def _build_place_groups(
     groups = []
     for index, (key, bucket) in enumerate(sorted(buckets.items()), start=1):
         labels = _sorted_labels(bucket["labels"])
+        label = _preferred_place_label(labels)
         events_for_group = _unique_events(bucket["events"])
         evidence_ids = _event_evidence_ids(events_for_group)
         kind = bucket["kind"]
@@ -293,9 +378,9 @@ def _build_place_groups(
             {
                 "id": f"place_group_{index:06d}",
                 "kind": kind,
-                "label": labels[0],
-                "place_type": _place_type(labels[0]),
-                "normalized_names": [key],
+                "label": label,
+                "place_type": _place_type(label),
+                "normalized_names": _sorted_labels(bucket["normalized_names"]),
                 "aliases": labels,
                 "canonical_event_ids": _event_ids(events_for_group),
                 "evidence_ids": evidence_ids,
@@ -308,12 +393,21 @@ def _build_place_groups(
                 "review_status": review_status,
                 "geocode_candidates": [],
                 "not_exportable_as_gps": True,
+                "scope_label": _place_scope_label(events_for_group, evidence_by_id, event_contexts),
+                "parent_place_labels": [],
+                "nearby_place_labels": [],
                 "supporting_mentions": bucket["mentions"],
-                "notes": _place_notes(kind, labels[0]),
-                "metadata": {"broad_place_contexts": sorted(_broad_place_contexts_for_labels(labels))},
+                "notes": _place_notes(kind, label),
+                "metadata": {
+                    "resolution_key": key,
+                    "broad_place_contexts": sorted(_broad_place_contexts_for_labels(labels)),
+                    "scope": _place_scope_metadata(events_for_group, evidence_by_id, event_contexts),
+                    "parent_place_candidates": [],
+                    "nearby_place_candidates": [],
+                },
             }
         )
-    return groups
+    return _attach_place_context_candidates(groups, events, evidence_by_id, event_contexts)
 
 
 def _build_date_groups(
@@ -850,6 +944,549 @@ def _person_spelling_key(value: str) -> str:
     return " ".join(tokens)
 
 
+def _place_admin_alias_resolution(labels: Any) -> dict[str, Any]:
+    label_list = _unique_items(labels)
+    qualified_by_base: dict[str, list[str]] = defaultdict(list)
+    for label in label_list:
+        parts = _comma_admin_parts(label)
+        if len(parts) >= 2:
+            qualified_by_base[parts[0]].append(label)
+
+    alias_to_key: dict[str, str] = {}
+    key_to_label: dict[str, str] = {}
+    key_to_labels: dict[str, list[str]] = defaultdict(list)
+    for base, qualified_labels in qualified_by_base.items():
+        signatures = [_comma_admin_parts(label)[1:] for label in qualified_labels]
+        if not _admin_signatures_compatible(signatures):
+            continue
+        canonical_label = _preferred_admin_label(qualified_labels)
+        key = f"admin:{_normalize_key(canonical_label)}"
+        key_to_label[key] = canonical_label
+        for label in qualified_labels:
+            normalized = _normalize_key(label)
+            alias_to_key[normalized] = key
+            if label not in key_to_labels[key]:
+                key_to_labels[key].append(label)
+        for label in label_list:
+            if _normalize_key(label) == base:
+                alias_to_key[base] = key
+                if label not in key_to_labels[key]:
+                    key_to_labels[key].append(label)
+        alias_to_key.setdefault(base, key)
+
+    return {
+        "alias_to_key": alias_to_key,
+        "key_to_label": key_to_label,
+        "key_to_labels": {key: _sorted_labels(values) for key, values in key_to_labels.items()},
+    }
+
+
+def _comma_admin_parts(label: Any) -> list[str]:
+    text = str(label or "")
+    if "," not in text:
+        return []
+    return [_normalize_key(part) for part in text.split(",") if _normalize_key(part)]
+
+
+def _admin_signatures_compatible(signatures: list[list[str]]) -> bool:
+    cleaned = [signature for signature in signatures if signature]
+    for index, left in enumerate(cleaned):
+        for right in cleaned[index + 1 :]:
+            if not (_is_suffix(left, right) or _is_suffix(right, left)):
+                return False
+    return True
+
+
+def _is_suffix(shorter: list[str], longer: list[str]) -> bool:
+    if len(shorter) > len(longer):
+        return False
+    return shorter == longer[-len(shorter) :]
+
+
+def _preferred_admin_label(labels: list[str]) -> str:
+    return sorted(
+        labels,
+        key=lambda label: (-len(_comma_admin_parts(label)), -len(_normalize_key(label)), str(label).casefold()),
+    )[0]
+
+
+def _preferred_place_label(labels: list[str]) -> str:
+    return sorted(
+        labels,
+        key=lambda label: (-_place_label_specificity(label), str(label).casefold(), str(label)),
+    )[0]
+
+
+def _place_label_specificity(label: str) -> int:
+    parts = _comma_admin_parts(label)
+    if parts:
+        return 100 + len(parts)
+    key = _normalize_key(label)
+    if _is_region_place_label(label):
+        return 80
+    if _is_generic_place_key(key):
+        return 10
+    return 50 + len(key.split())
+
+
+def _place_resolution_key(
+    place: str,
+    kind: str,
+    event: dict[str, Any],
+    event_contexts: dict[str, dict[str, Any]],
+    place_aliases: dict[str, Any],
+) -> str:
+    admin_key = _admin_key_for_label(place, place_aliases)
+    if admin_key:
+        return admin_key
+    normalized = _normalize_key(place)
+    if kind == "generic_place_context":
+        event_id = str(event.get("id") or "")
+        context = event_contexts.get(event_id, {})
+        admin_keys = [str(key) for key in context.get("admin_keys") or []]
+        if admin_keys and not _event_is_multiplace_compilation(event):
+            return f"{normalized}|{'+'.join(admin_keys)}"
+        source_key = "+".join(str(item) for item in context.get("source_video_ids") or []) or "unknown_source"
+        return f"{normalized}|source:{source_key}"
+    return normalized
+
+
+def _place_contexts_by_event(
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    place_aliases: dict[str, Any],
+    *,
+    nearby_gap_s: float = 1800.0,
+) -> dict[str, dict[str, Any]]:
+    base_contexts: dict[str, dict[str, Any]] = {}
+    for event in events:
+        event_id = str(event.get("id") or "")
+        if not event_id:
+            continue
+        source_video_ids = _event_source_video_ids(event, evidence_by_id)
+        direct_admin_keys = [] if _event_is_multiplace_compilation(event) else _admin_keys_for_event(event, place_aliases)
+        base_contexts[event_id] = {
+            "source_video_ids": source_video_ids,
+            "direct_admin_keys": direct_admin_keys,
+            "nearby_admin_keys": [],
+        }
+
+    event_index_by_id = {str(event.get("id")): index for index, event in enumerate(events) if event.get("id")}
+    for event in events:
+        event_id = str(event.get("id") or "")
+        if not event_id:
+            continue
+        if _event_is_multiplace_compilation(event):
+            base_contexts[event_id]["nearby_admin_keys"] = []
+            base_contexts[event_id]["admin_keys"] = base_contexts[event_id]["direct_admin_keys"]
+            base_contexts[event_id]["admin_labels"] = [_admin_label_for_key(key, place_aliases) for key in base_contexts[event_id]["admin_keys"]]
+            continue
+        source_video_ids = set(base_contexts[event_id]["source_video_ids"])
+        nearby_keys: list[str] = []
+        for other in events:
+            other_id = str(other.get("id") or "")
+            if not other_id or other_id == event_id:
+                continue
+            if not _can_carry_place_context_between(events, event_index_by_id[event_id], event_index_by_id[other_id]):
+                continue
+            if source_video_ids and not (source_video_ids & set(base_contexts[other_id]["source_video_ids"])):
+                continue
+            if _event_gap_seconds(event, other) > nearby_gap_s:
+                continue
+            for key in base_contexts[other_id]["direct_admin_keys"]:
+                if key not in nearby_keys:
+                    nearby_keys.append(key)
+        base_contexts[event_id]["nearby_admin_keys"] = nearby_keys
+        admin_keys = _unique_items([*base_contexts[event_id]["direct_admin_keys"], *nearby_keys])
+        base_contexts[event_id]["admin_keys"] = admin_keys
+        base_contexts[event_id]["admin_labels"] = [_admin_label_for_key(key, place_aliases) for key in admin_keys]
+    return base_contexts
+
+
+def _can_carry_place_context_between(events: list[dict[str, Any]], left_index: int, right_index: int) -> bool:
+    left = events[left_index]
+    right = events[right_index]
+    if _event_is_multiplace_compilation(left) or _event_is_multiplace_compilation(right):
+        return False
+    left_type = str(_metadata_value(left, "event_type") or "")
+    right_type = str(_metadata_value(right, "event_type") or "")
+    if "travel" in {left_type, right_type} and left_type != right_type:
+        return False
+    if {left_type, right_type} <= {"school", "holiday"}:
+        return True
+    if left_type and right_type and left_type != right_type:
+        return False
+    start = min(left_index, right_index)
+    end = max(left_index, right_index)
+    for boundary in events[start + 1 : end]:
+        boundary_type = str(_metadata_value(boundary, "event_type") or "")
+        if _event_is_multiplace_compilation(boundary):
+            return False
+        if boundary_type == "travel" and left_type != "travel":
+            return False
+    return True
+
+
+def _admin_keys_for_event(event: dict[str, Any], place_aliases: dict[str, Any]) -> list[str]:
+    keys = []
+    for place in _metadata_list(event, "place_candidates"):
+        key = _admin_key_for_label(place, place_aliases)
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _admin_key_for_label(label: Any, place_aliases: dict[str, Any]) -> str:
+    normalized = _normalize_key(label)
+    alias_key = place_aliases.get("alias_to_key", {}).get(normalized)
+    if alias_key:
+        return str(alias_key)
+    if _is_region_place_label(label):
+        return f"region:{normalized}"
+    return ""
+
+
+def _admin_label_for_key(key: str, place_aliases: dict[str, Any]) -> str:
+    if key in place_aliases.get("key_to_label", {}):
+        return str(place_aliases["key_to_label"][key])
+    if key.startswith("region:"):
+        return _title_case(key.removeprefix("region:"))
+    return key
+
+
+def _event_source_video_ids(
+    event: dict[str, Any],
+    evidence_by_id: dict[str, dict[str, Any]],
+) -> list[str]:
+    source_ids = event.get("source_video_ids")
+    if isinstance(source_ids, list):
+        return [str(item) for item in source_ids if item]
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    source_ids = metadata.get("source_video_ids")
+    if isinstance(source_ids, list):
+        return [str(item) for item in source_ids if item]
+    from_evidence = _source_video_ids(_event_evidence_ids([event]), evidence_by_id)
+    if from_evidence:
+        return from_evidence
+    return [str(event.get("source_video_id"))] if event.get("source_video_id") else []
+
+
+def _event_is_multiplace_compilation(event: dict[str, Any]) -> bool:
+    return len(_metadata_list(event, "place_candidates")) >= 4 and len(_metadata_list(event, "date_candidates")) >= 3
+
+
+def _place_scope_label(
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    event_contexts: dict[str, dict[str, Any]],
+) -> str:
+    scope = _place_scope_metadata(events, evidence_by_id, event_contexts)
+    admin_labels = scope.get("admin_context_labels") or []
+    if admin_labels:
+        return f"{', '.join(admin_labels[:2])} context"
+    parts = []
+    source_video_ids = scope.get("source_video_ids") or []
+    if source_video_ids:
+        parts.append("+".join(source_video_ids[:2]))
+    years = scope.get("date_years") or []
+    if len(years) == 1:
+        parts.append(str(years[0]))
+    elif len(years) > 1:
+        parts.append(f"{years[0]}-{years[-1]}")
+    return f"{', '.join(parts)} context" if parts else ""
+
+
+def _place_scope_metadata(
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    event_contexts: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    event_ids = _event_ids(events)
+    contexts = [event_contexts.get(event_id, {}) for event_id in event_ids]
+    source_video_ids = _unique_items(
+        source_video_id
+        for event in events
+        for source_video_id in _event_source_video_ids(event, evidence_by_id)
+    )
+    admin_keys = _unique_items(key for context in contexts for key in context.get("admin_keys", []))
+    admin_labels = _unique_items(label for context in contexts for label in context.get("admin_labels", []))
+    return {
+        "source_video_ids": source_video_ids,
+        "date_years": _date_years_for_events(events),
+        "admin_context_keys": admin_keys,
+        "admin_context_labels": admin_labels,
+    }
+
+
+def _attach_place_context_candidates(
+    groups: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    event_contexts: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
+    groups_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    groups_by_resolution_key: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        resolution_key = str(group.get("metadata", {}).get("resolution_key") or "")
+        if resolution_key:
+            groups_by_resolution_key[resolution_key] = group
+        for event_id in group.get("canonical_event_ids") or []:
+            groups_by_event[str(event_id)].append(group)
+
+    for group in groups:
+        parent_candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        nearby_candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        group_events = _events_from_ids(events, group.get("canonical_event_ids") or [])
+
+        for event in group_events:
+            event_id = str(event.get("id") or "")
+            context = event_contexts.get(event_id, {})
+            for admin_key in context.get("admin_keys") or []:
+                parent = groups_by_resolution_key.get(str(admin_key))
+                if parent and parent.get("id") != group.get("id") and _can_attach_admin_parent(parent, group):
+                    relation = "within_region_candidate"
+                    basis = "direct_admin_context" if admin_key in (context.get("direct_admin_keys") or []) else "nearby_admin_context"
+                    confidence = 0.74 if basis == "direct_admin_context" else 0.56
+                    _add_place_context_candidate(parent_candidates, parent, relation, confidence, basis, [event_id])
+
+            if not _event_is_multiplace_compilation(event):
+                for other in groups_by_event.get(event_id, []):
+                    if other.get("id") == group.get("id"):
+                        continue
+                    if _is_parent_place_candidate(other, group):
+                        _add_place_context_candidate(
+                            parent_candidates,
+                            other,
+                            _place_parent_relation(other),
+                            0.7,
+                            "same_event_place_context",
+                            [event_id],
+                        )
+                    elif _is_nearby_place_candidate(group, other):
+                        _add_place_context_candidate(
+                            nearby_candidates,
+                            other,
+                            "same_event_place_context",
+                            0.62,
+                            "same_event_place_context",
+                            [event_id],
+                        )
+
+        for other in groups:
+            if other.get("id") == group.get("id"):
+                continue
+            gap = _place_group_gap_seconds(group, other)
+            if gap > 900.0 or not _place_groups_share_source(group, other):
+                continue
+            if not _place_groups_have_compatible_event_context(group, other, events_by_id):
+                continue
+            common_events = _merge_event_id_lists(group.get("canonical_event_ids") or [], other.get("canonical_event_ids") or [])
+            if _is_parent_place_candidate(other, group):
+                _add_place_context_candidate(
+                    parent_candidates,
+                    other,
+                    _place_parent_relation(other),
+                    0.52,
+                    "nearby_time_place_context",
+                    common_events,
+                )
+            elif _is_nearby_place_candidate(group, other):
+                _add_place_context_candidate(
+                    nearby_candidates,
+                    other,
+                    "nearby_time_place_context",
+                    0.48,
+                    "nearby_time_place_context",
+                    common_events,
+                )
+
+        parent_list = _place_context_candidate_list(parent_candidates)
+        nearby_list = _place_context_candidate_list(nearby_candidates)
+        group["parent_place_labels"] = _unique_items(candidate["label"] for candidate in parent_list[:6])
+        group["nearby_place_labels"] = _unique_items(candidate["label"] for candidate in nearby_list[:6])
+        group["metadata"]["parent_place_candidates"] = parent_list
+        group["metadata"]["nearby_place_candidates"] = nearby_list
+        if parent_list:
+            group["scope_label"] = f"{', '.join(group['parent_place_labels'][:2])} context"
+        elif group.get("kind") == "named_place_candidate" and group.get("place_type") != "region":
+            group["scope_label"] = _place_source_scope_label(group.get("metadata", {}).get("scope", {}))
+            group["metadata"]["scope"]["admin_context_keys"] = []
+            group["metadata"]["scope"]["admin_context_labels"] = []
+        if parent_list:
+            group["notes"] = _unique_items([*group.get("notes", []), "Has reviewable broader-place context; not exportable as GPS until confirmed."])
+        if nearby_list:
+            group["notes"] = _unique_items([*group.get("notes", []), "Has reviewable same-area/nearby-place context."])
+
+    return groups
+
+
+def _place_source_scope_label(scope: dict[str, Any]) -> str:
+    parts = []
+    source_video_ids = [str(item) for item in scope.get("source_video_ids") or [] if item]
+    if source_video_ids:
+        parts.append("+".join(source_video_ids[:2]))
+    years = [str(item) for item in scope.get("date_years") or [] if item]
+    if len(years) == 1:
+        parts.append(years[0])
+    elif len(years) > 1:
+        parts.append(f"{years[0]}-{years[-1]}")
+    return f"{', '.join(parts)} context" if parts else ""
+
+
+def _add_place_context_candidate(
+    candidates: dict[tuple[str, str], dict[str, Any]],
+    place: dict[str, Any],
+    relation: str,
+    confidence: float,
+    basis: str,
+    event_ids: list[str],
+) -> None:
+    key = (str(place.get("id")), relation)
+    candidate = candidates.setdefault(
+        key,
+        {
+            "place_group_id": place.get("id"),
+            "label": place.get("label"),
+            "relation": relation,
+            "confidence": confidence,
+            "review_status": "needs_review",
+            "canonical_event_ids": [],
+            "basis": [],
+            "not_exportable_as_gps": True,
+        },
+    )
+    candidate["confidence"] = round(max(float(candidate["confidence"]), confidence), 3)
+    candidate["canonical_event_ids"] = _merge_event_id_lists(candidate["canonical_event_ids"], event_ids)
+    if basis not in candidate["basis"]:
+        candidate["basis"].append(basis)
+
+
+def _place_context_candidate_list(candidates: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        candidates.values(),
+        key=lambda candidate: (-float(candidate.get("confidence") or 0.0), str(candidate.get("label") or "").casefold()),
+    )
+
+
+def _is_parent_place_candidate(candidate: dict[str, Any], group: dict[str, Any]) -> bool:
+    if candidate.get("place_type") == "region":
+        return group.get("place_type") != "region" and _can_attach_admin_parent(candidate, group)
+    candidate_key = _normalize_key(candidate.get("label"))
+    group_key = _normalize_key(group.get("label"))
+    if "school" in candidate_key and any(token in group_key for token in ["classroom", "gym", "hall"]):
+        return True
+    return False
+
+
+def _can_attach_admin_parent(parent: dict[str, Any], group: dict[str, Any]) -> bool:
+    if group.get("kind") == "generic_place_context":
+        return True
+    if group.get("place_type") in {"school", "restaurant", "room", "park", "water", "nature"}:
+        return True
+    group_key = _normalize_key(group.get("label"))
+    parent_key = _normalize_key(parent.get("label"))
+    if parent_key in US_STATE_KEYS or parent_key in COUNTRY_KEYS:
+        return True
+    if len(group_key.split()) >= 2:
+        return True
+    return False
+
+
+def _place_parent_relation(candidate: dict[str, Any]) -> str:
+    if candidate.get("place_type") == "region":
+        return "within_region_candidate"
+    return "inside_place_candidate"
+
+
+def _is_nearby_place_candidate(group: dict[str, Any], other: dict[str, Any]) -> bool:
+    if group.get("place_type") == "region" or other.get("place_type") == "region":
+        return False
+    if group.get("kind") == "mentioned_place_candidate" or other.get("kind") == "mentioned_place_candidate":
+        return False
+    return True
+
+
+def _place_group_gap_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_start = _number_or_none(left.get("first_start_s"))
+    left_end = _number_or_none(left.get("last_end_s")) or left_start
+    right_start = _number_or_none(right.get("first_start_s"))
+    right_end = _number_or_none(right.get("last_end_s")) or right_start
+    if None in {left_start, left_end, right_start, right_end}:
+        return 1_000_000_000.0
+    if left_end < right_start:
+        return right_start - left_end
+    if right_end < left_start:
+        return left_start - right_end
+    return 0.0
+
+
+def _place_groups_share_source(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_sources = set(left.get("source_video_ids") or [])
+    right_sources = set(right.get("source_video_ids") or [])
+    if not left_sources or not right_sources:
+        return False
+    return bool(left_sources & right_sources)
+
+
+def _place_groups_have_compatible_event_context(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    events_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    left_events = _events_from_group_row(left, events_by_id)
+    right_events = _events_from_group_row(right, events_by_id)
+    if not left_events or not right_events:
+        return False
+    if any(_event_is_multiplace_compilation(event) for event in [*left_events, *right_events]):
+        return False
+    left_types = {str(_metadata_value(event, "event_type") or "") for event in left_events}
+    right_types = {str(_metadata_value(event, "event_type") or "") for event in right_events}
+    if "travel" in left_types ^ right_types:
+        return False
+    if left_types <= {"school", "holiday"} and right_types <= {"school", "holiday"}:
+        return True
+    known_left = {event_type for event_type in left_types if event_type}
+    known_right = {event_type for event_type in right_types if event_type}
+    return not known_left or not known_right or bool(known_left & known_right)
+
+
+def _events_from_group_row(group: dict[str, Any], events_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    return [events_by_id[event_id] for event_id in group.get("canonical_event_ids") or [] if event_id in events_by_id]
+
+
+def _event_gap_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_start = _number_or_none(left.get("start_s"))
+    left_end = _number_or_none(left.get("end_s")) or left_start
+    right_start = _number_or_none(right.get("start_s"))
+    right_end = _number_or_none(right.get("end_s")) or right_start
+    if None in {left_start, left_end, right_start, right_end}:
+        return 1_000_000_000.0
+    if left_end < right_start:
+        return right_start - left_end
+    if right_end < left_start:
+        return left_start - right_end
+    return 0.0
+
+
+def _date_years_for_events(events: list[dict[str, Any]]) -> list[str]:
+    years = []
+    for event in events:
+        for date_text in _metadata_list(event, "date_candidates"):
+            parsed = _parse_date_candidate(date_text)
+            if parsed["excluded_as_event_date"] or not parsed["date_value"]:
+                continue
+            year = str(parsed["date_value"])[:4]
+            if year not in years:
+                years.append(year)
+    return sorted(years)
+
+
+def _is_region_place_label(label: Any) -> bool:
+    key = _normalize_key(label)
+    return "," in str(label or "") or key in US_STATE_KEYS or key in COUNTRY_KEYS or key in BROAD_PLACE_ALIASES
+
+
 def _place_kind(value: str, event: dict[str, Any]) -> str:
     normalized = _normalize_key(value)
     event_type = _metadata_value(event, "event_type")
@@ -871,6 +1508,8 @@ def _place_kind_rank(kind: str) -> int:
 
 def _place_type(label: str) -> str:
     key = _normalize_key(label)
+    if _is_region_place_label(label):
+        return "region"
     if "school" in key or "classroom" in key:
         return "school"
     if _is_room_place_key(key):
@@ -879,12 +1518,12 @@ def _place_type(label: str) -> str:
         return "volcano"
     if "garden" in key or "rainforest" in key or "waterfall" in key:
         return "nature"
-    if "ocean" in key or "beach" in key or "hot springs" in key:
+    if "ocean" in key or "beach" in key or "hot springs" in key or "lake" in key:
         return "water"
+    if "park" in key or "playground" in key:
+        return "park"
     if "restaurant" in key:
         return "restaurant"
-    if key in {"hawaii", "oregon", "moscow"} or "," in str(label):
-        return "region"
     return "place_candidate"
 
 

@@ -219,7 +219,7 @@ def _render_html(
     <h3>People</h3>
     <div class="table-wrap">{_table(people_groups, ["label", "kind", "aliases", "canonical_event_ids", "confidence", "review_status", "notes"])}</div>
     <h3>Places</h3>
-    <div class="table-wrap">{_table(place_groups, ["label", "kind", "place_type", "canonical_event_ids", "confidence", "review_status", "notes"])}</div>
+    <div class="table-wrap">{_table(place_groups, ["label", "kind", "place_type", "scope_label", "parent_place_labels", "nearby_place_labels", "canonical_event_ids", "confidence", "review_status", "notes"])}</div>
     <h3>Dates</h3>
     <div class="table-wrap">{_table(date_groups, ["label", "date_value", "precision", "source_kind", "excluded_as_event_date", "canonical_event_ids", "review_status"])}</div>
     <h3>Languages</h3>

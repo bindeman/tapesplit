@@ -249,6 +249,124 @@ def test_build_project_groups_excludes_unrelated_people_from_context_groups(tmp_
     assert unrelated_album["export_status"] == "excluded"
 
 
+def test_build_project_groups_merges_place_admin_aliases_and_scopes_generic_places(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Madison Holiday",
+                "start_s": 0,
+                "end_s": 100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_1"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "holiday",
+                    "place_candidates": ["Madison, USA"],
+                    "date_candidates": ["JAN 5 2003"],
+                },
+            },
+            {
+                "id": "canonical_event_000002",
+                "title": "Nursery School Activities",
+                "start_s": 110,
+                "end_s": 220,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_2"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "school",
+                    "place_candidates": ["Lakeside Village Nursery School"],
+                },
+            },
+            {
+                "id": "canonical_event_000003",
+                "title": "Madison Matinee",
+                "start_s": 225,
+                "end_s": 330,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_3"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "school",
+                    "place_candidates": ["Madison, Wisconsin, USA"],
+                },
+            },
+            {
+                "id": "canonical_event_000004",
+                "title": "School Hall Cleanup",
+                "start_s": 340,
+                "end_s": 430,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_4"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "school",
+                    "place_candidates": ["Russian School", "Madison", "school hall"],
+                },
+            },
+            {
+                "id": "canonical_event_000005",
+                "title": "Madison Home Morning",
+                "start_s": 500,
+                "end_s": 600,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_5"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "home",
+                    "place_candidates": ["home", "Madison"],
+                },
+            },
+            {
+                "id": "canonical_event_000006",
+                "title": "Oregon Home Afternoon",
+                "start_s": 10000,
+                "end_s": 10100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_6"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "home",
+                    "place_candidates": ["home", "Eugene, Oregon, USA"],
+                },
+            },
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "gemini_evidence.jsonl",
+        [{"id": f"ev_{index}", "source_video_id": "video_000001"} for index in range(1, 7)],
+    )
+
+    build_project_groups(tmp_path)
+    places = read_jsonl(tmp_path / "place_groups.jsonl")
+
+    madison = next(group for group in places if group["label"] == "Madison, Wisconsin, USA")
+    assert madison["aliases"] == ["Madison", "Madison, USA", "Madison, Wisconsin, USA"]
+    assert madison["canonical_event_ids"] == [
+        "canonical_event_000001",
+        "canonical_event_000003",
+        "canonical_event_000004",
+        "canonical_event_000005",
+    ]
+
+    nursery = next(group for group in places if group["label"] == "Lakeside Village Nursery School")
+    assert "Madison, Wisconsin, USA" in nursery["parent_place_labels"]
+
+    school_hall = next(group for group in places if group["label"] == "school hall")
+    assert "Russian School" in school_hall["parent_place_labels"]
+    assert "Madison, Wisconsin, USA" in school_hall["parent_place_labels"]
+    assert school_hall["review_status"] == "needs_review"
+
+    home_groups = [group for group in places if group["label"] == "home"]
+    assert len(home_groups) == 2
+    assert sorted(group["scope_label"] for group in home_groups) == [
+        "Eugene, Oregon, USA context",
+        "Madison, Wisconsin, USA context",
+    ]
+
+
 def test_build_project_groups_uses_spelling_normalization_and_project_person_aliases(tmp_path: Path):
     _write_jsonl(
         tmp_path / "canonical_events.jsonl",

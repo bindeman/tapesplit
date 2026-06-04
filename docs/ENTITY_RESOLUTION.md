@@ -730,6 +730,52 @@ Maplewood School / Maplewood Elementary / school on Elm and 9th
     Mark generic school only
 ```
 
+## Scoped Place Resolution
+
+Place grouping should not be a flat string lookup.
+
+Administrative aliases can merge when the observed strings are compatible:
+
+```text
+Madison
+Madison, USA
+Madison, Wisconsin, USA
+```
+
+These can become one candidate place with the most specific observed label as
+the display name. This is still a candidate, not a reviewed geocode.
+
+Generic places should be scoped instead of merged globally:
+
+```text
+home
+park
+lake
+school hall
+apartment complex
+community gardens
+```
+
+`home` in a Madison-era tape and `home` in an Oregon-era tape should become
+separate scoped place candidates unless the user or stronger evidence confirms
+they are the same physical home. A generic place can carry a source/video/date
+scope for grouping and search, but it should not receive GPS metadata.
+
+Place-to-place context should be represented as reviewable edges:
+
+```text
+school hall -> inside_place_candidate -> Russian School
+Russian School -> within_region_candidate -> Madison, Wisconsin, USA
+Anchorage -> within_region_candidate -> Alaska
+lake -> same_event_place_context -> park
+Apartment complex -> nearby_time_place_context -> Community gardens
+```
+
+These edges are useful for search and review, but they remain
+`not_exportable_as_gps` until confirmed. Travel anchors and multi-location
+compilation events should not leak backward into earlier home/neighborhood
+scenes.
+
 ## Export Policy
 
 Confirmed entities can be exported. Candidate entities should stay internal by
