@@ -5,6 +5,10 @@ not final truth. The goal is to help a user or digitizer quickly build a family
 graph from messy tapes while preserving evidence, uncertainty, and correction
 history.
 
+See [CONTEXT_GRAPH_VISUALIZATION.md](CONTEXT_GRAPH_VISUALIZATION.md) for the
+longer-term UI/data model that turns relationship candidates into an era-aware
+family tree, friend graph, and social context map.
+
 This is harder than alias matching because the system must distinguish:
 
 - who is visible

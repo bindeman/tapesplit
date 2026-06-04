@@ -32,6 +32,10 @@ relationship, and role-resolution model.
 See [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) for the
 family-graph, relationship-candidate, face-linking, and thumbnail plan.
 
+See [docs/CONTEXT_GRAPH_VISUALIZATION.md](docs/CONTEXT_GRAPH_VISUALIZATION.md)
+for the longer-term family tree, friend/social-circle, era, and context graph
+visualization model.
+
 See [docs/PHOTO_ARCHIVE_PRODUCT.md](docs/PHOTO_ARCHIVE_PRODUCT.md) for a
 separate photo-library family-graph product concept that reuses the same
 evidence/review architecture.
