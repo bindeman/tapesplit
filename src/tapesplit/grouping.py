@@ -40,10 +40,13 @@ ROLE_PERSON_TOKENS = {
 }
 
 PERSON_ALIAS_KEYS = {
+    "filia": "filip",
     "filip": "filip",
-    "philip": "filip",
     "filipp": "filip",
+    "philip": "filip",
     "philipp": "filip",
+    "филипп": "filip",
+    "филя": "filip",
 }
 
 ROOM_PLACE_TOKENS = {
@@ -1098,7 +1101,8 @@ def _title_case(value: Any) -> str:
 
 def _normalize_key(value: Any) -> str:
     text = str(value or "").casefold().replace("&", " and ")
-    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
     return re.sub(r"\s+", " ", text).strip()
 
 

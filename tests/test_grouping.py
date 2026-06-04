@@ -132,22 +132,35 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
                     "languages": ["Russian"],
                 },
             },
+            {
+                "id": "canonical_event_000008",
+                "title": "Child Greeting Grandparents",
+                "start_s": 4200,
+                "end_s": 4250,
+                "confidence": 0.8,
+                "evidence_ids": ["ev_8"],
+                "metadata": {
+                    "event_type": "family",
+                    "people": ["Филя"],
+                    "languages": ["Russian"],
+                },
+            },
         ],
     )
     _write_jsonl(
         tmp_path / "gemini_evidence.jsonl",
-        [{"id": f"ev_{index}", "source_video_id": "video_000001"} for index in range(1, 8)],
+        [{"id": f"ev_{index}", "source_video_id": "video_000001"} for index in range(1, 9)],
     )
 
     result = build_project_groups(tmp_path)
 
-    assert result["source_events"] == 7
+    assert result["source_events"] == 8
     assert result["people_groups"] == 3
     assert result["albums"] >= 4
 
     people = read_jsonl(tmp_path / "people_groups.jsonl")
     filip = next(group for group in people if group["metadata"]["normalized_key"] == "filip")
-    assert filip["aliases"] == ["Filip", "Philip"]
+    assert filip["aliases"] == ["Filip", "Philip", "Филя"]
     assert filip["review_status"] == "needs_review"
     assert filip["canonical_event_ids"] == [
         "canonical_event_000001",
@@ -156,6 +169,7 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
         "canonical_event_000005",
         "canonical_event_000006",
         "canonical_event_000007",
+        "canonical_event_000008",
     ]
 
     dates = read_jsonl(tmp_path / "date_groups.jsonl")

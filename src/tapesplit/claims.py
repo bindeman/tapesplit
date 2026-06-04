@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from tapesplit.azure_openai_adapter import (
@@ -62,13 +63,14 @@ def extract_claims(project_dir: Path, deployment_alias: str = "fast") -> dict:
             },
             {"role": "user", "content": prompt},
         ],
-        max_tokens=2200,
+        max_tokens=4000,
         temperature=0.0,
         response_format={"type": "json_object"},
         project_dir=project,
         operation="extract_claims",
     )
     content = (response.get("choices") or [{}])[0].get("message", {}).get("content") or "{}"
+    (project / "claim_extraction.response.txt").write_text(content, encoding="utf-8")
     payload = _parse_json_object(content)
 
     claims_path = project / "claims.jsonl"
@@ -85,6 +87,7 @@ def extract_claims(project_dir: Path, deployment_alias: str = "fast") -> dict:
     )
     if not events:
         events = _events_from_event_claims(claims, evidence_by_id)
+    events = _enrich_events_from_claims(events, claims)
     for index, claim in enumerate(claims, start=1):
         append_jsonl(
             claims_path,
@@ -138,6 +141,7 @@ def _build_claim_prompt(evidence: list[dict[str, Any]]) -> str:
         "- Do not create event_candidates for blank/static/blue-screen/no-signal ranges; those are already tracked separately.\n"
         "- Preserve Russian text meaning; translate or summarize in English when helpful.\n"
         "- Mark uncertain identity/location/date claims as needs_review.\n\n"
+        "- Return at most 20 claims and at most 12 event_candidates; prefer the strongest evidence.\n"
         f"Return JSON shaped like this:\n{json.dumps(CLAIM_SCHEMA_HINT, ensure_ascii=False)}\n\n"
         f"Evidence:\n{json.dumps(evidence, ensure_ascii=False, indent=2)}"
     )
@@ -211,6 +215,96 @@ def _events_from_event_claims(
             }
         )
     return _normalize_event_candidates(events, evidence_by_id)
+
+
+def _enrich_events_from_claims(events: list[dict[str, Any]], claims: list[Any]) -> list[dict[str, Any]]:
+    enriched = []
+    for event in events:
+        metadata = dict(event.get("metadata") if isinstance(event.get("metadata"), dict) else {})
+        event_evidence_ids = set(str(item) for item in event.get("evidence_ids") or [])
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            claim_evidence_ids = set(str(item) for item in claim.get("evidence_ids") or [])
+            if not event_evidence_ids or not claim_evidence_ids or event_evidence_ids.isdisjoint(claim_evidence_ids):
+                continue
+            predicate = str(claim.get("predicate") or "")
+            value = claim.get("value")
+            if predicate == "person_mention":
+                _append_metadata_value(metadata, "people", _claim_entity_label(value))
+            elif predicate == "event":
+                _append_metadata_value(metadata, "people", _person_named_in_text(value))
+                _append_metadata_value(metadata, "people", _person_named_in_text(claim.get("notes")))
+                _maybe_set_event_type(metadata, value)
+            elif predicate == "place_candidate":
+                _append_metadata_value(metadata, "place_candidates", _claim_entity_label(value))
+            elif predicate == "language":
+                _append_metadata_value(metadata, "languages", _claim_language_label(value))
+            elif predicate == "date_candidate" and not _claim_notes_flag_digitization(claim):
+                _append_metadata_value(metadata, "date_candidates", _claim_entity_label(value))
+        enriched.append({**event, "metadata": metadata})
+    return enriched
+
+
+def _append_metadata_value(metadata: dict[str, Any], key: str, value: str | None) -> None:
+    if not value:
+        return
+    values = metadata.get(key)
+    if not isinstance(values, list):
+        values = []
+    if value.casefold() not in {str(item).casefold() for item in values}:
+        values.append(value)
+    metadata[key] = values
+
+
+def _claim_entity_label(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    quoted = re.search(r"['\"“”‘’]([^'\"“”‘’]+)['\"“”‘’]", text)
+    if quoted:
+        return quoted.group(1).strip()
+    for suffix in [" mentioned", " used in transcript"]:
+        if text.casefold().endswith(suffix):
+            text = text[: -len(suffix)]
+    return text.strip() or None
+
+
+def _claim_language_label(value: Any) -> str | None:
+    text = _claim_entity_label(value)
+    if not text:
+        return None
+    lowered = text.casefold()
+    if "russian" in lowered:
+        return "Russian"
+    if "english" in lowered:
+        return "English"
+    return text
+
+
+def _person_named_in_text(value: Any) -> str | None:
+    text = str(value or "")
+    match = re.search(
+        r"\b(?:person|child|boy|girl)\s+named\s+([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё-]{1,40})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _maybe_set_event_type(metadata: dict[str, Any], value: Any) -> None:
+    text = str(value or "").casefold()
+    if "advertisement" in text or "travel deal" in text or "tv show" in text or "movie" in text:
+        metadata.setdefault("event_type", "non_family_media")
+    elif "child" in text:
+        metadata.setdefault("event_type", "family")
+
+
+def _claim_notes_flag_digitization(claim: dict[str, Any]) -> bool:
+    text = f"{claim.get('value') or ''} {claim.get('notes') or ''}".casefold()
+    return "digitization" in text or "export date" in text
 
 
 def _range_from_evidence(rows: list[dict[str, Any]]) -> tuple[float | None, float | None]:

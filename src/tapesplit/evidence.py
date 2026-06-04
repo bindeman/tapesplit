@@ -134,7 +134,14 @@ def build_evidence(project_dir: Path) -> dict:
 
 
 def evidence_for_prompt(project_dir: Path, limit: int = 120) -> list[dict[str, Any]]:
-    rows = read_jsonl(project_dir / "evidence.jsonl")
+    rows = sorted(
+        read_jsonl(project_dir / "evidence.jsonl"),
+        key=lambda row: (
+            _evidence_prompt_priority(row),
+            str(row.get("source_video_id") or ""),
+            _number_or_large(row.get("start_s")),
+        ),
+    )
     useful = []
     for row in rows:
         text = row.get("text") or ""
@@ -143,6 +150,7 @@ def evidence_for_prompt(project_dir: Path, limit: int = 120) -> list[dict[str, A
         useful.append(
             {
                 "id": row.get("id"),
+                "source_video_id": row.get("source_video_id"),
                 "start_s": row.get("start_s"),
                 "end_s": row.get("end_s"),
                 "time_label": _range_label(row.get("start_s"), row.get("end_s")),
@@ -153,6 +161,22 @@ def evidence_for_prompt(project_dir: Path, limit: int = 120) -> list[dict[str, A
             }
         )
     return useful[:limit]
+
+
+def _evidence_prompt_priority(row: dict[str, Any]) -> int:
+    kind = row.get("kind")
+    modality = row.get("modality")
+    if kind in {"local_transcript_segment", "twelvelabs_search_transcript"}:
+        return 0
+    if modality in {"transcript", "multimodal"}:
+        return 1
+    if kind == "twelvelabs_search_hit":
+        return 2
+    if kind == "non_content_range":
+        return 3
+    if kind == "date_candidate":
+        return 4
+    return 5
 
 
 def _source_id_for_video(project: Path, video_id: str | None) -> str | None:
@@ -180,6 +204,15 @@ def _count_by(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
         value = str(row.get(key) or "unknown")
         counts[value] = counts.get(value, 0) + 1
     return counts
+
+
+def _number_or_large(value: Any) -> float:
+    if value is None or value == "":
+        return 1_000_000_000.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 1_000_000_000.0
 
 
 def _range_label(start_s: Any, end_s: Any) -> str | None:
