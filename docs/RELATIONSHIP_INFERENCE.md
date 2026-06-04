@@ -382,6 +382,16 @@ Family graph inference:
 - Store confidence, scope, and evidence ids.
 - Add review tasks for high-value candidates.
 
+Current local command:
+
+```bash
+.venv/bin/tapesplit build-relationships /path/to/project.tapesplit
+```
+
+The first implementation is intentionally conservative. It extracts direct
+kinship terms from local transcript segments and transcript-like evidence rows,
+then links them to nearby name mentions or a single event-subject candidate.
+
 ### Phase 2: Face Thumbnails
 
 - Add local face detection adapter.

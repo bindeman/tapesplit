@@ -32,6 +32,10 @@ relationship, and role-resolution model.
 See [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) for the
 family-graph, relationship-candidate, face-linking, and thumbnail plan.
 
+See [docs/PHOTO_ARCHIVE_PRODUCT.md](docs/PHOTO_ARCHIVE_PRODUCT.md) for a
+separate photo-library family-graph product concept that reuses the same
+evidence/review architecture.
+
 Current local review pipeline:
 
 ```bash
@@ -40,6 +44,7 @@ Current local review pipeline:
 .venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit
 .venv/bin/tapesplit build-groups /path/to/project.tapesplit
+.venv/bin/tapesplit build-relationships /path/to/project.tapesplit
 .venv/bin/tapesplit search build /path/to/project.tapesplit
 .venv/bin/tapesplit export-report /path/to/project.tapesplit
 ```

@@ -22,6 +22,8 @@ def export_review_report(project_dir: Path) -> dict:
     date_groups = read_jsonl(project / "date_groups.jsonl")
     language_groups = read_jsonl(project / "language_groups.jsonl")
     event_groups = read_jsonl(project / "event_groups.jsonl")
+    relationship_candidates = read_jsonl(project / "relationship_candidates.jsonl")
+    relationship_review_tasks = read_jsonl(project / "relationship_review_tasks.jsonl")
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -38,6 +40,8 @@ def export_review_report(project_dir: Path) -> dict:
             date_groups=date_groups,
             language_groups=language_groups,
             event_groups=event_groups,
+            relationship_candidates=relationship_candidates,
+            relationship_review_tasks=relationship_review_tasks,
             summaries=summaries,
             non_content=non_content,
             costs=costs,
@@ -60,6 +64,8 @@ def export_review_report(project_dir: Path) -> dict:
         "date_groups": len(date_groups),
         "language_groups": len(language_groups),
         "event_groups": len(event_groups),
+        "relationship_candidates": len(relationship_candidates),
+        "relationship_review_tasks": len(relationship_review_tasks),
     }
 
 
@@ -75,6 +81,8 @@ def _render_html(
     date_groups: list[dict[str, Any]],
     language_groups: list[dict[str, Any]],
     event_groups: list[dict[str, Any]],
+    relationship_candidates: list[dict[str, Any]],
+    relationship_review_tasks: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
@@ -188,6 +196,10 @@ def _render_html(
     <div class="table-wrap">{_table(date_groups, ["label", "date_value", "precision", "source_kind", "excluded_as_event_date", "canonical_event_ids", "review_status"])}</div>
     <h3>Languages</h3>
     <div class="table-wrap">{_table(language_groups, ["language", "canonical_event_ids", "confidence", "review_status"])}</div>
+    <h3>Relationship Candidates</h3>
+    <div class="table-wrap">{_table(relationship_candidates, ["predicate", "subject_label", "object_label", "confidence", "review_status", "evidence_ids", "supporting_signals"])}</div>
+    <h3>Relationship Review Tasks</h3>
+    <div class="table-wrap">{_table(relationship_review_tasks, ["question", "priority", "candidate_ids", "evidence_ids", "review_status"])}</div>
   </section>
 
   <section>

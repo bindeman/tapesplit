@@ -30,6 +30,7 @@ from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
+from tapesplit.relationships import build_relationship_candidates
 from tapesplit.search import build_search_index, query_search_index
 from tapesplit.transcription import (
     check_transcription_config,
@@ -403,6 +404,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Use raw event candidates instead of canonical_events.jsonl.",
     )
 
+    build_relationships_parser = subparsers.add_parser(
+        "build-relationships",
+        help="Build local transcript-derived relationship candidates and review tasks.",
+    )
+    build_relationships_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_relationships_parser.add_argument(
+        "--context-seconds",
+        type=float,
+        default=8.0,
+        help="Transcript context window around kinship terms. Default: 8.",
+    )
+
     search_parser = subparsers.add_parser(
         "search",
         help="Build and query the local SQLite text/semantic search index.",
@@ -744,6 +757,18 @@ def main(argv: list[str] | None = None) -> int:
                     build_project_groups(
                         args.project,
                         prefer_canonical=not args.use_event_candidates,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "build-relationships":
+            print(
+                json.dumps(
+                    build_relationship_candidates(
+                        args.project,
+                        context_seconds=args.context_seconds,
                     ),
                     indent=2,
                     sort_keys=True,

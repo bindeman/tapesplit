@@ -191,6 +191,8 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             ("place_groups.jsonl", "place_group", "label"),
             ("date_groups.jsonl", "date_group", "label"),
             ("language_groups.jsonl", "language_group", "language"),
+            ("relationship_candidates.jsonl", "relationship_candidate", "predicate"),
+            ("relationship_review_tasks.jsonl", "relationship_review_task", "question"),
         ]:
             for row in read_jsonl(project / filename):
                 docs.append(_group_document(row, record_type=record_type, title_key=title_key))
@@ -226,6 +228,7 @@ def _document(
 
 def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) -> dict[str, Any]:
     text_parts = []
+    scope = row.get("scope") if isinstance(row.get("scope"), dict) else {}
     for key in [
         "album_type",
         "group_type",
@@ -242,22 +245,40 @@ def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) ->
         "aliases",
         "notes",
         "canonical_event_ids",
+        "subject_label",
+        "object_label",
+        "predicate",
+        "supporting_signals",
+        "question",
+        "candidate_ids",
     ]:
         value = row.get(key)
         if isinstance(value, list):
             text_parts.append(" ".join(str(item) for item in value))
         elif value not in (None, ""):
             text_parts.append(str(value))
+    for key in ["canonical_event_ids", "source_video_ids"]:
+        value = scope.get(key)
+        if isinstance(value, list):
+            text_parts.append(" ".join(str(item) for item in value))
     return _document(
         record_type,
         row.get("id"),
-        source_video_id=(row.get("source_video_ids") or [""])[0] if isinstance(row.get("source_video_ids"), list) else "",
-        start_s=row.get("start_s") or row.get("first_start_s"),
-        end_s=row.get("end_s") or row.get("last_end_s"),
+        source_video_id=_first_source_id_from_row(row, scope),
+        start_s=row.get("start_s") or row.get("first_start_s") or scope.get("start_s"),
+        end_s=row.get("end_s") or row.get("last_end_s") or scope.get("end_s"),
         title=row.get(title_key),
         text=" ".join(text_parts),
         metadata={"review_status": row.get("review_status")},
     )
+
+
+def _first_source_id_from_row(row: dict[str, Any], scope: dict[str, Any]) -> str:
+    if isinstance(row.get("source_video_ids"), list) and row["source_video_ids"]:
+        return str(row["source_video_ids"][0])
+    if isinstance(scope.get("source_video_ids"), list) and scope["source_video_ids"]:
+        return str(scope["source_video_ids"][0])
+    return ""
 
 
 def _create_schema(conn: sqlite3.Connection) -> bool:
