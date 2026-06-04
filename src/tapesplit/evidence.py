@@ -124,7 +124,9 @@ def evidence_for_prompt(project_dir: Path, limit: int = 120) -> list[dict[str, A
         useful.append(
             {
                 "id": row.get("id"),
-                "time": _range_label(row.get("start_s"), row.get("end_s")),
+                "start_s": row.get("start_s"),
+                "end_s": row.get("end_s"),
+                "time_label": _range_label(row.get("start_s"), row.get("end_s")),
                 "kind": row.get("kind"),
                 "modality": row.get("modality"),
                 "text": text,
@@ -176,4 +178,3 @@ def _fmt_time(seconds: float) -> str:
     if hours:
         return f"{hours:02d}:{minutes:02d}:{sec:02d}"
     return f"{minutes:02d}:{sec:02d}"
-
