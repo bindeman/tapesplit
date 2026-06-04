@@ -484,31 +484,43 @@ def _review_queue(
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
-    for candidate in face_identity_candidates:
-        if not _needs_review(candidate):
+    for cluster_id, candidates in _face_identity_candidates_by_cluster(face_identity_candidates).items():
+        cluster = face_clusters_by_id.get(cluster_id) or {}
+        if _review_closed(cluster):
             continue
-        cluster = face_clusters_by_id.get(str(candidate.get("face_cluster_id") or "")) or {}
-        person = people_by_id.get(str(candidate.get("person_group_id") or "")) or {}
-        event_ids = [str(item) for item in candidate.get("supporting_event_ids") or []]
+        review_candidates = [candidate for candidate in candidates if not _review_closed(candidate)]
+        if not review_candidates:
+            continue
+        top_candidate = review_candidates[0]
+        event_ids = _unique_items(
+            [
+                str(event_id)
+                for candidate in review_candidates
+                for event_id in candidate.get("supporting_event_ids") or []
+            ]
+        )
         items.append(
             {
-                "task_type": "confirm_face_identity",
-                "source_record_type": "face_identity_candidate",
-                "source_id": str(candidate.get("id") or ""),
-                "title": f"Confirm face identity: {candidate.get('person_label') or person.get('label') or 'unknown person'}",
-                "prompt": "Is this face cluster the same person as the candidate people record?",
+                "task_type": "resolve_face_cluster",
+                "source_record_type": "face_cluster",
+                "source_id": cluster_id,
+                "title": f"Resolve face cluster: {top_candidate.get('person_label') or 'unknown person'}",
+                "prompt": "Which candidate person, if any, matches this face cluster?",
                 "priority": 90,
-                "confidence": candidate.get("confidence"),
-                "review_status": candidate.get("review_status") or "needs_review",
+                "confidence": top_candidate.get("confidence"),
+                "review_status": cluster.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
                 "events": _event_entries(event_ids, events_by_id),
                 "thumbnail_path": str(cluster.get("thumbnail_path") or ""),
                 "candidate": {
-                    "face_cluster_id": str(candidate.get("face_cluster_id") or ""),
-                    "person_group_id": str(candidate.get("person_group_id") or ""),
-                    "person_label": str(candidate.get("person_label") or person.get("label") or ""),
+                    "face_cluster_id": cluster_id,
+                    "face_count": cluster.get("face_count"),
+                    "identity_candidates": [
+                        _face_identity_candidate_for_review(candidate, people_by_id)
+                        for candidate in review_candidates[:5]
+                    ],
                 },
-                "actions": ["confirm_identity", "reject_identity", "rename_person", "merge_person"],
+                "actions": ["confirm_identity", "reject_identity", "rename_person", "merge_person", "mark_role_only"],
             }
         )
 
@@ -724,6 +736,34 @@ def _clusters_by_person_candidate(clusters: list[dict[str, Any]]) -> dict[str, l
                 }
             )
     return dict(grouped)
+
+
+def _face_identity_candidates_by_cluster(candidates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for candidate in candidates:
+        cluster_id = str(candidate.get("face_cluster_id") or "")
+        if cluster_id:
+            grouped[cluster_id].append(candidate)
+    return {
+        cluster_id: sorted(rows, key=lambda row: (_number_or_none(row.get("confidence")) or 0.0), reverse=True)
+        for cluster_id, rows in grouped.items()
+    }
+
+
+def _face_identity_candidate_for_review(
+    candidate: dict[str, Any],
+    people_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    person = people_by_id.get(str(candidate.get("person_group_id") or "")) or {}
+    return {
+        "face_identity_candidate_id": str(candidate.get("id") or ""),
+        "person_group_id": str(candidate.get("person_group_id") or ""),
+        "person_label": str(candidate.get("person_label") or person.get("label") or ""),
+        "confidence": candidate.get("confidence"),
+        "supporting_event_ids": [str(item) for item in candidate.get("supporting_event_ids") or []],
+        "supporting_event_titles": [str(item) for item in candidate.get("supporting_event_titles") or []],
+        "review_status": candidate.get("review_status") or "needs_review",
+    }
 
 
 def _event_entries(event_ids: list[Any], events_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:

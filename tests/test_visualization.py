@@ -223,15 +223,16 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     )
     assert place_context_edge["source_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
-    assert payload["review_queue"][0]["task_type"] == "confirm_face_identity"
+    assert payload["review_queue"][0]["task_type"] == "resolve_face_cluster"
     assert {item["task_type"] for item in payload["review_queue"]} == {
-        "confirm_face_identity",
+        "resolve_face_cluster",
         "confirm_place_context",
     }
     assert {item["source_id"] for item in payload["review_queue"]} == {
-        "face_identity_candidate_000001",
+        "face_cluster_000001",
         "context_edge_000002",
     }
+    assert payload["review_queue"][0]["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
     assert payload["summary"]["review_items"] == 2
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
