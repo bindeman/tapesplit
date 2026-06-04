@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from typing import Any
 
+from tapesplit.env import load_dotenv
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -16,6 +17,7 @@ SUPPORTED_TRANSCRIPT_FORMATS = {"json", "srt", "vtt"}
 
 
 def check_transcription_config() -> dict[str, Any]:
+    load_dotenv()
     return {
         "whisper_cli": shutil.which("whisper") is not None,
         "whisper_cpp_cli": shutil.which("whisper-cli") is not None,
@@ -30,6 +32,7 @@ def extract_project_audio(
     source_video_id: str | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
+    load_dotenv()
     project = project_dir.expanduser().resolve()
     audio_dir = project / "audio"
     audio_dir.mkdir(exist_ok=True)
@@ -54,6 +57,7 @@ def transcribe_project_local(
     language: str | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
+    load_dotenv()
     project = project_dir.expanduser().resolve()
     selected_engine = _resolve_engine(engine, model_path=model_path)
     run_id = f"tr_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
