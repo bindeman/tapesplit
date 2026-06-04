@@ -11,9 +11,9 @@ from tapesplit.storage import read_jsonl
 def export_review_report(project_dir: Path) -> dict:
     project = project_dir.expanduser().resolve()
     tapes = read_jsonl(project / "tapes.jsonl")
-    evidence = read_jsonl(project / "evidence.jsonl")
-    claims = read_jsonl(project / "claims.jsonl")
-    events = read_jsonl(project / "events.jsonl")
+    evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
+    claims = read_jsonl(project / "claims.jsonl") + read_jsonl(project / "gemini_claims.jsonl")
+    events = read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -49,7 +49,13 @@ def _render_html(
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
 ) -> str:
-    summary_text = "\n".join(item.get("text", "") for item in summaries if item.get("text"))
+    summary_parts = [item.get("text", "") for item in summaries if item.get("text")]
+    summary_parts.extend(
+        item.get("text", "")
+        for item in evidence
+        if item.get("kind") == "gemini_tape_summary" and item.get("text")
+    )
+    summary_text = "\n\n".join(summary_parts)
     evidence_by_id = {row.get("id"): row for row in evidence if row.get("id")}
     tapes_by_id = {row.get("id"): row for row in tapes if row.get("id")}
     sorted_events = sorted(events, key=lambda row: _number_or_large(row.get("start_s")))
@@ -110,7 +116,7 @@ def _render_html(
   <div class="topline">
     <div>
       <h1>TapeSplit Review</h1>
-      <p class="muted">Generated from local evidence, TwelveLabs search output, and Azure extraction claims.</p>
+      <p class="muted">Generated from local evidence, Gemini video analysis, TwelveLabs search output, and Azure extraction claims.</p>
     </div>
     <div class="muted">{len(tapes)} source video, {len(events)} event candidates, {len(claims)} claims</div>
   </div>
@@ -182,8 +188,10 @@ def _event_cards(
         </div>
         <p>{html.escape(str(event.get("summary") or ""))}</p>
         <div class="event-meta">
+          <span class="pill">{html.escape(str(event.get("source") or "unknown source"))}</span>
           <span class="pill">confidence {html.escape(confidence_label)}</span>
           <span class="pill warn">{html.escape(str(review_status))}</span>
+          {_event_metadata_pills(event)}
           <span class="pill">{len(evidence_ids)} evidence</span>
           {source_link}
         </div>
@@ -191,6 +199,18 @@ def _event_cards(
             """.strip()
         )
     return '<div class="events">' + "\n".join(cards) + "</div>"
+
+
+def _event_metadata_pills(event: dict[str, Any]) -> str:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    pills = []
+    relatedness = event.get("relatedness") or metadata.get("relatedness")
+    if relatedness:
+        pills.append(f'<span class="pill">{html.escape(str(relatedness))}</span>')
+    notes = metadata.get("validation_notes") if isinstance(metadata.get("validation_notes"), list) else []
+    for note in notes[:2]:
+        pills.append(f'<span class="pill warn">{html.escape(str(note))}</span>')
+    return "\n          ".join(pills)
 
 
 def _source_link(

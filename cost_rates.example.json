@@ -25,5 +25,19 @@
     "embed_video": {
       "duration_min_rate": 0.0015
     }
+  },
+  "google_vertex": {
+    "generate_content:gemini-2.5-flash": {
+      "input_text_tokens_per_1m": 0.30,
+      "input_video_tokens_per_1m": 0.30,
+      "input_audio_tokens_per_1m": 1.00,
+      "output_tokens_per_1m": 2.50
+    },
+    "generate_content:gemini-2.5-flash-lite": {
+      "input_text_tokens_per_1m": 0.10,
+      "input_video_tokens_per_1m": 0.10,
+      "input_audio_tokens_per_1m": 0.30,
+      "output_tokens_per_1m": 0.40
+    }
   }
 }

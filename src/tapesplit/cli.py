@@ -16,6 +16,13 @@ from tapesplit.costs import (
 from tapesplit.claims import extract_claims
 from tapesplit.evidence import build_evidence
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
+from tapesplit.gemini_adapter import (
+    analyze_project_video,
+    check_gemini_config,
+    estimate_project_video,
+    smoke_test as gemini_smoke_test,
+)
+from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
@@ -121,6 +128,55 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional TapeSplit project directory where token usage should be logged.",
     )
 
+    gemini_parser = subparsers.add_parser(
+        "gemini",
+        help="Run Vertex Gemini checks and video analysis.",
+    )
+    gemini_subparsers = gemini_parser.add_subparsers(dest="gemini_command", required=True)
+    gemini_smoke = gemini_subparsers.add_parser("smoke", help="Make a tiny Vertex Gemini test call.")
+    gemini_smoke.add_argument(
+        "--project",
+        type=Path,
+        help="Optional TapeSplit project directory where usage should be logged.",
+    )
+    gemini_estimate = gemini_subparsers.add_parser(
+        "estimate-video",
+        help="Estimate Gemini video analysis tokens and cost before calling the model.",
+    )
+    gemini_estimate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_estimate.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
+    gemini_estimate.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
+    gemini_estimate.add_argument(
+        "--media-resolution",
+        choices=["low", "medium", "high"],
+        help="Gemini media resolution. Defaults to GEMINI_MEDIA_RESOLUTION.",
+    )
+    gemini_estimate.add_argument(
+        "--output-tokens",
+        type=int,
+        default=6000,
+        help="Estimated output tokens. Default: 6000.",
+    )
+    gemini_analyze = gemini_subparsers.add_parser(
+        "analyze-video",
+        help="Analyze a project video with Vertex Gemini and write gemini_analyses.jsonl.",
+    )
+    gemini_analyze.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_analyze.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
+    gemini_analyze.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
+    gemini_analyze.add_argument(
+        "--media-resolution",
+        choices=["low", "medium", "high"],
+        help="Gemini media resolution. Defaults to GEMINI_MEDIA_RESOLUTION.",
+    )
+    gemini_analyze.add_argument("--max-output-tokens", type=int, default=12000)
+    gemini_analyze.add_argument("--force-upload", action="store_true")
+    gemini_import = gemini_subparsers.add_parser(
+        "import-analysis",
+        help="Normalize the latest Gemini analysis into reviewable event/evidence JSONL.",
+    )
+    gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     costs_parser = subparsers.add_parser(
         "costs",
         help="Summarize tracked provider usage and estimated costs.",
@@ -215,6 +271,7 @@ def _doctor(as_json: bool) -> int:
     status = check_twelvelabs_config()
     status.update(check_azure_openai_config())
     status.update(check_google_maps_config())
+    status.update(check_gemini_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -235,6 +292,13 @@ def _doctor(as_json: bool) -> int:
         print(f"  Google Maps key: {'configured' if status['google_maps_api_key'] else 'missing'}")
         print(f"  Google Maps enabled: {status['google_maps_enabled']}")
         print(f"  Google Maps daily budget USD: {status['google_maps_daily_budget_usd']}")
+        print(f"  Gemini Vertex configured: {status['gemini_configured']}")
+        print(f"  Gemini ADC: {'configured' if status['gemini_adc'] else 'missing'}")
+        print(f"  Gemini project: {status['gemini_project'] or 'missing'}")
+        print(f"  Gemini location: {status['gemini_location']}")
+        print(f"  Gemini model: {status['gemini_model']}")
+        print(f"  Gemini media resolution: {status['gemini_media_resolution']}")
+        print(f"  Gemini GCS bucket: {'configured' if status['gemini_gcs_bucket'] else 'missing'}")
     return 0
 
 
@@ -300,6 +364,50 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+        if args.command == "gemini":
+            if args.gemini_command == "smoke":
+                print(
+                    json.dumps(
+                        gemini_smoke_test(project_dir=args.project),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.gemini_command == "estimate-video":
+                print(
+                    json.dumps(
+                        estimate_project_video(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            fps=args.fps,
+                            media_resolution=args.media_resolution,
+                            output_tokens=args.output_tokens,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.gemini_command == "analyze-video":
+                print(
+                    json.dumps(
+                        analyze_project_video(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            fps=args.fps,
+                            media_resolution=args.media_resolution,
+                            max_output_tokens=args.max_output_tokens,
+                            force_upload=args.force_upload,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.gemini_command == "import-analysis":
+                print(json.dumps(import_gemini_analysis(args.project), indent=2, sort_keys=True))
                 return 0
         if args.command == "costs":
             if args.costs_command == "llm":
