@@ -18,6 +18,11 @@ from tapesplit.context_graph import build_context_graph
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.evaluation import build_eval_packet, score_eval_packet
+from tapesplit.faces import (
+    DEFAULT_FACE_MIN_SIZE,
+    check_face_detection_config,
+    detect_face_thumbnails_for_project,
+)
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
 from tapesplit.gemini_adapter import (
     analyze_project_video_chunks,
@@ -58,6 +63,12 @@ from tapesplit.twelvelabs_adapter import (
     search_project,
     upload_project_videos,
 )
+from tapesplit.visual_assets import (
+    DEFAULT_KEYFRAME_WIDTH,
+    DEFAULT_THUMBNAIL_WIDTH,
+    extract_visual_assets_for_project,
+)
+from tapesplit.visualization import export_visualization_data
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -322,6 +333,56 @@ def _build_parser() -> argparse.ArgumentParser:
     metadata_exif = metadata_subparsers.add_parser("exif", help="Load ExifTool metadata for project videos.")
     metadata_exif.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    visuals_parser = subparsers.add_parser(
+        "extract-visuals",
+        help="Extract scene/event keyframes and thumbnails.",
+    )
+    visuals_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visuals_parser.add_argument(
+        "--subjects",
+        default="scenes,events",
+        help="Comma-separated subjects: scenes,events. Default: scenes,events.",
+    )
+    visuals_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    visuals_parser.add_argument(
+        "--keyframe-width",
+        type=int,
+        default=DEFAULT_KEYFRAME_WIDTH,
+        help=f"Keyframe image width. Default: {DEFAULT_KEYFRAME_WIDTH}.",
+    )
+    visuals_parser.add_argument(
+        "--thumbnail-width",
+        type=int,
+        default=DEFAULT_THUMBNAIL_WIDTH,
+        help=f"Thumbnail image width. Default: {DEFAULT_THUMBNAIL_WIDTH}.",
+    )
+    visuals_parser.add_argument(
+        "--include-non-content",
+        action="store_true",
+        help="Also extract visual assets for non-content scenes.",
+    )
+    visuals_parser.add_argument("--force", action="store_true", help="Overwrite existing extracted images.")
+
+    faces_parser = subparsers.add_parser(
+        "detect-faces",
+        help="Detect local face thumbnails from extracted scene/event keyframes.",
+    )
+    faces_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    faces_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    faces_parser.add_argument(
+        "--subject-type",
+        choices=["scene", "event"],
+        default="scene",
+        help="Visual asset subject type to scan. Default: scene.",
+    )
+    faces_parser.add_argument(
+        "--min-size",
+        type=int,
+        default=DEFAULT_FACE_MIN_SIZE,
+        help=f"Minimum face size in pixels. Default: {DEFAULT_FACE_MIN_SIZE}.",
+    )
+    faces_parser.add_argument("--force", action="store_true", help="Overwrite existing face thumbnails.")
+
     transcribe_parser = subparsers.add_parser(
         "transcribe",
         help="Extract/import local transcript segments.",
@@ -560,6 +621,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     report_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    viz_parser = subparsers.add_parser(
+        "export-visualization",
+        help="Export UI-ready timeline, place, people, relationship, and asset data.",
+    )
+    viz_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    viz_parser.add_argument(
+        "--out",
+        type=Path,
+        help="Output JSON path. Defaults to <project>/visualization.json.",
+    )
+
     return parser
 
 
@@ -569,6 +641,7 @@ def _doctor(as_json: bool) -> int:
     status.update(check_google_maps_config())
     status.update(check_gemini_config())
     status.update(check_transcription_config())
+    status.update(check_face_detection_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -600,6 +673,7 @@ def _doctor(as_json: bool) -> int:
         print(f"  whisper.cpp whisper-cli: {'installed' if status['whisper_cpp_cli'] else 'missing'}")
         print(f"  whisper.cpp main: {'installed' if status['whisper_cpp_main'] else 'missing'}")
         print(f"  WHISPER_CPP_MODEL: {'configured' if status['whisper_cpp_model'] else 'missing'}")
+        print(f"  OpenCV face detection: {'installed' if status['opencv'] else 'missing'}")
     return 0
 
 
@@ -791,6 +865,38 @@ def main(argv: list[str] | None = None) -> int:
             if args.metadata_command == "exif":
                 print(json.dumps(extract_exif_for_project(args.project), indent=2, sort_keys=True))
                 return 0
+        if args.command == "extract-visuals":
+            print(
+                json.dumps(
+                    extract_visual_assets_for_project(
+                        args.project,
+                        subjects=[item.strip() for item in args.subjects.split(",") if item.strip()],
+                        source_video_id=args.source_video_id,
+                        keyframe_width=args.keyframe_width,
+                        thumbnail_width=args.thumbnail_width,
+                        include_non_content=args.include_non_content,
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "detect-faces":
+            print(
+                json.dumps(
+                    detect_face_thumbnails_for_project(
+                        args.project,
+                        source_video_id=args.source_video_id,
+                        subject_type=args.subject_type,
+                        min_size=args.min_size,
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.command == "transcribe":
             if args.transcribe_command == "extract-audio":
                 print(
@@ -977,6 +1083,15 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         if args.command == "export-report":
             print(json.dumps(export_review_report(args.project), indent=2, sort_keys=True))
+            return 0
+        if args.command == "export-visualization":
+            print(
+                json.dumps(
+                    export_visualization_data(args.project, out_path=args.out),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)

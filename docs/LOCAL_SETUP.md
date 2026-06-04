@@ -28,6 +28,12 @@ Optional Python Whisper install:
 .venv/bin/python -m pip install -e '.[local-ai]'
 ```
 
+Optional local face-thumbnail support:
+
+```bash
+.venv/bin/python -m pip install -e '.[vision]'
+```
+
 For whisper.cpp, download/build whisper.cpp separately and set the model path:
 
 ```bash
@@ -128,6 +134,18 @@ For a bounded test on one tape:
   --min-scene-seconds 1.0
 ```
 
+Extract scene/event thumbnails and optional face thumbnails:
+
+```bash
+.venv/bin/tapesplit extract-visuals /path/to/family-videos.tapesplit --force
+.venv/bin/tapesplit detect-faces /path/to/family-videos.tapesplit --subject-type scene
+.venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
+```
+
+`export-visualization` writes `visualization.json`, a UI-ready aggregate for
+event timelines, scene timelines, people tracks, place tracks, relationship
+graphs, visual assets, and face-review queues.
+
 ## Upload To TwelveLabs
 
 Estimate indexing cost before upload:
@@ -195,6 +213,7 @@ the static report:
 ```bash
 .venv/bin/tapesplit detect-non-content /path/to/family-videos.tapesplit
 .venv/bin/tapesplit detect-scenes /path/to/family-videos.tapesplit
+.venv/bin/tapesplit extract-visuals /path/to/family-videos.tapesplit
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
   --chunk-seconds 900 \
   --chunk-overlap-seconds 15
@@ -203,6 +222,7 @@ the static report:
 .venv/bin/tapesplit build-groups /path/to/family-videos.tapesplit
 .venv/bin/tapesplit search build /path/to/family-videos.tapesplit
 .venv/bin/tapesplit export-report /path/to/family-videos.tapesplit
+.venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
 ```
 
 `stitch-events` creates `canonical_events.jsonl`. It prefers Gemini chunk events

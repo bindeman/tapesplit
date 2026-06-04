@@ -40,6 +40,10 @@ See [docs/PHOTO_ARCHIVE_PRODUCT.md](docs/PHOTO_ARCHIVE_PRODUCT.md) for a
 separate photo-library family-graph product concept that reuses the same
 evidence/review architecture.
 
+See [docs/VISUALIZATION_BACKEND.md](docs/VISUALIZATION_BACKEND.md) for the
+scene/event thumbnails, face observations, normalized location display, and
+UI-ready visualization export.
+
 See [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) for the
 family-review evaluation packet, SQL learning workflow, annotation scoring, and
 follow-up queue.
@@ -50,6 +54,7 @@ Current local review pipeline:
 .venv/bin/tapesplit ingest /path/to/video-or-folder
 .venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
 .venv/bin/tapesplit detect-scenes /path/to/project.tapesplit
+.venv/bin/tapesplit extract-visuals /path/to/project.tapesplit
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit
 .venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit
@@ -59,6 +64,7 @@ Current local review pipeline:
 .venv/bin/tapesplit search build /path/to/project.tapesplit
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
 .venv/bin/tapesplit export-report /path/to/project.tapesplit
+.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 ```
 
 Local transcript segments can come from a Whisper-compatible CLI or from an

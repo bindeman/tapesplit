@@ -20,6 +20,9 @@ local-ai = [
   "sentence-transformers",
   "sqlite-vec",
 ]
+vision = [
+  "opencv-python",
+]
 
 [project.scripts]
 tapesplit = "tapesplit.cli:main"
