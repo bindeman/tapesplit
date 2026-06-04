@@ -153,12 +153,26 @@ the static report:
   --chunk-overlap-seconds 15
 .venv/bin/tapesplit gemini import-analysis /path/to/family-videos.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/family-videos.tapesplit
+.venv/bin/tapesplit build-groups /path/to/family-videos.tapesplit
 .venv/bin/tapesplit export-report /path/to/family-videos.tapesplit
 ```
 
 `stitch-events` creates `canonical_events.jsonl`. It prefers Gemini chunk events
 when available and keeps raw event candidates as provenance through
 `source_event_ids`.
+
+`build-groups` is local and deterministic. It creates reviewable album, event,
+people, place, date, and language projections from `canonical_events.jsonl`
+without making provider calls:
+
+```text
+albums.jsonl
+event_groups.jsonl
+people_groups.jsonl
+place_groups.jsonl
+date_groups.jsonl
+language_groups.jsonl
+```
 
 Generated chunk clips, raw Gemini responses, and reports stay inside the ignored
 `.tapesplit` project directory. Originals are not modified.

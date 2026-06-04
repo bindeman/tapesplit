@@ -16,6 +16,12 @@ def export_review_report(project_dir: Path) -> dict:
     raw_events = read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
     canonical_events = read_jsonl(project / "canonical_events.jsonl")
     events = canonical_events or raw_events
+    albums = read_jsonl(project / "albums.jsonl")
+    people_groups = read_jsonl(project / "people_groups.jsonl")
+    place_groups = read_jsonl(project / "place_groups.jsonl")
+    date_groups = read_jsonl(project / "date_groups.jsonl")
+    language_groups = read_jsonl(project / "language_groups.jsonl")
+    event_groups = read_jsonl(project / "event_groups.jsonl")
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -26,6 +32,12 @@ def export_review_report(project_dir: Path) -> dict:
             evidence=evidence,
             claims=claims,
             events=events,
+            albums=albums,
+            people_groups=people_groups,
+            place_groups=place_groups,
+            date_groups=date_groups,
+            language_groups=language_groups,
+            event_groups=event_groups,
             summaries=summaries,
             non_content=non_content,
             costs=costs,
@@ -42,6 +54,12 @@ def export_review_report(project_dir: Path) -> dict:
         "events": len(events),
         "raw_events": len(raw_events),
         "canonical_events": len(canonical_events),
+        "albums": len(albums),
+        "people_groups": len(people_groups),
+        "place_groups": len(place_groups),
+        "date_groups": len(date_groups),
+        "language_groups": len(language_groups),
+        "event_groups": len(event_groups),
     }
 
 
@@ -51,6 +69,12 @@ def _render_html(
     evidence: list[dict[str, Any]],
     claims: list[dict[str, Any]],
     events: list[dict[str, Any]],
+    albums: list[dict[str, Any]],
+    people_groups: list[dict[str, Any]],
+    place_groups: list[dict[str, Any]],
+    date_groups: list[dict[str, Any]],
+    language_groups: list[dict[str, Any]],
+    event_groups: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
@@ -135,6 +159,7 @@ def _render_html(
   <section>
     <div class="grid">
       <div class="metric"><span class="muted">Estimated Cost</span><strong>${costs.get("estimated_total_cost_usd", 0):.4f}</strong></div>
+      <div class="metric"><span class="muted">Albums</span><strong>{len(albums)}</strong></div>
       <div class="metric"><span class="muted">Evidence Records</span><strong>{len(evidence)}</strong></div>
       <div class="metric"><span class="muted">Non-Content Ranges</span><strong>{len(non_content)}</strong></div>
       <div class="metric"><span class="muted">Unknown Cost Records</span><strong>{costs.get("unknown_cost_records", 0)}</strong></div>
@@ -144,6 +169,25 @@ def _render_html(
   <section>
     <h2>Summary</h2>
     <pre>{html.escape(summary_text or "No summary generated yet.")}</pre>
+  </section>
+
+  <section>
+    <h2>Album Candidates</h2>
+    {_album_cards(albums)}
+  </section>
+
+  <section>
+    <h2>Group Indexes</h2>
+    <h3>Event Groups</h3>
+    <div class="table-wrap">{_table(event_groups, ["title", "group_type", "canonical_event_ids", "event_types", "confidence", "review_status"])}</div>
+    <h3>People</h3>
+    <div class="table-wrap">{_table(people_groups, ["label", "kind", "aliases", "canonical_event_ids", "confidence", "review_status", "notes"])}</div>
+    <h3>Places</h3>
+    <div class="table-wrap">{_table(place_groups, ["label", "kind", "place_type", "canonical_event_ids", "confidence", "review_status", "notes"])}</div>
+    <h3>Dates</h3>
+    <div class="table-wrap">{_table(date_groups, ["label", "date_value", "precision", "source_kind", "excluded_as_event_date", "canonical_event_ids", "review_status"])}</div>
+    <h3>Languages</h3>
+    <div class="table-wrap">{_table(language_groups, ["language", "canonical_event_ids", "confidence", "review_status"])}</div>
   </section>
 
   <section>
@@ -174,6 +218,36 @@ def _render_html(
 </body>
 </html>
 """
+
+
+def _album_cards(albums: list[dict[str, Any]]) -> str:
+    if not albums:
+        return '<p class="muted">None. Run <code>tapesplit build-groups &lt;project&gt;</code>.</p>'
+    cards = []
+    for album in albums:
+        confidence = album.get("confidence")
+        confidence_label = f"{float(confidence):.2f}" if isinstance(confidence, (int, float)) else "unknown"
+        date_label = album.get("date_label") or "undated"
+        place_label = album.get("place_label") or "unknown place"
+        cards.append(
+            f"""
+      <article class="event">
+        <div class="event-head">
+          <div class="event-title">{html.escape(str(album.get("title") or "Untitled album"))}</div>
+          <span class="muted">{html.escape(_format_time_range(album.get("start_s"), album.get("end_s")))}</span>
+        </div>
+        <div class="event-meta">
+          <span class="pill">{html.escape(str(album.get("album_type") or "album"))}</span>
+          <span class="pill">confidence {html.escape(confidence_label)}</span>
+          <span class="pill warn">{html.escape(str(album.get("review_status") or "unreviewed"))}</span>
+          <span class="pill">{len(album.get("canonical_event_ids", []))} events</span>
+          <span class="pill">{html.escape(str(date_label))}</span>
+          <span class="pill">{html.escape(str(place_label))}</span>
+        </div>
+      </article>
+            """.strip()
+        )
+    return '<div class="events">' + "\n".join(cards) + "</div>"
 
 
 def _event_cards(

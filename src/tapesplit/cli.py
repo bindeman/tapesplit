@@ -25,6 +25,7 @@ from tapesplit.gemini_adapter import (
     smoke_test as gemini_smoke_test,
 )
 from tapesplit.gemini_import import import_gemini_analysis
+from tapesplit.grouping import build_project_groups
 from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
@@ -330,6 +331,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Include non-Gemini events even when Gemini events exist.",
     )
 
+    build_groups_parser = subparsers.add_parser(
+        "build-groups",
+        help="Build local people/place/date/language/event/album group projections.",
+    )
+    build_groups_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_groups_parser.add_argument(
+        "--use-event-candidates",
+        action="store_true",
+        help="Use raw event candidates instead of canonical_events.jsonl.",
+    )
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -578,6 +590,18 @@ def main(argv: list[str] | None = None) -> int:
                         args.project,
                         max_gap_seconds=args.max_gap_seconds,
                         prefer_gemini=not args.include_legacy_events,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "build-groups":
+            print(
+                json.dumps(
+                    build_project_groups(
+                        args.project,
+                        prefer_canonical=not args.use_event_candidates,
                     ),
                     indent=2,
                     sort_keys=True,

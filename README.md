@@ -25,3 +25,14 @@ smoke-test commands.
 
 See [docs/TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md) for
 the longer-term data model and reasoning architecture.
+
+Current local review pipeline:
+
+```bash
+.venv/bin/tapesplit ingest /path/to/video-or-folder
+.venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit
+.venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
+.venv/bin/tapesplit stitch-events /path/to/project.tapesplit
+.venv/bin/tapesplit build-groups /path/to/project.tapesplit
+.venv/bin/tapesplit export-report /path/to/project.tapesplit
+```
