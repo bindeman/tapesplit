@@ -359,7 +359,10 @@ Use:
 JSONL for append-only raw records
 SQLite for canonical tables soon
 SQLite FTS5 for transcript/OCR search
-sqlite-vec or LanceDB later for local vectors
+local sparse vectors for dependency-free semantic search and similarity
+sentence-transformers exact scan for small local neural indexes
+sqlite-vec, LanceDB, FAISS, or Qdrant later when dense vectors get large enough
+to need approximate nearest-neighbor search
 filesystem for keyframes/thumbnails/media artifacts
 ```
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from tapesplit.search import build_search_index, query_search_index
+from tapesplit.search import build_search_index, query_search_index, similar_search_documents
 
 
 def test_build_search_index_and_query_transcripts_events_and_albums(tmp_path: Path):
@@ -72,6 +72,11 @@ def test_build_search_index_and_query_transcripts_events_and_albums(tmp_path: Pa
     album = query_search_index(tmp_path, "vacation hawaii", limit=3)
     album_ids = {(row["record_type"], row["source_id"]) for row in album["results"]}
     assert ("album", "album_000001") in album_ids
+
+    similar = similar_search_documents(tmp_path, "canonical_event_000001", record_type="event", limit=3)
+    similar_ids = {(row["record_type"], row["source_id"]) for row in similar["results"]}
+    assert similar["anchor"]["source_id"] == "canonical_event_000001"
+    assert ("album", "album_000001") in similar_ids
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

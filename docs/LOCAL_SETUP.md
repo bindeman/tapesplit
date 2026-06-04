@@ -266,7 +266,16 @@ Query transcript segments, evidence, canonical events, albums, and group indexes
 .venv/bin/tapesplit search query /path/to/family-videos.tapesplit "lava flowing into the ocean"
 ```
 
+Find records similar to an existing indexed record:
+
+```bash
+.venv/bin/tapesplit search similar /path/to/family-videos.tapesplit canonical_event_000080 --record-type event
+.venv/bin/tapesplit search similar /path/to/family-videos.tapesplit place_group_000003 --record-type place_group
+```
+
 The default index combines SQLite FTS5 text search with a dependency-free local
 sparse vector scorer and small domain synonym expansions. The optional
 `sentence-transformers` backend adds local neural embeddings without sending
-text to a provider.
+text to a provider. Similarity search uses sparse vectors by default and also
+uses dense vectors when the index was built with `--embedding-backend
+sentence-transformers`.

@@ -60,8 +60,12 @@ existing JSON/SRT/VTT file:
 .venv/bin/tapesplit transcribe local /path/to/project.tapesplit --language ru
 .venv/bin/tapesplit transcribe import /path/to/project.tapesplit transcript.srt --source-video-id video_000001
 .venv/bin/tapesplit search query /path/to/project.tapesplit "first day of school"
+.venv/bin/tapesplit search similar /path/to/project.tapesplit canonical_event_000001 --record-type event
 ```
 
 `search build` defaults to SQLite FTS5 plus a dependency-free local sparse vector
 scorer. Install the `local-ai` extra and pass `--embedding-backend
-sentence-transformers` when you want local neural embeddings.
+sentence-transformers` when you want local neural embeddings. `search similar`
+uses the same local index to find records that are semantically close to an
+existing event, place, album, evidence item, transcript segment, or graph edge.
+See `docs/RETRIEVAL_ARCHITECTURE.md` for the longer hybrid search plan.

@@ -115,6 +115,37 @@ def query_search_index(project_dir: Path, query: str, *, limit: int = 10) -> dic
     }
 
 
+def similar_search_documents(
+    project_dir: Path,
+    source_id: str,
+    *,
+    record_type: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    db_path = project / SEARCH_DB_NAME
+    if not db_path.exists():
+        raise FileNotFoundError(f"search index not found, run `tapesplit search build {project}` first")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        docs = _documents_by_id(conn)
+        document_id = _resolve_document_id(docs, source_id, record_type=record_type)
+        anchor = docs[document_id]
+        sparse_scores = _sparse_document_scores(conn, document_id)
+        dense_scores = _dense_document_scores(conn, document_id)
+        results = _rank_similarity_results(docs, anchor, sparse_scores, dense_scores, limit=limit)
+    finally:
+        conn.close()
+    return {
+        "project": str(project),
+        "source_id": source_id,
+        "record_type": record_type,
+        "anchor": _result_document(anchor),
+        "results": results,
+    }
+
+
 def collect_search_documents(project: Path, *, include_groups: bool = True) -> list[dict[str, Any]]:
     docs = []
     visibility = build_visibility_filter(project)
@@ -251,12 +282,17 @@ def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) ->
         "people_labels",
         "place_label",
         "place_labels",
+        "scope_label",
+        "parent_place_labels",
+        "nearby_place_labels",
         "date_label",
         "date_labels",
         "language_labels",
         "aliases",
+        "normalized_names",
         "notes",
         "canonical_event_ids",
+        "source_video_ids",
         "subject_label",
         "object_label",
         "predicate",
@@ -511,6 +547,41 @@ def _sparse_scores(conn: sqlite3.Connection, query: str) -> dict[str, float]:
     }
 
 
+def _sparse_document_scores(conn: sqlite3.Connection, document_id: str) -> dict[str, float]:
+    anchor_rows = conn.execute(
+        "SELECT term, weight FROM doc_terms WHERE document_id = ?",
+        (document_id,),
+    ).fetchall()
+    if not anchor_rows:
+        return {}
+    anchor_weights = {row["term"]: row["weight"] for row in anchor_rows}
+    anchor_norm_row = conn.execute(
+        "SELECT norm FROM doc_norms WHERE document_id = ?",
+        (document_id,),
+    ).fetchone()
+    anchor_norm = float(anchor_norm_row["norm"]) if anchor_norm_row else 1.0
+    placeholders = ",".join("?" for _ in anchor_weights)
+    rows = conn.execute(
+        f"""
+        SELECT dt.document_id, dt.term, dt.weight, dn.norm
+        FROM doc_terms dt
+        JOIN doc_norms dn ON dn.document_id = dt.document_id
+        WHERE dt.term IN ({placeholders})
+          AND dt.document_id != ?
+        """,
+        (*anchor_weights.keys(), document_id),
+    ).fetchall()
+    dot_products: defaultdict[str, float] = defaultdict(float)
+    norms = {}
+    for row in rows:
+        dot_products[row["document_id"]] += row["weight"] * anchor_weights.get(row["term"], 0.0)
+        norms[row["document_id"]] = row["norm"]
+    return {
+        doc_id: dot / (anchor_norm * (norms.get(doc_id) or 1.0))
+        for doc_id, dot in dot_products.items()
+    }
+
+
 def _dense_scores(conn: sqlite3.Connection, query: str) -> dict[str, float]:
     backend = _meta_value(conn, "embedding_backend")
     if backend != "sentence-transformers":
@@ -531,6 +602,28 @@ def _dense_scores(conn: sqlite3.Connection, query: str) -> dict[str, float]:
     for row in rows:
         vector = json.loads(row["vector_json"])
         scores[row["document_id"]] = _dot(query_vector, vector)
+    return scores
+
+
+def _dense_document_scores(conn: sqlite3.Connection, document_id: str) -> dict[str, float]:
+    backend = _meta_value(conn, "embedding_backend")
+    if backend != "sentence-transformers":
+        return {}
+    anchor_row = conn.execute(
+        "SELECT vector_json FROM dense_vectors WHERE document_id = ?",
+        (document_id,),
+    ).fetchone()
+    if not anchor_row:
+        return {}
+    anchor_vector = json.loads(anchor_row["vector_json"])
+    rows = conn.execute(
+        "SELECT document_id, vector_json FROM dense_vectors WHERE document_id != ?",
+        (document_id,),
+    ).fetchall()
+    scores = {}
+    for row in rows:
+        vector = json.loads(row["vector_json"])
+        scores[row["document_id"]] = _dot(anchor_vector, vector)
     return scores
 
 
@@ -578,6 +671,86 @@ def _rank_results(
         )
     ranked.sort(key=lambda row: row["score"], reverse=True)
     return ranked[:limit]
+
+
+def _rank_similarity_results(
+    docs: dict[str, dict[str, Any]],
+    anchor: dict[str, Any],
+    sparse_scores: dict[str, float],
+    dense_scores: dict[str, float],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    ids = set(sparse_scores) | set(dense_scores)
+    ranked = []
+    anchor_text = f"{anchor['title']} {anchor['text']}".strip()
+    for doc_id in ids:
+        doc = docs.get(doc_id)
+        if not doc:
+            continue
+        dense_score = dense_scores.get(doc_id, 0.0)
+        sparse_score = sparse_scores.get(doc_id, 0.0)
+        score = dense_score + (0.8 * sparse_score)
+        result = _result_document(doc, query=anchor_text)
+        result.update(
+            {
+                "score": round(score, 4),
+                "similarity_score": round(score, 4),
+                "semantic_score": round(sparse_score, 4),
+                "embedding_score": round(dense_score, 4),
+            }
+        )
+        ranked.append(result)
+    ranked.sort(key=lambda row: row["score"], reverse=True)
+    return ranked[:limit]
+
+
+def _resolve_document_id(
+    docs: dict[str, dict[str, Any]],
+    source_id: str,
+    *,
+    record_type: str | None,
+) -> str:
+    value = str(source_id or "").strip()
+    if not value:
+        raise ValueError("source_id is required")
+    if ":" in value and value in docs:
+        if record_type and docs[value]["record_type"] != record_type:
+            raise ValueError(f"{value} exists but has record_type={docs[value]['record_type']!r}")
+        return value
+    matches = [
+        doc_id
+        for doc_id, doc in docs.items()
+        if doc["source_id"] == value and (record_type is None or doc["record_type"] == record_type)
+    ]
+    if not matches and record_type:
+        typed_id = f"{record_type}:{value}"
+        if typed_id in docs:
+            return typed_id
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise ValueError(f"no indexed document found for source_id={value!r}")
+    types = sorted({docs[doc_id]["record_type"] for doc_id in matches})
+    raise ValueError(
+        f"source_id={value!r} matches multiple record types {types}; pass --record-type"
+    )
+
+
+def _result_document(doc: dict[str, Any], *, query: str = "") -> dict[str, Any]:
+    title = doc["title"] or ""
+    text = doc["text"] or ""
+    return {
+        "record_type": doc["record_type"],
+        "source_id": doc["source_id"],
+        "source_video_id": doc["source_video_id"] or None,
+        "start_s": doc["start_s"],
+        "end_s": doc["end_s"],
+        "time_label": _range_label(doc["start_s"], doc["end_s"]),
+        "title": title,
+        "snippet": _snippet(text or title, query or title),
+        "metadata": doc["metadata"],
+    }
 
 
 def _semantic_terms(text: str) -> list[str]:

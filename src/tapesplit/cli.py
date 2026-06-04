@@ -32,7 +32,7 @@ from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
-from tapesplit.search import build_search_index, query_search_index
+from tapesplit.search import build_search_index, query_search_index, similar_search_documents
 from tapesplit.transcription import (
     check_transcription_config,
     extract_project_audio,
@@ -457,6 +457,29 @@ def _build_parser() -> argparse.ArgumentParser:
     search_query.add_argument("project", type=Path, help="TapeSplit project directory.")
     search_query.add_argument("query", help="Natural-language search query.")
     search_query.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
+    search_similar = search_subparsers.add_parser("similar", help="Find indexed records similar to an existing record.")
+    search_similar.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_similar.add_argument("source_id", help="Source id such as canonical_event_000001 or event:canonical_event_000001.")
+    search_similar.add_argument(
+        "--record-type",
+        choices=[
+            "album",
+            "context_edge",
+            "date_group",
+            "edge_metric",
+            "event",
+            "event_group",
+            "evidence",
+            "language_group",
+            "people_group",
+            "place_group",
+            "relationship_candidate",
+            "relationship_review_task",
+            "transcript",
+        ],
+        help="Disambiguate source ids shared across record types.",
+    )
+    search_similar.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
 
     report_parser = subparsers.add_parser(
         "export-report",
@@ -818,6 +841,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     json.dumps(
                         query_search_index(args.project, args.query, limit=args.limit),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.search_command == "similar":
+                print(
+                    json.dumps(
+                        similar_search_documents(
+                            args.project,
+                            args.source_id,
+                            record_type=args.record_type,
+                            limit=args.limit,
+                        ),
                         indent=2,
                         sort_keys=True,
                     )
