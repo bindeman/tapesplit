@@ -68,4 +68,6 @@ scorer. Install the `local-ai` extra and pass `--embedding-backend
 sentence-transformers` when you want local neural embeddings. `search similar`
 uses the same local index to find records that are semantically close to an
 existing event, place, album, evidence item, transcript segment, or graph edge.
+The local AI extra also installs `sqlite-vec`, so dense embeddings are indexed
+inside `search.sqlite` when available.
 See `docs/RETRIEVAL_ARCHITECTURE.md` for the longer hybrid search plan.

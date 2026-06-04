@@ -32,7 +32,12 @@ from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
-from tapesplit.search import build_search_index, query_search_index, similar_search_documents
+from tapesplit.search import (
+    DEFAULT_EMBEDDING_MODEL,
+    build_search_index,
+    query_search_index,
+    similar_search_documents,
+)
 from tapesplit.transcription import (
     check_transcription_config,
     extract_project_audio,
@@ -450,7 +455,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_build.add_argument(
         "--embedding-model",
-        default="sentence-transformers/all-MiniLM-L6-v2",
+        default=DEFAULT_EMBEDDING_MODEL,
         help="SentenceTransformers model when --embedding-backend sentence-transformers/auto is used.",
     )
     search_query = search_subparsers.add_parser("query", help="Search local transcript/evidence/event/group text.")

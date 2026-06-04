@@ -14,6 +14,7 @@ from tapesplit.visibility import build_visibility_filter
 
 
 SEARCH_DB_NAME = "search.sqlite"
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 STOPWORDS = {
     "a",
@@ -60,7 +61,7 @@ def build_search_index(
     *,
     include_groups: bool = True,
     embedding_backend: str = "local-sparse",
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     docs = collect_search_documents(project, include_groups=include_groups)
@@ -68,6 +69,7 @@ def build_search_index(
     if db_path.exists():
         db_path.unlink()
     conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     try:
         fts_enabled = _create_schema(conn)
         _insert_documents(conn, docs, fts_enabled=fts_enabled)
@@ -79,6 +81,7 @@ def build_search_index(
             embedding_model=embedding_model,
         )
         conn.commit()
+        dense_vector_index = _meta_value(conn, "dense_vector_index")
     finally:
         conn.close()
     return {
@@ -89,6 +92,7 @@ def build_search_index(
         "backend": _backend_label(fts_enabled=fts_enabled, dense_backend=dense_backend),
         "embedding_backend": dense_backend,
         "embedding_model": embedding_model if dense_backend == "sentence-transformers" else "",
+        "dense_vector_index": dense_vector_index if dense_backend == "sentence-transformers" else "",
         "by_type": dict(Counter(doc["record_type"] for doc in docs)),
     }
 
@@ -455,6 +459,7 @@ def _insert_dense_vectors(
     model = SentenceTransformer(embedding_model)
     texts = [f"{doc['title']}\n{doc['text']}".strip() for doc in docs]
     vectors = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+    vector_index = _create_dense_vector_index(conn, vectors[0] if len(vectors) else [])
     for doc, vector in zip(docs, vectors, strict=False):
         values = [round(float(value), 6) for value in vector]
         conn.execute(
@@ -464,9 +469,30 @@ def _insert_dense_vectors(
             """,
             (doc["id"], "sentence-transformers", embedding_model, len(values), json.dumps(values)),
         )
+        if vector_index:
+            conn.execute(
+                "INSERT INTO dense_vector_index (document_id, embedding) VALUES (?, ?)",
+                (doc["id"], vector_index["serialize"](values)),
+            )
     conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("embedding_backend", "sentence-transformers"))
     conn.execute("INSERT INTO meta (key, value) VALUES (?, ?)", ("embedding_model", embedding_model))
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?)",
+        ("dense_vector_index", "sqlite-vec" if vector_index else "exact-json"),
+    )
     return "sentence-transformers"
+
+
+def _create_dense_vector_index(conn: sqlite3.Connection, sample_vector: Any) -> dict[str, Any] | None:
+    values = [float(value) for value in sample_vector]
+    if not values:
+        return None
+    sqlite_vec = _load_sqlite_vec(conn)
+    if not sqlite_vec:
+        return None
+    dim = len(values)
+    conn.execute(f"CREATE VIRTUAL TABLE dense_vector_index USING vec0(document_id TEXT PRIMARY KEY, embedding float[{dim}])")
+    return {"serialize": sqlite_vec.serialize_float32}
 
 
 def _documents_by_id(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
@@ -597,6 +623,9 @@ def _dense_scores(conn: sqlite3.Connection, query: str) -> dict[str, float]:
         ) from exc
     model = SentenceTransformer(model_name)
     query_vector = [float(value) for value in model.encode([query], normalize_embeddings=True, show_progress_bar=False)[0]]
+    indexed_scores = _sqlite_vec_query_scores(conn, query_vector)
+    if indexed_scores is not None:
+        return indexed_scores
     rows = conn.execute("SELECT document_id, vector_json FROM dense_vectors").fetchall()
     scores = {}
     for row in rows:
@@ -609,6 +638,9 @@ def _dense_document_scores(conn: sqlite3.Connection, document_id: str) -> dict[s
     backend = _meta_value(conn, "embedding_backend")
     if backend != "sentence-transformers":
         return {}
+    indexed_scores = _sqlite_vec_document_scores(conn, document_id)
+    if indexed_scores is not None:
+        return indexed_scores
     anchor_row = conn.execute(
         "SELECT vector_json FROM dense_vectors WHERE document_id = ?",
         (document_id,),
@@ -625,6 +657,49 @@ def _dense_document_scores(conn: sqlite3.Connection, document_id: str) -> dict[s
         vector = json.loads(row["vector_json"])
         scores[row["document_id"]] = _dot(anchor_vector, vector)
     return scores
+
+
+def _sqlite_vec_query_scores(conn: sqlite3.Connection, query_vector: list[float]) -> dict[str, float] | None:
+    sqlite_vec = _load_sqlite_vec(conn)
+    if not sqlite_vec or not _has_table(conn, "dense_vector_index"):
+        return None
+    total = _indexed_document_count(conn)
+    rows = conn.execute(
+        """
+        SELECT document_id, distance
+        FROM dense_vector_index
+        WHERE embedding MATCH ? AND k = ?
+        """,
+        (sqlite_vec.serialize_float32(query_vector), total),
+    ).fetchall()
+    return {row["document_id"]: _normalized_l2_to_cosine(row["distance"]) for row in rows}
+
+
+def _sqlite_vec_document_scores(conn: sqlite3.Connection, document_id: str) -> dict[str, float] | None:
+    sqlite_vec = _load_sqlite_vec(conn)
+    if not sqlite_vec or not _has_table(conn, "dense_vector_index"):
+        return None
+    anchor_row = conn.execute(
+        "SELECT vector_json FROM dense_vectors WHERE document_id = ?",
+        (document_id,),
+    ).fetchone()
+    if not anchor_row:
+        return {}
+    anchor_vector = json.loads(anchor_row["vector_json"])
+    total = _indexed_document_count(conn)
+    rows = conn.execute(
+        """
+        SELECT document_id, distance
+        FROM dense_vector_index
+        WHERE embedding MATCH ? AND k = ?
+        """,
+        (sqlite_vec.serialize_float32(anchor_vector), total),
+    ).fetchall()
+    return {
+        row["document_id"]: _normalized_l2_to_cosine(row["distance"])
+        for row in rows
+        if row["document_id"] != document_id
+    }
 
 
 def _rank_results(
@@ -786,7 +861,11 @@ def _light_stem(token: str) -> str:
 
 
 def _has_fts(conn: sqlite3.Connection) -> bool:
-    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='documents_fts'").fetchone()
+    return _has_table(conn, "documents_fts")
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
     return row is not None
 
 
@@ -797,6 +876,29 @@ def _meta_value(conn: sqlite3.Connection, key: str) -> str:
 
 def _dot(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=False))
+
+
+def _normalized_l2_to_cosine(distance: Any) -> float:
+    number = _number_or_none(distance) or 0.0
+    return max(-1.0, min(1.0, 1.0 - ((number * number) / 2.0)))
+
+
+def _indexed_document_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) AS count FROM documents").fetchone()
+    return max(1, int(row["count"] if row else 1))
+
+
+def _load_sqlite_vec(conn: sqlite3.Connection) -> Any | None:
+    try:
+        import sqlite_vec  # type: ignore
+    except ImportError:
+        return None
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        return sqlite_vec
+    except sqlite3.Error:
+        return None
 
 
 def _backend_label(*, fts_enabled: bool, dense_backend: str) -> str:

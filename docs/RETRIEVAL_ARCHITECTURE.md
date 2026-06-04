@@ -24,6 +24,7 @@ search.sqlite
   doc_norms          sparse vector norms
   term_stats         IDF values
   dense_vectors      optional sentence-transformer vectors
+  dense_vector_index optional sqlite-vec index when sqlite-vec is installed
 ```
 
 Supported commands:
@@ -37,11 +38,14 @@ tapesplit search similar /path/to/project.tapesplit canonical_event_000080 --rec
 The default build is fully local and dependency-free. If `sentence-transformers`
 is installed, `--embedding-backend sentence-transformers` adds dense local
 embeddings. Similarity search uses sparse vectors by default and dense vectors
-when present.
+when present. If `sqlite-vec` is installed, the dense vectors are also written
+to a SQLite vector index and queried there before falling back to exact JSON
+vector scan.
 
-For small family hauls, exact vector scan in SQLite is acceptable. The product
-can move to approximate nearest-neighbor search when the number of indexed
-records becomes large enough to make exact scan slow.
+For small family hauls, exact vector scan in SQLite is acceptable. `sqlite-vec`
+keeps vector search inside the same local SQLite artifact. The product can move
+to a heavier approximate nearest-neighbor store when the number of indexed
+records becomes large enough to make local SQLite vector search slow.
 
 ## Better Accuracy Than Plain Vector Search
 
@@ -140,7 +144,7 @@ local vector store when:
 Good candidates to evaluate later:
 
 ```text
-sqlite-vec  stays close to SQLite packaging
+sqlite-vec  current local vector extension, stays close to SQLite packaging
 LanceDB     local embedded vector tables with metadata filtering
 FAISS       fast local ANN library for dense vectors
 Qdrant      local/server vector database with filtering and payloads

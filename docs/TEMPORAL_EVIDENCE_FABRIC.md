@@ -360,9 +360,10 @@ JSONL for append-only raw records
 SQLite for canonical tables soon
 SQLite FTS5 for transcript/OCR search
 local sparse vectors for dependency-free semantic search and similarity
-sentence-transformers exact scan for small local neural indexes
-sqlite-vec, LanceDB, FAISS, or Qdrant later when dense vectors get large enough
-to need approximate nearest-neighbor search
+sentence-transformers for local neural embeddings
+sqlite-vec for local vector indexing inside search.sqlite
+LanceDB, FAISS, or Qdrant later when dense vectors get large enough to need
+heavier approximate nearest-neighbor search
 filesystem for keyframes/thumbnails/media artifacts
 ```
 

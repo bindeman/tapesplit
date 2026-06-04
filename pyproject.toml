@@ -18,6 +18,7 @@ twelvelabs = ["twelvelabs>=1.0.0"]
 local-ai = [
   "openai-whisper",
   "sentence-transformers",
+  "sqlite-vec",
 ]
 
 [project.scripts]

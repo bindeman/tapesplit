@@ -256,7 +256,7 @@ Use local neural embeddings when `sentence-transformers` is installed:
 ```bash
 .venv/bin/tapesplit search build /path/to/family-videos.tapesplit \
   --embedding-backend sentence-transformers \
-  --embedding-model sentence-transformers/all-MiniLM-L6-v2
+  --embedding-model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 ```
 
 Query transcript segments, evidence, canonical events, albums, and group indexes:
@@ -278,4 +278,5 @@ sparse vector scorer and small domain synonym expansions. The optional
 `sentence-transformers` backend adds local neural embeddings without sending
 text to a provider. Similarity search uses sparse vectors by default and also
 uses dense vectors when the index was built with `--embedding-backend
-sentence-transformers`.
+sentence-transformers`. If `sqlite-vec` is installed, dense vectors are also
+indexed inside `search.sqlite` as a local vector table.
