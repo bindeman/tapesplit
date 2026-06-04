@@ -67,6 +67,8 @@ Current local review pipeline:
 .venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene
 .venv/bin/tapesplit cluster-faces /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
+.venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
+.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 ```
 
 Local transcript segments can come from a Whisper-compatible CLI or from an

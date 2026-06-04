@@ -513,6 +513,8 @@ def _review_queue(
         )
 
     for edge in place_context_edges:
+        if _review_closed(edge):
+            continue
         if not edge.get("not_exportable_as_gps") and not _needs_review(edge):
             continue
         event_ids = [str(item) for item in edge.get("canonical_event_ids") or []]
@@ -639,6 +641,8 @@ def _review_queue(
         )
 
     for date in dates:
+        if _review_closed(date):
+            continue
         if not _needs_review(date) and not date.get("excluded_as_event_date"):
             continue
         event_ids = [str(item) for item in date.get("canonical_event_ids") or []]
@@ -896,6 +900,10 @@ def _string_list(values: Any) -> list[str]:
 
 def _needs_review(row: dict[str, Any]) -> bool:
     return str(row.get("review_status") or "").casefold() in {"needs_review", "open"}
+
+
+def _review_closed(row: dict[str, Any]) -> bool:
+    return str(row.get("review_status") or "").casefold() in {"confirmed", "rejected", "excluded"}
 
 
 def _review_item_sort_key(row: dict[str, Any]) -> tuple[int, float, float, str]:

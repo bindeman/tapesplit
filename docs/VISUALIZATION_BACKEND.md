@@ -125,6 +125,51 @@ This avoids flattening different eras of `home` into one location and avoids
 pretending a generic visual place like `lake` or `classroom` is a confirmed
 address.
 
+## Review Corrections
+
+Apply UI or reviewer decisions as durable corrections:
+
+```bash
+.venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
+.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
+```
+
+This appends `corrections.jsonl` and updates the targeted projection files. Raw
+model/provider outputs remain evidence; the correction is the durable reviewed
+fact.
+
+Example scoped home correction:
+
+```json
+{
+  "action": "confirm_place",
+  "target_id": "place_group_000001",
+  "scope_label": "Madison home, 2001-2003",
+  "parent_place_labels": ["Madison, Wisconsin"],
+  "start_year": 2001,
+  "end_year": 2003,
+  "lat": 43.0731,
+  "lng": -89.4012,
+  "formatted_address": "Madison, WI, USA",
+  "exportable_as_gps": true
+}
+```
+
+This confirms only `place_group_000001`. A later `home` group such as
+`home (Eugene, Oregon context)` remains a separate unresolved place until a
+reviewer confirms it too.
+
+Corrections also handle reviewer-confirmed person merges without hardcoded
+nickname rules:
+
+```json
+{
+  "action": "merge_person",
+  "target_id": "people_group_000002",
+  "merge_with_person_group_id": "people_group_000001"
+}
+```
+
 ## UI Shapes This Enables
 
 The exported data can drive:

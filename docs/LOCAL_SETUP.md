@@ -148,6 +148,18 @@ event timelines, scene timelines, people tracks, place tracks, relationship
 graphs, scoped place contexts, visual assets, face clusters, and face-review
 queues.
 
+When a reviewer confirms or rejects a candidate, apply those decisions as a JSON
+or JSONL correction file:
+
+```bash
+.venv/bin/tapesplit review apply /path/to/family-videos.tapesplit review-actions.jsonl
+.venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
+```
+
+This writes `corrections.jsonl` and updates only the targeted projection records.
+For example, confirming `home (Madison, Wisconsin context)` does not merge it
+with a later `home (Eugene, Oregon context)`.
+
 ## Upload To TwelveLabs
 
 Estimate indexing cost before upload:

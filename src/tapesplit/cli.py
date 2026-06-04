@@ -42,6 +42,7 @@ from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
+from tapesplit.review_actions import apply_review_actions
 from tapesplit.scenes import (
     DEFAULT_MIN_SCENE_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
@@ -637,6 +638,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Completed annotations JSONL or CSV. Defaults to annotations.jsonl or annotations.csv in the eval packet.",
     )
 
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Apply durable review corrections to project artifacts.",
+    )
+    review_subparsers = review_parser.add_subparsers(dest="review_command", required=True)
+    review_apply = review_subparsers.add_parser(
+        "apply",
+        help="Apply review actions from a JSON or JSONL file and append corrections.jsonl.",
+    )
+    review_apply.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_apply.add_argument("actions", type=Path, help="JSON/JSONL review action file.")
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -1111,6 +1124,16 @@ def main(argv: list[str] | None = None) -> int:
                             eval_dir=args.eval_dir,
                             annotations_path=args.annotations,
                         ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+        if args.command == "review":
+            if args.review_command == "apply":
+                print(
+                    json.dumps(
+                        apply_review_actions(args.project, actions_path=args.actions),
                         indent=2,
                         sort_keys=True,
                     )
