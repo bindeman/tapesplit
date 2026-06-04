@@ -42,15 +42,31 @@ def export_visualization_data(
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
+    people_by_id = {str(person.get("id")): person for person in people if person.get("id")}
     people_by_event = _rows_by_event(people)
     places_by_event = _rows_by_event(places)
     dates_by_event = _rows_by_event(dates)
     places_by_id = {str(place.get("id")): place for place in places if place.get("id")}
+    face_clusters_by_id = {str(cluster.get("id")): cluster for cluster in face_clusters if cluster.get("id")}
     assets_by_subject = _assets_by_subject(visual_assets)
     faces_by_person = _faces_by_person(face_observations)
     clusters_by_person_candidate = _clusters_by_person_candidate(face_clusters)
     edge_metrics_by_edge = {str(metric.get("edge_id")): metric for metric in edge_metrics if metric.get("edge_id")}
     place_contexts = _place_context_groups(places, events_by_id)
+    place_context_edges = _place_context_edges(context_edges, places_by_id, edge_metrics_by_edge)
+    review_queue = _review_queue(
+        events=events,
+        people=people,
+        places=places,
+        dates=dates,
+        relationship_candidates=relationships,
+        place_context_edges=place_context_edges,
+        face_identity_candidates=face_identity_candidates,
+        events_by_id=events_by_id,
+        people_by_id=people_by_id,
+        face_clusters_by_id=face_clusters_by_id,
+        assets_by_subject=assets_by_subject,
+    )
 
     data = {
         "schema_version": 1,
@@ -103,9 +119,10 @@ def export_visualization_data(
             "nodes": _graph_nodes(people, places, context_edges),
             "edges": _graph_edges(context_edges, edge_metrics_by_edge),
             "candidates": [_relationship_candidate(row, events_by_id) for row in relationships],
-            "place_context_edges": _place_context_edges(context_edges, places_by_id, edge_metrics_by_edge),
+            "place_context_edges": place_context_edges,
             "face_identity_candidates": face_identity_candidates,
         },
+        "review_queue": review_queue,
         "assets": {
             "visual": visual_assets,
             "faces": face_observations,
@@ -122,6 +139,7 @@ def export_visualization_data(
             "relationships": len(relationships),
             "context_edges": len(context_edges),
             "place_contexts": len(place_contexts),
+            "review_items": len(review_queue),
             "visual_assets": len(visual_assets),
             "face_observations": len(face_observations),
             "face_clusters": len(face_clusters),
@@ -450,6 +468,208 @@ def _relationship_candidate(row: dict[str, Any], events_by_id: dict[str, dict[st
     }
 
 
+def _review_queue(
+    *,
+    events: list[dict[str, Any]],
+    people: list[dict[str, Any]],
+    places: list[dict[str, Any]],
+    dates: list[dict[str, Any]],
+    relationship_candidates: list[dict[str, Any]],
+    place_context_edges: list[dict[str, Any]],
+    face_identity_candidates: list[dict[str, Any]],
+    events_by_id: dict[str, dict[str, Any]],
+    people_by_id: dict[str, dict[str, Any]],
+    face_clusters_by_id: dict[str, dict[str, Any]],
+    assets_by_subject: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+
+    for candidate in face_identity_candidates:
+        if not _needs_review(candidate):
+            continue
+        cluster = face_clusters_by_id.get(str(candidate.get("face_cluster_id") or "")) or {}
+        person = people_by_id.get(str(candidate.get("person_group_id") or "")) or {}
+        event_ids = [str(item) for item in candidate.get("supporting_event_ids") or []]
+        items.append(
+            {
+                "task_type": "confirm_face_identity",
+                "source_record_type": "face_identity_candidate",
+                "source_id": str(candidate.get("id") or ""),
+                "title": f"Confirm face identity: {candidate.get('person_label') or person.get('label') or 'unknown person'}",
+                "prompt": "Is this face cluster the same person as the candidate people record?",
+                "priority": 90,
+                "confidence": candidate.get("confidence"),
+                "review_status": candidate.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": str(cluster.get("thumbnail_path") or ""),
+                "candidate": {
+                    "face_cluster_id": str(candidate.get("face_cluster_id") or ""),
+                    "person_group_id": str(candidate.get("person_group_id") or ""),
+                    "person_label": str(candidate.get("person_label") or person.get("label") or ""),
+                },
+                "actions": ["confirm_identity", "reject_identity", "rename_person", "merge_person"],
+            }
+        )
+
+    for edge in place_context_edges:
+        if not edge.get("not_exportable_as_gps") and not _needs_review(edge):
+            continue
+        event_ids = [str(item) for item in edge.get("canonical_event_ids") or []]
+        items.append(
+            {
+                "task_type": "confirm_place_context",
+                "source_record_type": "context_edge",
+                "source_id": str(edge.get("id") or ""),
+                "title": f"Confirm place context: {edge.get('source_label')} -> {edge.get('target_label')}",
+                "prompt": "Does this broader/nearby place relationship help locate the footage, or should it remain only a loose clue?",
+                "priority": 76,
+                "confidence": edge.get("confidence"),
+                "review_status": edge.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "candidate": {
+                    "source_place_id": edge.get("source"),
+                    "target_place_id": edge.get("target"),
+                    "predicate": edge.get("predicate"),
+                    "not_exportable_as_gps": edge.get("not_exportable_as_gps"),
+                },
+                "actions": ["confirm_place_context", "reject_place_context", "confirm_geocode_later"],
+            }
+        )
+
+    for relationship in relationship_candidates:
+        if not _needs_review(relationship):
+            continue
+        scope = relationship.get("scope") if isinstance(relationship.get("scope"), dict) else {}
+        event_ids = [str(item) for item in scope.get("canonical_event_ids") or []]
+        items.append(
+            {
+                "task_type": "confirm_relationship",
+                "source_record_type": "relationship_candidate",
+                "source_id": str(relationship.get("id") or ""),
+                "title": f"Confirm relationship: {relationship.get('subject_label')} -> {relationship.get('object_label')}",
+                "prompt": "Is this relationship supported by the tape evidence, or should it remain unconfirmed?",
+                "priority": 74,
+                "confidence": relationship.get("confidence"),
+                "review_status": relationship.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "candidate": {
+                    "predicate": relationship.get("predicate"),
+                    "subject_label": relationship.get("subject_label"),
+                    "object_label": relationship.get("object_label"),
+                },
+                "actions": ["confirm_relationship", "reject_relationship", "edit_relationship"],
+            }
+        )
+
+    for place in places:
+        if not _needs_review(place):
+            continue
+        event_ids = [str(item) for item in place.get("canonical_event_ids") or []]
+        items.append(
+            {
+                "task_type": "resolve_place",
+                "source_record_type": "place_group",
+                "source_id": str(place.get("id") or ""),
+                "title": f"Resolve place: {_place_display_label(place)}",
+                "prompt": "Confirm what this place label means before it is used as exact location metadata.",
+                "priority": 68,
+                "confidence": place.get("confidence"),
+                "review_status": place.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "candidate": {
+                    "label": place.get("label"),
+                    "display_label": _place_display_label(place),
+                    "place_type": place.get("place_type"),
+                    "context": _place_context_identity(place),
+                },
+                "actions": ["confirm_place", "rename_place", "split_place", "mark_not_location"],
+            }
+        )
+
+    for person in people:
+        if not _needs_review(person):
+            continue
+        event_ids = [str(item) for item in person.get("canonical_event_ids") or []]
+        items.append(
+            {
+                "task_type": "resolve_person",
+                "source_record_type": "people_group",
+                "source_id": str(person.get("id") or ""),
+                "title": f"Resolve person: {person.get('label')}",
+                "prompt": "Confirm whether this name, role, or alias group refers to a real person identity.",
+                "priority": 64,
+                "confidence": person.get("confidence"),
+                "review_status": person.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "candidate": {"label": person.get("label"), "aliases": person.get("aliases") or []},
+                "actions": ["confirm_person", "rename_person", "merge_person", "mark_role_only"],
+            }
+        )
+
+    for event in events:
+        if not _needs_review(event):
+            continue
+        event_id = str(event.get("id") or "")
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        items.append(
+            {
+                "task_type": "review_event",
+                "source_record_type": "event",
+                "source_id": event_id,
+                "title": f"Review event: {event.get('title')}",
+                "prompt": "Confirm the event label, relatedness, people, place, and date before customer-facing export.",
+                "priority": 58,
+                "confidence": event.get("confidence"),
+                "review_status": event.get("review_status") or "needs_review",
+                "related_event_ids": [event_id] if event_id else [],
+                "events": _event_entries([event_id], events_by_id),
+                "thumbnail_path": _first_path(assets_by_subject.get(f"event:{event_id}", []), "thumbnail_path"),
+                "candidate": {
+                    "title": event.get("title"),
+                    "event_type": metadata.get("event_type"),
+                    "relatedness": event.get("relatedness") or metadata.get("relatedness"),
+                },
+                "actions": ["confirm_event", "rename_event", "split_event", "mark_unrelated"],
+            }
+        )
+
+    for date in dates:
+        if not _needs_review(date) and not date.get("excluded_as_event_date"):
+            continue
+        event_ids = [str(item) for item in date.get("canonical_event_ids") or []]
+        items.append(
+            {
+                "task_type": "resolve_date",
+                "source_record_type": "date_group",
+                "source_id": str(date.get("id") or ""),
+                "title": f"Resolve date: {date.get('label') or date.get('date_value')}",
+                "prompt": "Confirm whether this is the recording/event date, historical context, or only a loose clue.",
+                "priority": 56,
+                "confidence": date.get("confidence"),
+                "review_status": date.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "candidate": {
+                    "label": date.get("label"),
+                    "date_value": date.get("date_value"),
+                    "precision": date.get("precision"),
+                    "excluded_as_event_date": date.get("excluded_as_event_date"),
+                },
+                "actions": ["confirm_event_date", "mark_historical_context", "edit_date"],
+            }
+        )
+
+    ordered = sorted(items, key=_review_item_sort_key)
+    for index, item in enumerate(ordered, start=1):
+        item["id"] = f"review_item_{index:06d}"
+    return ordered
+
+
 def _media_record(tape: dict[str, Any]) -> dict[str, Any]:
     probe = tape.get("probe") if isinstance(tape.get("probe"), dict) else {}
     return {
@@ -672,6 +892,22 @@ def _string_list(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values if value not in (None, "")]
+
+
+def _needs_review(row: dict[str, Any]) -> bool:
+    return str(row.get("review_status") or "").casefold() in {"needs_review", "open"}
+
+
+def _review_item_sort_key(row: dict[str, Any]) -> tuple[int, float, float, str]:
+    confidence = _number_or_none(row.get("confidence"))
+    events = row.get("events") if isinstance(row.get("events"), list) else []
+    first_start = _number_or_large(events[0].get("start_s")) if events else 1_000_000_000.0
+    return (
+        -int(row.get("priority") or 0),
+        confidence if confidence is not None else 1.0,
+        first_start,
+        str(row.get("title") or "").casefold(),
+    )
 
 
 def _normalize_context_text(value: Any) -> str:

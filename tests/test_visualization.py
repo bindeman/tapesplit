@@ -207,6 +207,12 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert payload["relationships"]["edges"][0]["weight"] == 0.62
     assert payload["relationships"]["place_context_edges"][0]["source_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
+    assert payload["review_queue"][0]["task_type"] == "confirm_face_identity"
+    assert {item["task_type"] for item in payload["review_queue"]} == {
+        "confirm_face_identity",
+        "confirm_place_context",
+    }
+    assert payload["summary"]["review_items"] == 2
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

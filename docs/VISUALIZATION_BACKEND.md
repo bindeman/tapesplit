@@ -102,6 +102,8 @@ This writes `visualization.json` with:
 - `relationships.place_context_edges`: filtered place-to-place context edges for
   location review and map UIs
 - `relationships.face_identity_candidates`: face-to-person candidates
+- `review_queue`: prioritized UI tasks for confirming identities, places,
+  place-context edges, relationships, dates, and event metadata
 - `assets.visual`, `assets.faces`, and `assets.face_clusters`: raw asset records
 
 ## Location Display
@@ -136,6 +138,7 @@ The exported data can drive:
 - album grids with cover thumbnails
 - face-review queues
 - face-cluster identity review
+- prioritized correction/review inboxes
 - context drilldowns from event to evidence, scene, person, place, and source
   video timestamp
 
