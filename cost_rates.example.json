@@ -1,0 +1,29 @@
+{
+  "azure_openai": {
+    "gpt-4.1-mini": {
+      "input_per_1m": null,
+      "output_per_1m": null,
+      "cached_input_per_1m": null
+    },
+    "gpt-5.5": {
+      "input_per_1m": null,
+      "output_per_1m": null,
+      "cached_input_per_1m": null
+    }
+  },
+  "twelvelabs": {
+    "index": {
+      "duration_min_rate": 0.042
+    },
+    "analyze": {
+      "duration_min_rate": 0.0292,
+      "output_tokens_per_1m": null
+    },
+    "search": {
+      "requests_per_1k": 4.0
+    },
+    "embed_video": {
+      "duration_min_rate": 0.0015
+    }
+  }
+}
