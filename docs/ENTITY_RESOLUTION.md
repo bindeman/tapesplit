@@ -384,6 +384,225 @@ global lifelong relationship.
 }
 ```
 
+## Common Candid Tape Patterns
+
+Old home videos are full of socially meaningful signals that are easy for a
+generic model to flatten into a vague people list. TapeSplit should preserve
+these patterns as role and relationship evidence.
+
+### Calling For Attention
+
+Common transcript forms:
+
+```text
+Filip, look here.
+Philip, wave to grandma.
+Hey, turn around.
+Come here for a second.
+Say hi to mom.
+```
+
+Interpretation:
+
+- the named person is likely visible or expected to be nearby
+- the speaker may be the camera operator or parent/guardian candidate
+- the command often marks the current camera target
+- the name is strong identity evidence if it overlaps a visible face track
+
+Do not assume the speaker is a parent. A friend, sibling, teacher, or relative
+can use the same attention commands.
+
+### Prompting A Performance
+
+Common forms:
+
+```text
+Sing the song.
+Show me your backpack.
+Tell us what happened.
+Blow out the candles.
+Open the present.
+Read the sign.
+```
+
+Interpretation:
+
+- the addressed person is likely the event subject for the next few seconds
+- the action can become a sub-event
+- the speaker role is usually off-camera director/camera operator
+- the result may reveal relationships, age, school grade, or date context
+
+These moments are useful for building narratives because the tape often becomes
+self-describing.
+
+### Name Plus Kinship
+
+Common forms:
+
+```text
+Go to Daddy.
+Give it to Mama.
+Grandma is here.
+Your brother is next.
+This is Uncle Kostya.
+```
+
+Interpretation:
+
+- kinship terms are relationship candidates, not confirmed relationships
+- "Mom" or "Dad" depends on the speaker's perspective
+- "your brother" creates a scoped relationship between the addressed person and
+  the mentioned person
+- translated transcripts may normalize multiple family terms into the same
+  English word, so preserve the original phrase
+
+### Third-Person Narration
+
+Common forms:
+
+```text
+Filip is going to school today.
+This is John's birthday.
+Now Emily is helping him.
+Here is our house in Eugene.
+```
+
+Interpretation:
+
+- strong event-subject evidence when paired with date/place/action
+- the narrator may be off-camera and not visible
+- "our house" creates a household/place relationship candidate
+- named adults may be participants, teachers, neighbors, or relatives depending
+  on context
+
+### First-Person Narration
+
+Common forms:
+
+```text
+I am going to my old school.
+This was my classroom.
+Here is my teacher.
+We used to live here.
+```
+
+Interpretation:
+
+- first-person phrases are strong narrator-perspective evidence
+- they should not be assigned to a child subject just because the child is a
+  recurring person elsewhere in the tape
+- "my teacher" points from narrator/camera-operator candidate to the teacher
+  candidate, not necessarily from the child in the family profile
+
+This is the key pattern in the current Moscow school correction.
+
+### Off-Screen References
+
+Common forms:
+
+```text
+Where did Mom go?
+Tell Grandma thank you.
+We will send this tape to them.
+He is sleeping upstairs.
+```
+
+Interpretation:
+
+- the mentioned person may not be visible
+- the mention is still valuable for family graph and narrative context
+- export should distinguish "mentioned" from "appears in clip"
+- repeated off-screen mentions can reveal absent relatives or intended audience
+
+### Group Address
+
+Common forms:
+
+```text
+Kids, come here.
+Everyone say cheese.
+Class, line up.
+Boys, stop running.
+```
+
+Interpretation:
+
+- creates a group role, not an individual identity
+- may imply setting type, such as classroom, party, sports, or family gathering
+- weak evidence for individual relationships unless followed by names
+
+### Role Names Instead Of Proper Names
+
+Common forms:
+
+```text
+Teacher is coming.
+The principal is at the door.
+The neighbor brought food.
+The coach said to wait.
+```
+
+Interpretation:
+
+- create role entities such as `teacher_candidate` or `neighbor_candidate`
+- do not invent a proper name
+- later named mentions can merge into the role entity if time/place evidence
+  supports it
+
+### Reading Labels, Signs, And Rosters
+
+Common forms:
+
+```text
+That says Maplewood School.
+Find your name.
+There is Philip Bindeman.
+This is room 12.
+```
+
+Interpretation:
+
+- labels can be stronger than speech for spelling
+- rosters and signs may mention people who are not present
+- a child pointing to their own cubby/name tag is stronger identity evidence
+  than a background roster
+- place labels can anchor later interior scenes through scoped carry-forward
+
+### Repeated Household Routines
+
+Common forms:
+
+```text
+Breakfast before school.
+Opening gifts in the living room.
+Getting ready by the front door.
+Calling relatives on the phone.
+Packing for the trip.
+```
+
+Interpretation:
+
+- repeated rooms and routines help build household memory
+- same room does not guarantee same date
+- recurring objects and layouts can support same-home candidates
+- these are useful for grouping clips even when no explicit event name exists
+
+### Corrections We Should Expect
+
+Review UI should make these corrections cheap:
+
+- this named person is being called, but is not visible
+- this person is visible, but the name refers to someone off-screen
+- this speaker is not a parent
+- this is the narrator's old school, not the child's school
+- this class roster includes names of other children, not family members
+- this event is related to the family but not centered on the recurring child
+- this label is a place/object name, not a person
+
+As more family tapes are processed, these patterns should become training and
+evaluation cases. Each correction should add structured examples that improve
+future role assignment without mutating the original transcript or model output.
+
 ## What Gemini Should Do
 
 Gemini or another frontier model can be useful as a proposer and explainer:
