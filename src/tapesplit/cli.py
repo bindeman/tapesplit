@@ -17,6 +17,7 @@ from tapesplit.claims import extract_claims
 from tapesplit.context_graph import build_context_graph
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
+from tapesplit.evaluation import build_eval_packet, score_eval_packet
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
 from tapesplit.gemini_adapter import (
     analyze_project_video_chunks,
@@ -486,6 +487,48 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_similar.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
 
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Build and score family-review evaluation packets.",
+    )
+    eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
+    eval_build = eval_subparsers.add_parser(
+        "build",
+        help="Create a reviewer packet with JSONL, CSV, and SQLite artifacts.",
+    )
+    eval_build.add_argument("project", type=Path, help="TapeSplit project directory.")
+    eval_build.add_argument(
+        "--out",
+        type=Path,
+        help="Output directory. Defaults to <project>/eval_packet.",
+    )
+    eval_build.add_argument(
+        "--max-items",
+        type=int,
+        default=200,
+        help="Maximum review items to include. Use 0 for all. Default: 200.",
+    )
+    eval_build.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing eval packet directory.",
+    )
+    eval_score = eval_subparsers.add_parser(
+        "score",
+        help="Score completed annotations and produce follow-up queues.",
+    )
+    eval_score.add_argument("project", type=Path, help="TapeSplit project directory.")
+    eval_score.add_argument(
+        "--eval-dir",
+        type=Path,
+        help="Eval packet directory. Defaults to <project>/eval_packet.",
+    )
+    eval_score.add_argument(
+        "--annotations",
+        type=Path,
+        help="Completed annotations JSONL or CSV. Defaults to annotations.jsonl or annotations.csv in the eval packet.",
+    )
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -859,6 +902,34 @@ def main(argv: list[str] | None = None) -> int:
                             args.source_id,
                             record_type=args.record_type,
                             limit=args.limit,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+        if args.command == "eval":
+            if args.eval_command == "build":
+                print(
+                    json.dumps(
+                        build_eval_packet(
+                            args.project,
+                            out_dir=args.out,
+                            max_items=args.max_items,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.eval_command == "score":
+                print(
+                    json.dumps(
+                        score_eval_packet(
+                            args.project,
+                            eval_dir=args.eval_dir,
+                            annotations_path=args.annotations,
                         ),
                         indent=2,
                         sort_keys=True,

@@ -280,3 +280,28 @@ text to a provider. Similarity search uses sparse vectors by default and also
 uses dense vectors when the index was built with `--embedding-backend
 sentence-transformers`. If `sqlite-vec` is installed, dense vectors are also
 indexed inside `search.sqlite` as a local vector table.
+
+## Family Review Evaluation
+
+Build a reviewer packet after event stitching, grouping, relationship extraction,
+and context-graph construction:
+
+```bash
+.venv/bin/tapesplit eval build /path/to/family-videos.tapesplit --force
+```
+
+The packet contains JSONL, CSV, and SQLite artifacts under
+`eval_packet/`. A non-technical reviewer can copy
+`annotations.template.csv` to `annotations.csv`, fill in judgments and notes,
+and mark uncertain items as `needs_followup`.
+
+Score the completed annotations:
+
+```bash
+.venv/bin/tapesplit eval score /path/to/family-videos.tapesplit
+```
+
+Scoring writes `eval_report.json`, `scored_items.jsonl`, and
+`family_followups.jsonl`, and updates `eval.sqlite` with scored annotation
+tables. See `docs/EVALUATION_WORKFLOW.md` for the full reviewer, SQL, and
+prompting workflow.

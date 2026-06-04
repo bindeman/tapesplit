@@ -40,6 +40,10 @@ See [docs/PHOTO_ARCHIVE_PRODUCT.md](docs/PHOTO_ARCHIVE_PRODUCT.md) for a
 separate photo-library family-graph product concept that reuses the same
 evidence/review architecture.
 
+See [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) for the
+family-review evaluation packet, SQL learning workflow, annotation scoring, and
+follow-up queue.
+
 Current local review pipeline:
 
 ```bash
@@ -49,7 +53,9 @@ Current local review pipeline:
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit
 .venv/bin/tapesplit build-groups /path/to/project.tapesplit
 .venv/bin/tapesplit build-relationships /path/to/project.tapesplit
+.venv/bin/tapesplit build-context-graph /path/to/project.tapesplit
 .venv/bin/tapesplit search build /path/to/project.tapesplit
+.venv/bin/tapesplit eval build /path/to/project.tapesplit --force
 .venv/bin/tapesplit export-report /path/to/project.tapesplit
 ```
 
@@ -71,3 +77,10 @@ existing event, place, album, evidence item, transcript segment, or graph edge.
 The local AI extra also installs `sqlite-vec`, so dense embeddings are indexed
 inside `search.sqlite` when available.
 See `docs/RETRIEVAL_ARCHITECTURE.md` for the longer hybrid search plan.
+
+Create and score a family review packet:
+
+```bash
+.venv/bin/tapesplit eval build /path/to/project.tapesplit --force
+.venv/bin/tapesplit eval score /path/to/project.tapesplit --annotations annotations.csv
+```
