@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime
+import json
 from pathlib import Path
 import re
 from typing import Any
@@ -39,17 +40,7 @@ ROLE_PERSON_TOKENS = {
     "women",
 }
 
-PERSON_ALIAS_KEYS = {
-    "filia": "filip",
-    "filip": "filip",
-    "filipp": "filip",
-    "filya": "filip",
-    "phillip": "filip",
-    "philip": "filip",
-    "philipp": "filip",
-    "филипп": "filip",
-    "филя": "filip",
-}
+PERSON_ALIAS_FILENAMES = ("person_aliases.json", "people_aliases.json")
 
 ROOM_PLACE_TOKENS = {
     "bedroom",
@@ -147,8 +138,9 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     context_events = [event for event in events if _is_contextual_event(event)]
     evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     evidence_by_id = {row.get("id"): row for row in evidence if row.get("id")}
+    person_alias_keys = _person_alias_keys(project)
 
-    people_groups = _build_people_groups(context_events, evidence_by_id)
+    people_groups = _build_people_groups(context_events, evidence_by_id, person_alias_keys)
     place_groups = _build_place_groups(context_events, evidence_by_id)
     date_groups = _build_date_groups(context_events, evidence_by_id)
     language_groups = _build_language_groups(context_events, evidence_by_id)
@@ -194,11 +186,12 @@ def _load_groupable_events(project: Path, *, prefer_canonical: bool) -> list[dic
 def _build_people_groups(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
+    person_alias_keys: dict[str, str],
 ) -> list[dict[str, Any]]:
     buckets: dict[str, dict[str, Any]] = {}
     for event in events:
         for person in _metadata_list(event, "people"):
-            key, kind = _person_key_and_kind(person)
+            key, kind = _person_key_and_kind(person, person_alias_keys)
             bucket = buckets.setdefault(
                 key,
                 {
@@ -786,12 +779,75 @@ def _parse_date_candidate(value: Any) -> dict[str, Any]:
     }
 
 
-def _person_key_and_kind(value: str) -> tuple[str, str]:
+def _person_key_and_kind(value: str, person_alias_keys: dict[str, str]) -> tuple[str, str]:
     normalized = _normalize_key(value)
     tokens = set(normalized.split())
     if normalized in ROLE_PERSON_TOKENS or tokens & ROLE_PERSON_TOKENS:
         return normalized, "role_candidate"
-    return PERSON_ALIAS_KEYS.get(normalized, normalized), "person_candidate"
+    spelling_key = _person_spelling_key(normalized)
+    return person_alias_keys.get(normalized) or person_alias_keys.get(spelling_key) or spelling_key, "person_candidate"
+
+
+def _person_alias_keys(project: Path) -> dict[str, str]:
+    groups = _load_project_person_alias_groups(project)
+    keys: dict[str, str] = {}
+    for group in groups:
+        labels = [str(label) for label in group if str(label).strip()]
+        if len(labels) < 2:
+            continue
+        canonical = _person_spelling_key(_normalize_key(labels[0]))
+        for label in labels:
+            normalized = _normalize_key(label)
+            if not normalized:
+                continue
+            keys.setdefault(normalized, canonical)
+            keys.setdefault(_person_spelling_key(normalized), canonical)
+    return keys
+
+
+def _load_project_person_alias_groups(project: Path) -> list[tuple[str, ...]]:
+    groups = []
+    for filename in PERSON_ALIAS_FILENAMES:
+        path = project / filename
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        items = payload.get("aliases") or payload.get("groups") if isinstance(payload, dict) else payload
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            labels = _alias_group_labels(item)
+            if len(labels) >= 2:
+                groups.append(tuple(labels))
+    return groups
+
+
+def _alias_group_labels(item: Any) -> list[str]:
+    if isinstance(item, list):
+        return [str(label) for label in item if str(label).strip()]
+    if not isinstance(item, dict):
+        return []
+    labels = []
+    for key in ["canonical", "name", "label", "key"]:
+        if item.get(key):
+            labels.append(str(item[key]))
+            break
+    aliases = item.get("aliases") or item.get("names") or []
+    if isinstance(aliases, list):
+        labels.extend(str(alias) for alias in aliases if str(alias).strip())
+    return labels
+
+
+def _person_spelling_key(value: str) -> str:
+    tokens = []
+    for token in value.split():
+        if re.fullmatch(r"[a-z]+", token):
+            token = token.replace("ph", "f")
+            token = re.sub(r"([bcdfghjklmnpqrstvwxyz])\1+", r"\1", token)
+            if len(token) > 3 and token.endswith("ie"):
+                token = token[:-2] + "y"
+        tokens.append(token)
+    return " ".join(tokens)
 
 
 def _place_kind(value: str, event: dict[str, Any]) -> str:

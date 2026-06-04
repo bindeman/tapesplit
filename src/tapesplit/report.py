@@ -6,26 +6,46 @@ from typing import Any
 
 from tapesplit.costs import summarize_project_costs
 from tapesplit.storage import read_jsonl
+from tapesplit.visibility import build_visibility_filter
 
 
 def export_review_report(project_dir: Path) -> dict:
     project = project_dir.expanduser().resolve()
+    visibility = build_visibility_filter(project)
     tapes = read_jsonl(project / "tapes.jsonl")
-    evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
-    claims = read_jsonl(project / "claims.jsonl") + read_jsonl(project / "gemini_claims.jsonl")
-    raw_events = read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
-    canonical_events = read_jsonl(project / "canonical_events.jsonl")
+    all_evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
+    evidence_by_id = {row.get("id"): row for row in all_evidence if row.get("id")}
+    evidence = [row for row in all_evidence if visibility.visible_row(row)]
+    claims = [
+        row
+        for row in read_jsonl(project / "claims.jsonl") + read_jsonl(project / "gemini_claims.jsonl")
+        if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
+    raw_events = [
+        row
+        for row in read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
+        if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
+    canonical_events = [
+        row
+        for row in read_jsonl(project / "canonical_events.jsonl")
+        if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
     events = canonical_events or raw_events
-    albums = read_jsonl(project / "albums.jsonl")
-    people_groups = read_jsonl(project / "people_groups.jsonl")
-    place_groups = read_jsonl(project / "place_groups.jsonl")
-    date_groups = read_jsonl(project / "date_groups.jsonl")
-    language_groups = read_jsonl(project / "language_groups.jsonl")
-    event_groups = read_jsonl(project / "event_groups.jsonl")
-    relationship_candidates = read_jsonl(project / "relationship_candidates.jsonl")
-    relationship_review_tasks = read_jsonl(project / "relationship_review_tasks.jsonl")
-    context_edges = read_jsonl(project / "context_edges.jsonl")
-    edge_metrics = read_jsonl(project / "edge_metrics.jsonl")
+    albums = [row for row in read_jsonl(project / "albums.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    people_groups = [row for row in read_jsonl(project / "people_groups.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    place_groups = [row for row in read_jsonl(project / "place_groups.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    date_groups = [row for row in read_jsonl(project / "date_groups.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    language_groups = [row for row in read_jsonl(project / "language_groups.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    event_groups = [row for row in read_jsonl(project / "event_groups.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    relationship_candidates = [
+        row for row in read_jsonl(project / "relationship_candidates.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
+    relationship_review_tasks = [
+        row for row in read_jsonl(project / "relationship_review_tasks.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
+    context_edges = [row for row in read_jsonl(project / "context_edges.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
+    edge_metrics = [row for row in read_jsonl(project / "edge_metrics.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)]
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)

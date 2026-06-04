@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from tapesplit.storage import append_jsonl, read_jsonl
+from tapesplit.visibility import build_visibility_filter
 
 
 KINSHIP_PATTERNS = [
@@ -119,9 +120,19 @@ ROLE_ONLY_PEOPLE = {
 
 def build_relationship_candidates(project_dir: Path, *, context_seconds: float = 8.0) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
-    events = sorted(read_jsonl(project / "canonical_events.jsonl"), key=lambda row: _number_or_large(row.get("start_s")))
-    evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
-    transcripts = _relationship_observations(project, evidence)
+    visibility = build_visibility_filter(project)
+    all_evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
+    evidence_by_id = {row.get("id"): row for row in all_evidence if row.get("id")}
+    events = sorted(
+        [
+            row
+            for row in read_jsonl(project / "canonical_events.jsonl")
+            if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+        ],
+        key=lambda row: _number_or_large(row.get("start_s")),
+    )
+    evidence = [row for row in all_evidence if visibility.visible_row(row)]
+    transcripts = _relationship_observations(project, evidence, visibility=visibility)
     person_entities = _load_person_entities(project, events)
 
     relationship_buckets: dict[tuple[str, str, str, str], dict[str, Any]] = {}
@@ -297,12 +308,19 @@ def _load_person_entities(project: Path, events: list[dict[str, Any]]) -> list[d
     return entities
 
 
-def _relationship_observations(project: Path, evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _relationship_observations(
+    project: Path,
+    evidence: list[dict[str, Any]],
+    *,
+    visibility: Any,
+) -> list[dict[str, Any]]:
     evidence_by_transcript_id = _evidence_by_transcript_id(evidence)
     observations = []
     seen: set[tuple[str, float | None, float | None, str]] = set()
 
     for row in read_jsonl(project / "transcript_segments.jsonl"):
+        if visibility.excluded_row(row):
+            continue
         text = str(row.get("text") or "").strip()
         if not text:
             continue

@@ -10,6 +10,7 @@ import sqlite3
 from typing import Any
 
 from tapesplit.storage import read_jsonl
+from tapesplit.visibility import build_visibility_filter
 
 
 SEARCH_DB_NAME = "search.sqlite"
@@ -116,7 +117,10 @@ def query_search_index(project_dir: Path, query: str, *, limit: int = 10) -> dic
 
 def collect_search_documents(project: Path, *, include_groups: bool = True) -> list[dict[str, Any]]:
     docs = []
+    visibility = build_visibility_filter(project)
     for row in read_jsonl(project / "transcript_segments.jsonl"):
+        if visibility.excluded_row(row):
+            continue
         docs.append(
             _document(
                 "transcript",
@@ -139,6 +143,8 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
     for row in evidence_rows:
         if row.get("kind") == "non_content_range":
             continue
+        if visibility.excluded_row(row):
+            continue
         docs.append(
             _document(
                 "evidence",
@@ -160,6 +166,8 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
         read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
     )
     for row in events:
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
         docs.append(
             _document(
@@ -197,6 +205,8 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             ("edge_metrics.jsonl", "edge_metric", "metric_set"),
         ]:
             for row in read_jsonl(project / filename):
+                if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+                    continue
                 docs.append(_group_document(row, record_type=record_type, title_key=title_key))
 
     return [doc for doc in docs if doc["title"] or doc["text"]]

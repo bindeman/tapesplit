@@ -260,16 +260,16 @@ Use multiple weak signals rather than one brittle rule.
 - transliteration match
 - edit distance / token sort distance
 - phonetic similarity
-- nickname table
+- user-confirmed or project-provided alias set
 - full-name containment, such as `Philip Bindeman` containing `Philip`
-- abbreviation or initial match, such as `Phil` for `Philip`
+- abbreviation or initial candidate, such as `Phil` for `Philip`, requiring review
 
 ### Language Signals
 
 - source language
 - translated string
 - transliterated string
-- language-specific nickname dictionaries
+- model-proposed nickname candidates with cited evidence
 - model-provided translation alternatives
 
 For Russian/English tapes, generate comparison variants:
@@ -765,8 +765,12 @@ Needs review:
 - Normalize names with:
   - casefolding
   - punctuation stripping
-  - Russian transliteration table for common names
-  - hardcoded nickname/alias map for family review
+  - script transliteration for spelling variants, not name-specific nickname
+    assumptions
+- Apply only project-supplied aliases or conservative spelling normalization
+  automatically.
+- Generate nickname, transliteration, and cross-language identity suggestions as
+  reviewable alias candidates, not automatic merges.
 - Extend current `people_groups.jsonl` to cite `mention_ids`.
 - Generate conservative role assignments for canonical events:
   - event subject
