@@ -14,6 +14,7 @@ from tapesplit.costs import (
     summarize_project_costs,
 )
 from tapesplit.claims import extract_claims
+from tapesplit.context_graph import build_context_graph
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
@@ -422,6 +423,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Transcript context window around kinship terms. Default: 8.",
     )
 
+    build_context_graph_parser = subparsers.add_parser(
+        "build-context-graph",
+        help="Build local context graph edges and edge metrics.",
+    )
+    build_context_graph_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     search_parser = subparsers.add_parser(
         "search",
         help="Build and query the local SQLite text/semantic search index.",
@@ -781,6 +788,9 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
+            return 0
+        if args.command == "build-context-graph":
+            print(json.dumps(build_context_graph(args.project), indent=2, sort_keys=True))
             return 0
         if args.command == "search":
             if args.search_command == "build":

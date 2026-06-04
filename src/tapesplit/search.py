@@ -193,6 +193,8 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             ("language_groups.jsonl", "language_group", "language"),
             ("relationship_candidates.jsonl", "relationship_candidate", "predicate"),
             ("relationship_review_tasks.jsonl", "relationship_review_task", "question"),
+            ("context_edges.jsonl", "context_edge", "predicate"),
+            ("edge_metrics.jsonl", "edge_metric", "metric_set"),
         ]:
             for row in read_jsonl(project / filename):
                 docs.append(_group_document(row, record_type=record_type, title_key=title_key))
@@ -251,6 +253,10 @@ def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) ->
         "supporting_signals",
         "question",
         "candidate_ids",
+        "subject_type",
+        "object_type",
+        "computed_weight",
+        "metric_set",
     ]:
         value = row.get(key)
         if isinstance(value, list):

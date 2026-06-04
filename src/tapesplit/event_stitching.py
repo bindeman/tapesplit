@@ -63,7 +63,12 @@ def stitch_project_events(
     prefer_gemini: bool = True,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
-    source_events = load_source_events(project, prefer_gemini=prefer_gemini)
+    evidence_by_id = _evidence_by_id(project)
+    tape_offsets = _tape_offsets(project)
+    source_events = [
+        _with_source_context(event, evidence_by_id=evidence_by_id, tape_offsets=tape_offsets)
+        for event in load_source_events(project, prefer_gemini=prefer_gemini)
+    ]
     stitched = stitch_events(source_events, max_gap_seconds=max_gap_seconds)
 
     output = project / "canonical_events.jsonl"
@@ -97,7 +102,7 @@ def stitch_events(
     normalized = [_normalize_candidate(row) for row in events]
     candidates = sorted(
         [row for row in normalized if _number_or_none(row.get("start_s")) is not None],
-        key=lambda row: (_number_or_none(row.get("start_s")) or 0.0, _number_or_none(row.get("end_s")) or 0.0),
+        key=lambda row: (_event_timeline_start(row), _event_timeline_end(row)),
     )
     clusters: list[dict[str, Any]] = []
     for event in candidates:
@@ -118,16 +123,28 @@ def _normalize_candidate(event: dict[str, Any]) -> dict[str, Any]:
     metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
     start_s = _number_or_none(event.get("start_s"))
     end_s = _number_or_none(event.get("end_s"))
+    timeline_start_s = _first_number(event.get("timeline_start_s"), event.get("_timeline_start_s"))
+    timeline_end_s = _first_number(event.get("timeline_end_s"), event.get("_timeline_end_s"))
     if start_s is not None and end_s is not None and end_s < start_s:
         start_s, end_s = end_s, start_s
     if start_s is not None and end_s is None:
         end_s = start_s
     if end_s is not None and start_s is None:
         start_s = end_s
+    if timeline_start_s is None:
+        timeline_start_s = start_s
+    if timeline_end_s is None:
+        timeline_end_s = end_s
+    if timeline_start_s is not None and timeline_end_s is not None and timeline_end_s < timeline_start_s:
+        timeline_start_s, timeline_end_s = timeline_end_s, timeline_start_s
     return {
         **event,
         "start_s": start_s,
         "end_s": end_s,
+        "_timeline_start_s": timeline_start_s,
+        "_timeline_end_s": timeline_end_s,
+        "_source_video_ids": _source_video_ids(event, metadata),
+        "_source_ranges": _source_ranges(event, metadata),
         "_event_type": metadata.get("event_type") or event.get("event_type"),
         "_people": _string_list(metadata.get("people") or event.get("people")),
         "_places": _string_list(metadata.get("place_candidates") or event.get("place_candidates")),
@@ -142,16 +159,16 @@ def _normalize_candidate(event: dict[str, Any]) -> dict[str, Any]:
 def _new_cluster(event: dict[str, Any]) -> dict[str, Any]:
     return {
         "events": [event],
-        "start_s": event.get("start_s"),
-        "end_s": event.get("end_s"),
+        "start_s": _event_timeline_start(event),
+        "end_s": _event_timeline_end(event),
         "merge_reasons": [],
     }
 
 
 def _add_to_cluster(cluster: dict[str, Any], event: dict[str, Any], reason: str) -> None:
     cluster["events"].append(event)
-    cluster["start_s"] = min(_number_or_none(cluster.get("start_s")) or 0.0, _number_or_none(event.get("start_s")) or 0.0)
-    cluster["end_s"] = max(_number_or_none(cluster.get("end_s")) or 0.0, _number_or_none(event.get("end_s")) or 0.0)
+    cluster["start_s"] = min(_number_or_none(cluster.get("start_s")) or 0.0, _event_timeline_start(event))
+    cluster["end_s"] = max(_number_or_none(cluster.get("end_s")) or 0.0, _event_timeline_end(event))
     cluster["merge_reasons"].append(reason)
 
 
@@ -162,9 +179,8 @@ def _should_merge(
     max_gap_seconds: float,
 ) -> tuple[bool, str]:
     prior_events = cluster["events"]
-    last = prior_events[-1]
     cluster_end = _number_or_none(cluster.get("end_s")) or 0.0
-    event_start = _number_or_none(event.get("start_s")) or 0.0
+    event_start = _event_timeline_start(event)
     gap = event_start - cluster_end
     if gap > max_gap_seconds:
         return False, "gap_too_large"
@@ -225,6 +241,10 @@ def _merge_score(left: dict[str, Any], right: dict[str, Any], *, gap_seconds: fl
         score += 0.5
         reasons.append("nearby")
 
+    if _different_source_videos(left, right):
+        score += 0.5
+        reasons.append("cross_tape_candidate")
+
     if _has_chunk_boundary_note(left) or _has_chunk_boundary_note(right):
         score += 0.75
         reasons.append("chunk_boundary")
@@ -242,9 +262,15 @@ def _cluster_to_event(index: int, cluster: dict[str, Any]) -> dict[str, Any]:
     places = _unique_string_items(item for row in events for item in row.get("_places", []))
     dates = _unique_string_items(item for row in events for item in row.get("_dates", []))
     languages = _unique_string_items(item for row in events for item in row.get("_languages", []))
+    source_video_ids = _unique_string_items(item for row in events for item in row.get("_source_video_ids", []))
+    source_ranges = _merge_source_ranges(events)
     event_type = _most_common(row.get("_event_type") for row in events if row.get("_event_type"))
     relatedness = _most_common(row.get("relatedness") for row in events if row.get("relatedness"))
-    review_status = "needs_review" if len(events) > 1 or any(row.get("review_status") == "needs_review" for row in events) else "unreviewed"
+    review_status = (
+        "needs_review"
+        if len(events) > 1 or len(source_video_ids) > 1 or any(row.get("review_status") == "needs_review" for row in events)
+        else "unreviewed"
+    )
     confidence_values = [float(row.get("confidence")) for row in events if isinstance(row.get("confidence"), (int, float))]
     confidence = round(sum(confidence_values) / len(confidence_values), 3) if confidence_values else None
 
@@ -254,6 +280,10 @@ def _cluster_to_event(index: int, cluster: dict[str, Any]) -> dict[str, Any]:
         "place_candidates": places,
         "date_candidates": dates,
         "languages": languages,
+        "source_video_ids": source_video_ids,
+        "source_ranges": source_ranges,
+        "timeline_start_s": round(float(cluster.get("start_s") or 0.0), 3),
+        "timeline_end_s": round(float(cluster.get("end_s") or 0.0), 3),
         "source_event_ids": source_event_ids,
         "source_event_count": len(events),
         "merge_reasons": cluster.get("merge_reasons", []),
@@ -286,6 +316,194 @@ def _has_chunk_boundary_note(event: dict[str, Any]) -> bool:
     metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
     notes = metadata.get("validation_notes") if isinstance(metadata.get("validation_notes"), list) else []
     return any("chunk" in str(note) for note in notes)
+
+
+def _event_timeline_start(event: dict[str, Any]) -> float:
+    return _first_number(event.get("timeline_start_s"), event.get("_timeline_start_s"), event.get("start_s")) or 0.0
+
+
+def _event_timeline_end(event: dict[str, Any]) -> float:
+    return _first_number(event.get("timeline_end_s"), event.get("_timeline_end_s"), event.get("end_s")) or _event_timeline_start(event)
+
+
+def _evidence_by_id(project: Path) -> dict[str, dict[str, Any]]:
+    rows = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
+    return {str(row.get("id")): row for row in rows if row.get("id")}
+
+
+def _tape_offsets(project: Path) -> dict[str, float]:
+    offsets = {}
+    cursor = 0.0
+    for tape in read_jsonl(project / "tapes.jsonl"):
+        source_video_id = str(tape.get("id") or "")
+        if source_video_id:
+            offsets[source_video_id] = cursor
+        probe = tape.get("probe") if isinstance(tape.get("probe"), dict) else {}
+        duration = _number_or_none(probe.get("duration_s") or tape.get("duration_s")) or 0.0
+        cursor += max(0.0, duration)
+    return offsets
+
+
+def _with_source_context(
+    event: dict[str, Any],
+    *,
+    evidence_by_id: dict[str, dict[str, Any]],
+    tape_offsets: dict[str, float],
+) -> dict[str, Any]:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    source_video_ids = _source_video_ids(event, metadata)
+    for evidence_id in event.get("evidence_ids") or []:
+        source_video_id = evidence_by_id.get(str(evidence_id), {}).get("source_video_id")
+        if source_video_id:
+            source_video_ids.append(str(source_video_id))
+    source_video_ids = _unique_string_items(source_video_ids)
+
+    source_ranges = [
+        _range_with_timeline(source_range, tape_offsets=tape_offsets)
+        for source_range in _source_ranges(event, metadata)
+    ]
+    source_ranges = [source_range for source_range in source_ranges if source_range]
+    if not source_ranges and len(source_video_ids) == 1:
+        source_range = _range_with_timeline(
+            {
+                "source_video_id": source_video_ids[0],
+                "start_s": event.get("start_s"),
+                "end_s": event.get("end_s"),
+            },
+            tape_offsets=tape_offsets,
+        )
+        if source_range:
+            source_ranges.append(source_range)
+
+    timeline_start_s = _first_range_value(source_ranges, "timeline_start_s")
+    timeline_end_s = _last_range_value(source_ranges, "timeline_end_s")
+    enriched_metadata = dict(metadata)
+    if source_video_ids:
+        enriched_metadata["source_video_ids"] = source_video_ids
+    if source_ranges:
+        enriched_metadata["source_ranges"] = source_ranges
+    if timeline_start_s is not None:
+        enriched_metadata["timeline_start_s"] = timeline_start_s
+    if timeline_end_s is not None:
+        enriched_metadata["timeline_end_s"] = timeline_end_s
+
+    enriched = dict(event)
+    enriched["metadata"] = enriched_metadata
+    if source_video_ids:
+        enriched["source_video_ids"] = source_video_ids
+    if timeline_start_s is not None:
+        enriched["timeline_start_s"] = timeline_start_s
+    if timeline_end_s is not None:
+        enriched["timeline_end_s"] = timeline_end_s
+    return enriched
+
+
+def _source_video_ids(event: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    values = []
+    for source in [
+        event.get("_source_video_ids"),
+        event.get("source_video_ids"),
+        metadata.get("source_video_ids"),
+    ]:
+        values.extend(_string_list(source))
+    if event.get("source_video_id"):
+        values.append(str(event["source_video_id"]))
+    for source_range in _source_ranges(event, metadata):
+        if source_range.get("source_video_id"):
+            values.append(str(source_range["source_video_id"]))
+    return _unique_string_items(values)
+
+
+def _source_ranges(event: dict[str, Any], metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    ranges = []
+    for source in [event.get("_source_ranges"), event.get("source_ranges"), metadata.get("source_ranges")]:
+        if not isinstance(source, list):
+            continue
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            source_video_id = item.get("source_video_id")
+            if not source_video_id:
+                continue
+            ranges.append(
+                {
+                    "source_video_id": str(source_video_id),
+                    "start_s": _number_or_none(item.get("start_s")),
+                    "end_s": _number_or_none(item.get("end_s")),
+                    "timeline_start_s": _number_or_none(item.get("timeline_start_s")),
+                    "timeline_end_s": _number_or_none(item.get("timeline_end_s")),
+                }
+            )
+    return ranges
+
+
+def _range_with_timeline(source_range: dict[str, Any], *, tape_offsets: dict[str, float]) -> dict[str, Any] | None:
+    source_video_id = str(source_range.get("source_video_id") or "")
+    if not source_video_id:
+        return None
+    start_s = _number_or_none(source_range.get("start_s"))
+    end_s = _number_or_none(source_range.get("end_s"))
+    if start_s is None and end_s is not None:
+        start_s = end_s
+    if end_s is None and start_s is not None:
+        end_s = start_s
+    if start_s is None or end_s is None:
+        return None
+    if end_s < start_s:
+        start_s, end_s = end_s, start_s
+    offset = tape_offsets.get(source_video_id, 0.0)
+    timeline_start_s = _number_or_none(source_range.get("timeline_start_s"))
+    timeline_end_s = _number_or_none(source_range.get("timeline_end_s"))
+    if timeline_start_s is None:
+        timeline_start_s = offset + start_s
+    if timeline_end_s is None:
+        timeline_end_s = offset + end_s
+    return {
+        "source_video_id": source_video_id,
+        "start_s": round(start_s, 3),
+        "end_s": round(end_s, 3),
+        "timeline_start_s": round(timeline_start_s, 3),
+        "timeline_end_s": round(timeline_end_s, 3),
+    }
+
+
+def _first_range_value(source_ranges: list[dict[str, Any]], key: str) -> float | None:
+    values = [_number_or_none(source_range.get(key)) for source_range in source_ranges]
+    values = [value for value in values if value is not None]
+    return min(values) if values else None
+
+
+def _last_range_value(source_ranges: list[dict[str, Any]], key: str) -> float | None:
+    values = [_number_or_none(source_range.get(key)) for source_range in source_ranges]
+    values = [value for value in values if value is not None]
+    return max(values) if values else None
+
+
+def _different_source_videos(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_ids = set(_string_list(left.get("_source_video_ids")))
+    right_ids = set(_string_list(right.get("_source_video_ids")))
+    return bool(left_ids and right_ids and left_ids.isdisjoint(right_ids))
+
+
+def _merge_source_ranges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranges = []
+    seen = set()
+    for event in events:
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        event_ranges = event.get("_source_ranges") or _source_ranges(event, metadata)
+        for source_range in event_ranges:
+            key = (
+                source_range.get("source_video_id"),
+                source_range.get("start_s"),
+                source_range.get("end_s"),
+                source_range.get("timeline_start_s"),
+                source_range.get("timeline_end_s"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            ranges.append(source_range)
+    return sorted(ranges, key=lambda source_range: _number_or_none(source_range.get("timeline_start_s")) or 0.0)
 
 
 def _content_tokens(value: Any) -> set[str]:
@@ -346,6 +564,14 @@ def _most_common(values: Any) -> str | None:
     if not cleaned:
         return None
     return Counter(cleaned).most_common(1)[0][0]
+
+
+def _first_number(*values: Any) -> float | None:
+    for value in values:
+        number = _number_or_none(value)
+        if number is not None:
+            return number
+    return None
 
 
 def _number_or_none(value: Any) -> float | None:

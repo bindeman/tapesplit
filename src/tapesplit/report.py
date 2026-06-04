@@ -24,6 +24,8 @@ def export_review_report(project_dir: Path) -> dict:
     event_groups = read_jsonl(project / "event_groups.jsonl")
     relationship_candidates = read_jsonl(project / "relationship_candidates.jsonl")
     relationship_review_tasks = read_jsonl(project / "relationship_review_tasks.jsonl")
+    context_edges = read_jsonl(project / "context_edges.jsonl")
+    edge_metrics = read_jsonl(project / "edge_metrics.jsonl")
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -42,6 +44,8 @@ def export_review_report(project_dir: Path) -> dict:
             event_groups=event_groups,
             relationship_candidates=relationship_candidates,
             relationship_review_tasks=relationship_review_tasks,
+            context_edges=context_edges,
+            edge_metrics=edge_metrics,
             summaries=summaries,
             non_content=non_content,
             costs=costs,
@@ -66,6 +70,8 @@ def export_review_report(project_dir: Path) -> dict:
         "event_groups": len(event_groups),
         "relationship_candidates": len(relationship_candidates),
         "relationship_review_tasks": len(relationship_review_tasks),
+        "context_edges": len(context_edges),
+        "edge_metrics": len(edge_metrics),
     }
 
 
@@ -83,6 +89,8 @@ def _render_html(
     event_groups: list[dict[str, Any]],
     relationship_candidates: list[dict[str, Any]],
     relationship_review_tasks: list[dict[str, Any]],
+    context_edges: list[dict[str, Any]],
+    edge_metrics: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
@@ -200,6 +208,10 @@ def _render_html(
     <div class="table-wrap">{_table(relationship_candidates, ["predicate", "subject_label", "object_label", "confidence", "review_status", "evidence_ids", "supporting_signals"])}</div>
     <h3>Relationship Review Tasks</h3>
     <div class="table-wrap">{_table(relationship_review_tasks, ["question", "priority", "candidate_ids", "evidence_ids", "review_status"])}</div>
+    <h3>Context Edges</h3>
+    <div class="table-wrap">{_table(context_edges[:200], ["predicate", "subject_label", "object_label", "confidence", "review_status", "evidence_ids", "supporting_signals"])}</div>
+    <h3>Edge Metrics</h3>
+    <div class="table-wrap">{_table(edge_metrics[:200], ["edge_id", "metric_set", "shared_event_count", "total_overlap_seconds", "evidence_count", "computed_weight", "review_status"])}</div>
   </section>
 
   <section>
@@ -327,9 +339,20 @@ def _source_link(
     path = tape.get("path")
     if not path:
         return ""
-    start_s = _number_or_none(event.get("start_s")) or 0.0
+    start_s = _source_local_start_s(event, source_video_id)
     href = Path(path).expanduser().resolve().as_uri() + f"#t={max(0, int(start_s))}"
     return f'<a class="pill" href="{html.escape(href)}">source video</a>'
+
+
+def _source_local_start_s(event: dict[str, Any], source_video_id: str) -> float:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    source_ranges = metadata.get("source_ranges") if isinstance(metadata.get("source_ranges"), list) else []
+    for source_range in source_ranges:
+        if not isinstance(source_range, dict):
+            continue
+        if str(source_range.get("source_video_id") or "") == str(source_video_id):
+            return _number_or_none(source_range.get("start_s")) or 0.0
+    return _number_or_none(event.get("start_s")) or 0.0
 
 
 def _cost_details(costs: dict[str, Any]) -> str:

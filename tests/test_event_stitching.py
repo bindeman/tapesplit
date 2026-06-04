@@ -158,3 +158,74 @@ def test_stitch_project_events_prefers_gemini_events(tmp_path: Path):
     assert result["source_events"] == 2
     assert result["canonical_events"] == 1
     assert canonical[0]["metadata"]["source_event_ids"] == ["gem_event_000001", "gem_event_000002"]
+
+
+def test_stitch_project_events_can_merge_event_across_tapes(tmp_path: Path):
+    (tmp_path / "tapes.jsonl").write_text(
+        "\n".join(
+            [
+                '{"id":"video_000001","filename":"tape-1.mp4","probe":{"duration_s":100}}',
+                '{"id":"video_000002","filename":"tape-2.mp4","probe":{"duration_s":80}}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "gemini_evidence.jsonl").write_text(
+        "\n".join(
+            [
+                '{"id":"ev_1","source_video_id":"video_000001","start_s":82,"end_s":100}',
+                '{"id":"ev_2","source_video_id":"video_000002","start_s":0,"end_s":18}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "gemini_events.jsonl").write_text(
+        "\n".join(
+            [
+                (
+                    '{"id":"gem_event_000001","title":"Birthday Party",'
+                    '"start_s":82,"end_s":100,"confidence":0.9,'
+                    '"evidence_ids":["ev_1"],"metadata":{"event_type":"birthday",'
+                    '"place_candidates":["Living Room"],"people":["Philip"],'
+                    '"date_candidates":["APR 3 2006"],'
+                    '"validation_notes":["end_clamped_to_tape_end"]}}'
+                ),
+                (
+                    '{"id":"gem_event_000002","title":"Birthday Party Continues",'
+                    '"start_s":0,"end_s":18,"confidence":0.88,'
+                    '"evidence_ids":["ev_2"],"metadata":{"event_type":"birthday",'
+                    '"place_candidates":["Living Room"],"people":["Philip"],'
+                    '"date_candidates":["APR 3 2006"]}}'
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = stitch_project_events(tmp_path, max_gap_seconds=30)
+    canonical = read_jsonl(tmp_path / "canonical_events.jsonl")
+
+    assert result["canonical_events"] == 1
+    assert canonical[0]["start_s"] == 82
+    assert canonical[0]["end_s"] == 118
+    assert canonical[0]["metadata"]["source_video_ids"] == ["video_000001", "video_000002"]
+    assert canonical[0]["metadata"]["source_ranges"] == [
+        {
+            "source_video_id": "video_000001",
+            "start_s": 82.0,
+            "end_s": 100.0,
+            "timeline_start_s": 82.0,
+            "timeline_end_s": 100.0,
+        },
+        {
+            "source_video_id": "video_000002",
+            "start_s": 0.0,
+            "end_s": 18.0,
+            "timeline_start_s": 100.0,
+            "timeline_end_s": 118.0,
+        },
+    ]
+    assert "cross_tape_candidate" in canonical[0]["metadata"]["merge_reasons"][0]
