@@ -276,8 +276,7 @@ def _run_whisper_cpp(audio_path: Path, output_dir: Path, *, model_path: Path | N
         "-of",
         str(output_base),
     ]
-    if language:
-        cmd.extend(["-l", language])
+    cmd.extend(["-l", language or "auto"])
     _run_checked(cmd, "whisper.cpp transcription failed")
     return output_base.with_suffix(".json")
 
