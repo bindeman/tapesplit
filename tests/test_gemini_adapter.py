@@ -94,3 +94,23 @@ def test_usage_units_from_response_counts_modalities_and_thinking_tokens():
 
 def test_parse_json_object_handles_fenced_json():
     assert parse_json_object('```json\n{"ok": true}\n```') == {"ok": True}
+
+
+def test_parse_json_object_repairs_bare_timestamp_values():
+    payload = parse_json_object(
+        """
+        {
+          "scene_candidates": [
+            {"start_s": 2:25, "end_s": 5:58},
+            {"start_s": 1:02:03, "end_s": 1:02:10}
+          ],
+          "date_candidates": [{"value": "4/5/99", "start_s": 10}]
+        }
+        """
+    )
+
+    assert payload["scene_candidates"] == [
+        {"start_s": 145, "end_s": 358},
+        {"start_s": 3723, "end_s": 3730},
+    ]
+    assert payload["date_candidates"][0]["start_s"] == 10

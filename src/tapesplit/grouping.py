@@ -43,6 +43,8 @@ PERSON_ALIAS_KEYS = {
     "filia": "filip",
     "filip": "filip",
     "filipp": "filip",
+    "filya": "filip",
+    "phillip": "filip",
     "philip": "filip",
     "philipp": "filip",
     "филипп": "filip",
@@ -142,14 +144,15 @@ DATE_MONTHS = {
 def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     events = _load_groupable_events(project, prefer_canonical=prefer_canonical)
+    context_events = [event for event in events if _is_contextual_event(event)]
     evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     evidence_by_id = {row.get("id"): row for row in evidence if row.get("id")}
 
-    people_groups = _build_people_groups(events, evidence_by_id)
-    place_groups = _build_place_groups(events, evidence_by_id)
-    date_groups = _build_date_groups(events, evidence_by_id)
-    language_groups = _build_language_groups(events, evidence_by_id)
-    event_groups = _build_event_groups(events, date_groups)
+    people_groups = _build_people_groups(context_events, evidence_by_id)
+    place_groups = _build_place_groups(context_events, evidence_by_id)
+    date_groups = _build_date_groups(context_events, evidence_by_id)
+    language_groups = _build_language_groups(context_events, evidence_by_id)
+    event_groups = _build_event_groups(context_events, date_groups)
     albums = _build_albums(events, event_groups, evidence_by_id)
 
     outputs = {
@@ -170,6 +173,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     return {
         "project": str(project),
         "source_events": len(events),
+        "context_events": len(context_events),
         "people_groups": len(people_groups),
         "place_groups": len(place_groups),
         "date_groups": len(date_groups),
@@ -586,8 +590,11 @@ def _album_record(
     place_labels = _album_place_labels(events)
     people_labels = _unique_items(person for event in events for person in _metadata_list(event, "people"))
     language_labels = _unique_items(language for event in events for language in _metadata_list(event, "languages"))
+    excluded = album_type in {"unrelated_content", "non_content"}
     review_status = "needs_review"
-    if len(events) == 1 and events[0].get("review_status") == "unreviewed":
+    if excluded:
+        review_status = "excluded"
+    elif len(events) == 1 and events[0].get("review_status") == "unreviewed":
         review_status = "unreviewed"
     elif event_group and event_group.get("review_status") == "unreviewed":
         review_status = "unreviewed"
@@ -607,7 +614,7 @@ def _album_record(
         "source_video_ids": _source_video_ids(evidence_ids, evidence_by_id),
         "confidence": _group_confidence(events, review_penalty=0.1 if review_status == "needs_review" else 0.0),
         "review_status": review_status,
-        "export_status": "candidate",
+        "export_status": "excluded" if excluded else "candidate",
         "excluded_event_ids": [],
         "notes": _album_notes(event_group),
         "metadata": {"event_group_id": event_group.get("id") if event_group else None},
@@ -1056,6 +1063,11 @@ def _safe_date_labels(events: list[dict[str, Any]]) -> list[str]:
 
 
 def _album_type_for_event(event: dict[str, Any]) -> str:
+    relatedness = _event_relatedness(event)
+    if relatedness in {"likely_unrelated", "unrelated"}:
+        return "unrelated_content"
+    if relatedness == "non_content":
+        return "non_content"
     event_type = _metadata_value(event, "event_type")
     if event_type in {"school", "home", "medical", "travel"}:
         return str(event_type)
@@ -1063,6 +1075,14 @@ def _album_type_for_event(event: dict[str, Any]) -> str:
     if "zoo" in title or "safari" in title:
         return "animals"
     return "unreviewed"
+
+
+def _is_contextual_event(event: dict[str, Any]) -> bool:
+    return _event_relatedness(event) not in {"likely_unrelated", "unrelated", "non_content"}
+
+
+def _event_relatedness(event: dict[str, Any]) -> str:
+    return str(_metadata_value(event, "relatedness") or "").lower()
 
 
 def _cover_event_id(events: list[dict[str, Any]]) -> str | None:

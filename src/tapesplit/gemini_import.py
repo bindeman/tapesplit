@@ -6,17 +6,16 @@ from typing import Any
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
-def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> dict[str, Any]:
+def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None, all_runs: bool = False) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     analyses = read_jsonl(project / "gemini_analyses.jsonl")
     if not analyses:
         raise FileNotFoundError(f"missing Gemini analysis file: {project / 'gemini_analyses.jsonl'}")
-    selected = _select_analyses(analyses, run_id)
-    latest = selected[-1]
-    selected_run_id = latest.get("analysis_run_id")
-    source_video_id = latest.get("source_video_id")
-    duration_s = _duration_for_source(project, source_video_id)
-    hard_boundaries = _hard_non_content_boundaries(project, source_video_id)
+    if all_runs and run_id is not None:
+        raise ValueError("run_id cannot be combined with all_runs")
+    selected = _select_analyses(analyses, run_id, all_runs=all_runs)
+    selected_run_id = "all" if all_runs else selected[-1].get("analysis_run_id")
+    source_video_ids = _unique_string_items(row.get("source_video_id") for row in selected)
 
     outputs = [
         project / "gemini_evidence.jsonl",
@@ -32,7 +31,7 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
     event_count = 0
     skipped = []
 
-    def add_evidence(record: dict[str, Any]) -> str:
+    def add_evidence(record: dict[str, Any], source_video_id: str | None) -> str:
         nonlocal evidence_count
         evidence_count += 1
         evidence_id = f"gem_ev_{evidence_count:06d}"
@@ -48,7 +47,7 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
         )
         return evidence_id
 
-    def add_claim(record: dict[str, Any]) -> None:
+    def add_claim(record: dict[str, Any], source_video_id: str | None) -> None:
         nonlocal claim_count
         claim_count += 1
         append_jsonl(
@@ -57,12 +56,16 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                 "id": f"gem_claim_{claim_count:06d}",
                 "source": "gemini_vertex",
                 "review_status": record.pop("review_status", "unreviewed"),
+                "source_video_id": source_video_id,
                 **record,
             },
         )
 
     for latest in selected:
         analysis = latest.get("analysis") or {}
+        source_video_id = latest.get("source_video_id")
+        duration_s = _duration_for_source(project, source_video_id)
+        hard_boundaries = _hard_non_content_boundaries(project, source_video_id)
         source_offset_s = _number_or_none(latest.get("chunk_start_s")) or 0.0
         chunk_end_s = _number_or_none(latest.get("chunk_end_s"))
         local_duration_s = None
@@ -85,7 +88,8 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                         "response_id": latest.get("response_id"),
                         **chunk_metadata,
                     },
-                }
+                },
+                source_video_id,
             )
             add_claim(
                 {
@@ -94,7 +98,8 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                     "value": str(summary_text),
                     "confidence": 0.7,
                     "evidence_ids": [evidence_id],
-                }
+                },
+                source_video_id,
             )
 
         for item in analysis.get("event_candidates") or []:
@@ -134,7 +139,8 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                     "text": item.get("summary") or item.get("title") or "",
                     "confidence": item.get("confidence", 0.6),
                     "metadata": event_metadata,
-                }
+                },
+                source_video_id,
             )
             event_count += 1
             append_jsonl(
@@ -142,6 +148,7 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                 {
                     "id": f"gem_event_{event_count:06d}",
                     "source": "gemini_vertex",
+                    "source_video_id": source_video_id,
                     "review_status": "needs_review" if validation_notes or item.get("needs_review") else "unreviewed",
                     "title": item.get("title") or "Untitled Gemini event",
                     "start_s": start_s,
@@ -152,6 +159,7 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                     "relatedness": item.get("relatedness"),
                     "metadata": {
                         "event_type": item.get("event_type"),
+                        "source_video_id": source_video_id,
                         "people": item.get("people") or [],
                         "place_candidates": item.get("place_candidates") or [],
                         "date_candidates": item.get("date_candidates") or [],
@@ -170,7 +178,8 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                     "evidence_ids": [evidence_id],
                     "review_status": "needs_review" if validation_notes or item.get("needs_review") else "unreviewed",
                     "notes": "; ".join(validation_notes),
-                }
+                },
+                source_video_id,
             )
 
         for key, predicate in [
@@ -207,7 +216,8 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                             "chunk_local_end_s": local_end_s,
                             **chunk_metadata,
                         },
-                    }
+                    },
+                    source_video_id,
                 )
                 add_claim(
                     {
@@ -218,15 +228,16 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None) -> d
                         "evidence_ids": [evidence_id],
                         "review_status": "needs_review" if validation_notes else "unreviewed",
                         "notes": "; ".join(validation_notes),
-                    }
+                    },
+                    source_video_id,
                 )
 
     return {
         "project": str(project),
-        "source_video_id": source_video_id,
+        "source_video_id": source_video_ids[0] if len(source_video_ids) == 1 else None,
+        "source_video_ids": source_video_ids,
         "analysis_run_id": selected_run_id,
         "analyses": len(selected),
-        "duration_s": duration_s,
         "evidence": evidence_count,
         "claims": claim_count,
         "events": event_count,
@@ -278,8 +289,10 @@ def _normalize_interval(
     return round(start_s, 3), round(end_s, 3), notes
 
 
-def _select_analyses(analyses: list[dict[str, Any]], run_id: str | None) -> list[dict[str, Any]]:
-    if run_id is not None:
+def _select_analyses(analyses: list[dict[str, Any]], run_id: str | None, *, all_runs: bool = False) -> list[dict[str, Any]]:
+    if all_runs:
+        selected = analyses
+    elif run_id is not None:
         selected = [row for row in analyses if row.get("analysis_run_id") == run_id]
         if not selected:
             raise ValueError(f"unknown Gemini analysis_run_id: {run_id}")
@@ -293,6 +306,7 @@ def _select_analyses(analyses: list[dict[str, Any]], run_id: str | None) -> list
     return sorted(
         selected,
         key=lambda row: (
+            str(row.get("source_video_id") or ""),
             _number_or_none(row.get("chunk_start_s")) or 0.0,
             int(row.get("chunk_index") or 0),
         ),
@@ -351,3 +365,17 @@ def _number_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _unique_string_items(values: Any) -> list[str]:
+    result = []
+    seen = set()
+    for value in values or []:
+        if value is None:
+            continue
+        text = str(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result

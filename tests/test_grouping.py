@@ -141,7 +141,7 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
                 "evidence_ids": ["ev_8"],
                 "metadata": {
                     "event_type": "family",
-                    "people": ["Филя"],
+                    "people": ["Filya", "Филя"],
                     "languages": ["Russian"],
                 },
             },
@@ -160,7 +160,7 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
 
     people = read_jsonl(tmp_path / "people_groups.jsonl")
     filip = next(group for group in people if group["metadata"]["normalized_key"] == "filip")
-    assert filip["aliases"] == ["Filip", "Philip", "Филя"]
+    assert filip["aliases"] == ["Filip", "Filya", "Philip", "Филя"]
     assert filip["review_status"] == "needs_review"
     assert filip["canonical_event_ids"] == [
         "canonical_event_000001",
@@ -190,6 +190,62 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
     sep7_album = next(album for album in albums if "Sep 7, 2005" in album["title"])
     assert sep7_album["canonical_event_ids"] == ["canonical_event_000003", "canonical_event_000004"]
     assert sep7_album["review_status"] == "needs_review"
+
+
+def test_build_project_groups_excludes_unrelated_people_from_context_groups(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Alice in Wonderland Broadcast",
+                "start_s": 0,
+                "end_s": 100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_1"],
+                "relatedness": "likely_unrelated",
+                "metadata": {
+                    "event_type": "tv",
+                    "people": ["Alice"],
+                    "place_candidates": ["Wonderland"],
+                    "languages": ["English"],
+                },
+            },
+            {
+                "id": "canonical_event_000002",
+                "title": "Family Birthday",
+                "start_s": 120,
+                "end_s": 200,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_2"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "family",
+                    "people": ["Filip"],
+                    "place_candidates": ["Home"],
+                    "languages": ["Russian"],
+                },
+            },
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "gemini_evidence.jsonl",
+        [
+            {"id": "ev_1", "source_video_id": "video_000001"},
+            {"id": "ev_2", "source_video_id": "video_000001"},
+        ],
+    )
+
+    result = build_project_groups(tmp_path)
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+    albums = read_jsonl(tmp_path / "albums.jsonl")
+
+    assert result["source_events"] == 2
+    assert result["context_events"] == 1
+    assert [group["label"] for group in people] == ["Filip"]
+    unrelated_album = next(album for album in albums if album["title"] == "Alice in Wonderland Broadcast")
+    assert unrelated_album["album_type"] == "unrelated_content"
+    assert unrelated_album["export_status"] == "excluded"
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

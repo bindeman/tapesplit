@@ -247,6 +247,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_import.add_argument("--run-id", help="Import a specific Gemini analysis_run_id.")
+    gemini_import.add_argument("--all", action="store_true", help="Import all Gemini analysis runs.")
 
     costs_parser = subparsers.add_parser(
         "costs",
@@ -636,7 +637,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if args.gemini_command == "import-analysis":
-                print(json.dumps(import_gemini_analysis(args.project, run_id=args.run_id), indent=2, sort_keys=True))
+                print(
+                    json.dumps(
+                        import_gemini_analysis(args.project, run_id=args.run_id, all_runs=args.all),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
                 return 0
         if args.command == "costs":
             if args.costs_command == "llm":

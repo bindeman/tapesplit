@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from typing import Any
 from urllib.error import HTTPError
@@ -890,16 +891,51 @@ def parse_json_object(content: str) -> dict[str, Any]:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
-    try:
-        payload = json.loads(text)
-        return payload if isinstance(payload, dict) else {}
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            payload = json.loads(text[start : end + 1])
+    return _loads_json_object(text)
+
+
+def _loads_json_object(text: str) -> dict[str, Any]:
+    candidates = [text]
+    repaired = _normalize_bare_timestamp_values(text)
+    if repaired != text:
+        candidates.append(repaired)
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        sliced = text[start : end + 1]
+        candidates.append(sliced)
+        repaired_sliced = _normalize_bare_timestamp_values(sliced)
+        if repaired_sliced != sliced:
+            candidates.append(repaired_sliced)
+
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
             return payload if isinstance(payload, dict) else {}
-        raise
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise json.JSONDecodeError("expected JSON object", text, 0)
+
+
+def _normalize_bare_timestamp_values(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        key = match.group("key")
+        parts = [int(part) for part in match.group("value").split(":")]
+        if len(parts) == 2:
+            seconds = parts[0] * 60 + parts[1]
+        else:
+            seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        return f'"{key}": {seconds}'
+
+    return re.sub(
+        r'"(?P<key>(?:start|end)_s)"\s*:\s*(?P<value>\d{1,2}:\d{2}(?::\d{2})?)(?=\s*[,}\]])',
+        replace,
+        text,
+    )
 
 
 def _analysis_prompt() -> str:
