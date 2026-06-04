@@ -96,6 +96,12 @@ Single whole-tape Gemini calls are still useful as a cheap exploratory pass, but
 their timestamps are not authoritative enough to drive cuts or metadata exports
 without chunk validation.
 
+After chunk import, build canonical review events from raw candidates. The first
+pass should be deterministic and conservative: merge clear duplicate or
+boundary-split events, preserve `source_event_ids`, and avoid merging broad trip
+segments only because they share generic context such as Hawaii, school, home,
+beach, or volcano.
+
 ## Data Files
 
 The MVP can use a project directory instead of a server database:

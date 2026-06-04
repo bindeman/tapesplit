@@ -13,7 +13,9 @@ def export_review_report(project_dir: Path) -> dict:
     tapes = read_jsonl(project / "tapes.jsonl")
     evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     claims = read_jsonl(project / "claims.jsonl") + read_jsonl(project / "gemini_claims.jsonl")
-    events = read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
+    raw_events = read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
+    canonical_events = read_jsonl(project / "canonical_events.jsonl")
+    events = canonical_events or raw_events
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -27,6 +29,8 @@ def export_review_report(project_dir: Path) -> dict:
             summaries=summaries,
             non_content=non_content,
             costs=costs,
+            event_view="Canonical Events" if canonical_events else "Event Candidates",
+            raw_event_count=len(raw_events),
         ),
         encoding="utf-8",
     )
@@ -36,6 +40,8 @@ def export_review_report(project_dir: Path) -> dict:
         "evidence": len(evidence),
         "claims": len(claims),
         "events": len(events),
+        "raw_events": len(raw_events),
+        "canonical_events": len(canonical_events),
     }
 
 
@@ -48,6 +54,8 @@ def _render_html(
     summaries: list[dict[str, Any]],
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
+    event_view: str,
+    raw_event_count: int,
 ) -> str:
     summary_parts = [item.get("text", "") for item in summaries if item.get("text")]
     summary_parts.extend(
@@ -59,6 +67,9 @@ def _render_html(
     evidence_by_id = {row.get("id"): row for row in evidence if row.get("id")}
     tapes_by_id = {row.get("id"): row for row in tapes if row.get("id")}
     sorted_events = sorted(events, key=lambda row: _number_or_large(row.get("start_s")))
+    event_context = f"{len(events)} {event_view.lower()}"
+    if event_view == "Canonical Events":
+        event_context += f" from {raw_event_count} raw candidates"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -118,7 +129,7 @@ def _render_html(
       <h1>TapeSplit Review</h1>
       <p class="muted">Generated from local evidence, Gemini video analysis, TwelveLabs search output, and Azure extraction claims.</p>
     </div>
-    <div class="muted">{len(tapes)} source video, {len(events)} event candidates, {len(claims)} claims</div>
+    <div class="muted">{len(tapes)} source video, {html.escape(event_context)}, {len(claims)} claims</div>
   </div>
 
   <section>
@@ -136,7 +147,7 @@ def _render_html(
   </section>
 
   <section>
-    <h2>Event Candidates</h2>
+    <h2>{html.escape(event_view)}</h2>
     {_event_cards(sorted_events, evidence_by_id, tapes_by_id)}
   </section>
 

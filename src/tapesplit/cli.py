@@ -15,6 +15,7 @@ from tapesplit.costs import (
 )
 from tapesplit.claims import extract_claims
 from tapesplit.evidence import build_evidence
+from tapesplit.event_stitching import stitch_project_events
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
 from tapesplit.gemini_adapter import (
     analyze_project_video_chunks,
@@ -312,6 +313,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Azure deployment alias/name. Default: fast.",
     )
 
+    stitch_events_parser = subparsers.add_parser(
+        "stitch-events",
+        help="Build canonical events from raw event candidates.",
+    )
+    stitch_events_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    stitch_events_parser.add_argument(
+        "--max-gap-seconds",
+        type=float,
+        default=120.0,
+        help="Maximum gap for merging related boundary-split events. Default: 120.",
+    )
+    stitch_events_parser.add_argument(
+        "--include-legacy-events",
+        action="store_true",
+        help="Include non-Gemini events even when Gemini events exist.",
+    )
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -548,6 +566,19 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     extract_claims(args.project, deployment_alias=args.deployment),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "stitch-events":
+            print(
+                json.dumps(
+                    stitch_project_events(
+                        args.project,
+                        max_gap_seconds=args.max_gap_seconds,
+                        prefer_gemini=not args.include_legacy_events,
+                    ),
                     indent=2,
                     sort_keys=True,
                 )
