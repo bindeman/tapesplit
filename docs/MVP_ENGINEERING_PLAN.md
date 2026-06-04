@@ -402,6 +402,13 @@ Search fields:
 Initial implementation can be text search plus embeddings later. The first
 useful search is often transcript search.
 
+Current MVP implementation:
+
+- `transcript_segments.jsonl` from local Whisper-compatible CLIs or JSON/SRT/VTT import
+- `search.sqlite` with SQLite FTS5 over transcripts, evidence, events, albums, and group indexes
+- dependency-free local sparse vector scoring by default
+- optional local `sentence-transformers` embeddings with `tapesplit search build --embedding-backend sentence-transformers`
+
 ## One-Week Build Plan
 
 ### Day 1: Project Skeleton And Ingest

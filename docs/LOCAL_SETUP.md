@@ -14,6 +14,26 @@
 brew install ffmpeg
 ```
 
+For local transcription, either install a Whisper-compatible command or import
+an externally generated transcript. The CLI supports:
+
+- `whisper` from the optional Python `openai-whisper` package
+- `whisper-cli` or `main` from whisper.cpp
+- optional local sentence-transformer embeddings for semantic search
+- JSON/SRT/VTT transcript import with no ASR dependency
+
+Optional Python Whisper install:
+
+```bash
+.venv/bin/python -m pip install -e '.[local-ai]'
+```
+
+For whisper.cpp, download/build whisper.cpp separately and set the model path:
+
+```bash
+export WHISPER_CPP_MODEL=/path/to/ggml-large-v3-turbo.bin
+```
+
 ## Provider Config
 
 Secrets live in `.env`, which is ignored by git.
@@ -34,6 +54,8 @@ AZURE_OPENAI_WHISPER_DEPLOYMENT=
 GOOGLE_MAPS_API_KEY=
 GOOGLE_MAPS_ENABLED=false
 GOOGLE_MAPS_DAILY_BUDGET_USD=0
+
+WHISPER_CPP_MODEL=
 ```
 
 Check config:
@@ -154,6 +176,7 @@ the static report:
 .venv/bin/tapesplit gemini import-analysis /path/to/family-videos.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/family-videos.tapesplit
 .venv/bin/tapesplit build-groups /path/to/family-videos.tapesplit
+.venv/bin/tapesplit search build /path/to/family-videos.tapesplit
 .venv/bin/tapesplit export-report /path/to/family-videos.tapesplit
 ```
 
@@ -186,3 +209,64 @@ same run after adjusting token limits:
   --start-chunk 3 \
   --max-output-tokens 12000
 ```
+
+## Local Transcription
+
+Extract audio only:
+
+```bash
+.venv/bin/tapesplit transcribe extract-audio /path/to/family-videos.tapesplit \
+  --source-video-id video_000001
+```
+
+Run a local Whisper-compatible CLI. Omit `--language` for auto-detection; pass
+`ru`, `en`, or another language code when a tape is mostly one language:
+
+```bash
+.venv/bin/tapesplit transcribe local /path/to/family-videos.tapesplit \
+  --source-video-id video_000001 \
+  --engine auto \
+  --language ru \
+  --force
+```
+
+Import an existing transcript instead:
+
+```bash
+.venv/bin/tapesplit transcribe import /path/to/family-videos.tapesplit transcript.srt \
+  --source-video-id video_000001 \
+  --language ru \
+  --force
+```
+
+All transcript paths write `transcript_segments.jsonl`. Running
+`build-evidence` after transcription also promotes transcript segments into
+`evidence.jsonl` for downstream claim extraction.
+
+## Local Search
+
+Build a local SQLite search index:
+
+```bash
+.venv/bin/tapesplit search build /path/to/family-videos.tapesplit
+```
+
+Use local neural embeddings when `sentence-transformers` is installed:
+
+```bash
+.venv/bin/tapesplit search build /path/to/family-videos.tapesplit \
+  --embedding-backend sentence-transformers \
+  --embedding-model sentence-transformers/all-MiniLM-L6-v2
+```
+
+Query transcript segments, evidence, canonical events, albums, and group indexes:
+
+```bash
+.venv/bin/tapesplit search query /path/to/family-videos.tapesplit "first day of school"
+.venv/bin/tapesplit search query /path/to/family-videos.tapesplit "lava flowing into the ocean"
+```
+
+The default index combines SQLite FTS5 text search with a dependency-free local
+sparse vector scorer and small domain synonym expansions. The optional
+`sentence-transformers` backend adds local neural embeddings without sending
+text to a provider.

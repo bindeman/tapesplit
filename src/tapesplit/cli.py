@@ -30,6 +30,13 @@ from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.report import export_review_report
+from tapesplit.search import build_search_index, query_search_index
+from tapesplit.transcription import (
+    check_transcription_config,
+    extract_project_audio,
+    import_transcript,
+    transcribe_project_local,
+)
 from tapesplit.twelvelabs_adapter import (
     check_twelvelabs_config,
     create_index,
@@ -276,6 +283,60 @@ def _build_parser() -> argparse.ArgumentParser:
     metadata_exif = metadata_subparsers.add_parser("exif", help="Load ExifTool metadata for project videos.")
     metadata_exif.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    transcribe_parser = subparsers.add_parser(
+        "transcribe",
+        help="Extract/import local transcript segments.",
+    )
+    transcribe_subparsers = transcribe_parser.add_subparsers(dest="transcribe_command", required=True)
+    transcribe_audio = transcribe_subparsers.add_parser("extract-audio", help="Extract 16 kHz mono WAV audio for local ASR.")
+    transcribe_audio.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_audio.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
+    transcribe_audio.add_argument("--force", action="store_true", help="Overwrite existing audio files.")
+
+    transcribe_local = transcribe_subparsers.add_parser("local", help="Run a local Whisper-compatible transcription CLI.")
+    transcribe_local.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_local.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
+    transcribe_local.add_argument(
+        "--engine",
+        choices=["auto", "whisper", "whisper-cpp"],
+        default="auto",
+        help="Local transcription engine. Default: auto.",
+    )
+    transcribe_local.add_argument(
+        "--model",
+        default="large-v3-turbo",
+        help="openai-whisper model name. Default: large-v3-turbo.",
+    )
+    transcribe_local.add_argument(
+        "--model-path",
+        type=Path,
+        help="whisper.cpp ggml model path. Can also use WHISPER_CPP_MODEL.",
+    )
+    transcribe_local.add_argument(
+        "--language",
+        help="Optional ASR language hint, e.g. ru or en. Omit for auto-detect.",
+    )
+    transcribe_local.add_argument("--force", action="store_true", help="Replace existing transcript segments for the selected source.")
+
+    transcribe_import = transcribe_subparsers.add_parser("import", help="Import an existing JSON/SRT/VTT transcript.")
+    transcribe_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_import.add_argument("transcript", type=Path, help="Transcript file to import.")
+    transcribe_import.add_argument("--source-video-id", required=True, help="Source video id for the transcript.")
+    transcribe_import.add_argument(
+        "--format",
+        choices=["auto", "json", "srt", "vtt"],
+        default="auto",
+        help="Transcript format. Default: auto.",
+    )
+    transcribe_import.add_argument("--language", help="Language code for imported segments if missing.")
+    transcribe_import.add_argument(
+        "--offset-seconds",
+        type=float,
+        default=0.0,
+        help="Add this source-time offset to imported transcript times. Default: 0.",
+    )
+    transcribe_import.add_argument("--force", action="store_true", help="Replace existing transcript segments for this source.")
+
     geocode_parser = subparsers.add_parser(
         "geocode",
         help="Build or resolve geocoding candidates.",
@@ -342,6 +403,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Use raw event candidates instead of canonical_events.jsonl.",
     )
 
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Build and query the local SQLite text/semantic search index.",
+    )
+    search_subparsers = search_parser.add_subparsers(dest="search_command", required=True)
+    search_build = search_subparsers.add_parser("build", help="Build a local search.sqlite index.")
+    search_build.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_build.add_argument(
+        "--no-groups",
+        action="store_true",
+        help="Exclude album/person/place/date/language group projections.",
+    )
+    search_build.add_argument(
+        "--embedding-backend",
+        choices=["local-sparse", "sentence-transformers", "auto"],
+        default="local-sparse",
+        help="Semantic embedding backend. Default: local-sparse.",
+    )
+    search_build.add_argument(
+        "--embedding-model",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="SentenceTransformers model when --embedding-backend sentence-transformers/auto is used.",
+    )
+    search_query = search_subparsers.add_parser("query", help="Search local transcript/evidence/event/group text.")
+    search_query.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_query.add_argument("query", help="Natural-language search query.")
+    search_query.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -356,6 +445,7 @@ def _doctor(as_json: bool) -> int:
     status.update(check_azure_openai_config())
     status.update(check_google_maps_config())
     status.update(check_gemini_config())
+    status.update(check_transcription_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -383,6 +473,10 @@ def _doctor(as_json: bool) -> int:
         print(f"  Gemini model: {status['gemini_model']}")
         print(f"  Gemini media resolution: {status['gemini_media_resolution']}")
         print(f"  Gemini GCS bucket: {'configured' if status['gemini_gcs_bucket'] else 'missing'}")
+        print(f"  openai-whisper CLI: {'installed' if status['whisper_cli'] else 'missing'}")
+        print(f"  whisper.cpp whisper-cli: {'installed' if status['whisper_cpp_cli'] else 'missing'}")
+        print(f"  whisper.cpp main: {'installed' if status['whisper_cpp_main'] else 'missing'}")
+        print(f"  WHISPER_CPP_MODEL: {'configured' if status['whisper_cpp_model'] else 'missing'}")
     return 0
 
 
@@ -553,6 +647,54 @@ def main(argv: list[str] | None = None) -> int:
             if args.metadata_command == "exif":
                 print(json.dumps(extract_exif_for_project(args.project), indent=2, sort_keys=True))
                 return 0
+        if args.command == "transcribe":
+            if args.transcribe_command == "extract-audio":
+                print(
+                    json.dumps(
+                        extract_project_audio(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.transcribe_command == "local":
+                print(
+                    json.dumps(
+                        transcribe_project_local(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            engine=args.engine,
+                            model=args.model,
+                            model_path=args.model_path,
+                            language=args.language,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.transcribe_command == "import":
+                print(
+                    json.dumps(
+                        import_transcript(
+                            args.project,
+                            args.transcript,
+                            source_video_id=args.source_video_id,
+                            transcript_format=args.format,
+                            language=args.language,
+                            offset_seconds=args.offset_seconds,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
         if args.command == "geocode":
             if args.geocode_command == "candidate":
                 print(
@@ -608,6 +750,30 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "search":
+            if args.search_command == "build":
+                print(
+                    json.dumps(
+                        build_search_index(
+                            args.project,
+                            include_groups=not args.no_groups,
+                            embedding_backend=args.embedding_backend,
+                            embedding_model=args.embedding_model,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.search_command == "query":
+                print(
+                    json.dumps(
+                        query_search_index(args.project, args.query, limit=args.limit),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
         if args.command == "export-report":
             print(json.dumps(export_review_report(args.project), indent=2, sort_keys=True))
             return 0

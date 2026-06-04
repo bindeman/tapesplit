@@ -56,6 +56,25 @@ def build_evidence(project_dir: Path) -> dict:
             }
         )
 
+    for row in read_jsonl(project / "transcript_segments.jsonl"):
+        add(
+            {
+                "source_video_id": row.get("source_video_id"),
+                "start_s": row.get("start_s"),
+                "end_s": row.get("end_s"),
+                "modality": "transcript",
+                "kind": "local_transcript_segment",
+                "text": row.get("text") or "",
+                "language": row.get("language") or "unknown",
+                "confidence": row.get("confidence", 0.8),
+                "metadata": {
+                    "provider": row.get("provider"),
+                    "model": row.get("model"),
+                    "transcript_segment_id": row.get("id"),
+                },
+            }
+        )
+
     seen_transcripts: set[tuple[float, float, str]] = set()
     for search in read_jsonl(project / "twelvelabs_searches.jsonl"):
         query = search.get("query")

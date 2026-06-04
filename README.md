@@ -34,5 +34,19 @@ Current local review pipeline:
 .venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit
 .venv/bin/tapesplit build-groups /path/to/project.tapesplit
+.venv/bin/tapesplit search build /path/to/project.tapesplit
 .venv/bin/tapesplit export-report /path/to/project.tapesplit
 ```
+
+Local transcript segments can come from a Whisper-compatible CLI or from an
+existing JSON/SRT/VTT file:
+
+```bash
+.venv/bin/tapesplit transcribe local /path/to/project.tapesplit --language ru
+.venv/bin/tapesplit transcribe import /path/to/project.tapesplit transcript.srt --source-video-id video_000001
+.venv/bin/tapesplit search query /path/to/project.tapesplit "first day of school"
+```
+
+`search build` defaults to SQLite FTS5 plus a dependency-free local sparse vector
+scorer. Install the `local-ai` extra and pass `--embedding-backend
+sentence-transformers` when you want local neural embeddings.

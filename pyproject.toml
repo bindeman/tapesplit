@@ -15,10 +15,13 @@ dependencies = []
 
 [project.optional-dependencies]
 twelvelabs = ["twelvelabs>=1.0.0"]
+local-ai = [
+  "openai-whisper",
+  "sentence-transformers",
+]
 
 [project.scripts]
 tapesplit = "tapesplit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
