@@ -328,6 +328,9 @@ Example:
 Once aliases are grouped, decide what each entity is doing in each interval.
 This should use different evidence than alias matching.
 
+See [RELATIONSHIP_INFERENCE.md](RELATIONSHIP_INFERENCE.md) for the detailed
+family-graph, face-linking, and thumbnail plan.
+
 Narrator/camera-operator clues:
 
 - first-person speech, such as "I am going to school"

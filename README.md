@@ -29,6 +29,9 @@ the longer-term data model and reasoning architecture.
 See [docs/ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) for the alias,
 relationship, and role-resolution model.
 
+See [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) for the
+family-graph, relationship-candidate, face-linking, and thumbnail plan.
+
 Current local review pipeline:
 
 ```bash
