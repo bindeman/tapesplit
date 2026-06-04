@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+import os
 from pathlib import Path
+import subprocess
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from tapesplit.costs import ApiUsage, append_api_usage, estimate_api_cost_usd
 from tapesplit.env import load_dotenv
@@ -30,6 +31,17 @@ class GeminiConfig:
     @property
     def configured(self) -> bool:
         return bool(self.use_vertex and self.project and self.location and self.model)
+
+
+@dataclass(frozen=True)
+class GeminiChunk:
+    index: int
+    start_s: float
+    end_s: float
+
+    @property
+    def duration_s(self) -> float:
+        return max(0.0, self.end_s - self.start_s)
 
 
 def load_gemini_config(env_path: Path | None = None) -> GeminiConfig:
@@ -99,6 +111,8 @@ def estimate_project_video(
     fps: float | None = None,
     media_resolution: str | None = None,
     output_tokens: int = 6000,
+    chunk_seconds: float | None = None,
+    chunk_overlap_seconds: float = 0.0,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     tapes = read_jsonl(project / "tapes.jsonl")
@@ -107,13 +121,24 @@ def estimate_project_video(
     tape = _select_tape(tapes, source_video_id)
     config = load_gemini_config()
     duration_s = float((tape.get("probe") or {}).get("duration_s") or 0.0)
-    estimate = estimate_video_analysis(
-        duration_s=duration_s,
-        model=config.model,
-        fps=fps if fps is not None else config.default_fps,
-        media_resolution=media_resolution or config.media_resolution,
-        output_tokens=output_tokens,
-    )
+    if chunk_seconds is None:
+        estimate = estimate_video_analysis(
+            duration_s=duration_s,
+            model=config.model,
+            fps=fps if fps is not None else config.default_fps,
+            media_resolution=media_resolution or config.media_resolution,
+            output_tokens=output_tokens,
+        )
+    else:
+        estimate = estimate_chunked_video_analysis(
+            duration_s=duration_s,
+            model=config.model,
+            fps=fps if fps is not None else config.default_fps,
+            media_resolution=media_resolution or config.media_resolution,
+            output_tokens_per_chunk=output_tokens,
+            chunk_seconds=chunk_seconds,
+            overlap_seconds=chunk_overlap_seconds,
+        )
     estimate.update(
         {
             "project": str(project),
@@ -122,6 +147,130 @@ def estimate_project_video(
         }
     )
     return estimate
+
+
+def estimate_chunked_video_analysis(
+    *,
+    duration_s: float,
+    model: str | None = None,
+    fps: float = 1,
+    media_resolution: str = "low",
+    output_tokens_per_chunk: int = 6000,
+    chunk_seconds: float,
+    overlap_seconds: float = 0.0,
+) -> dict[str, Any]:
+    config = load_gemini_config()
+    resolved_model = model or config.model
+    chunks = plan_video_chunks(
+        duration_s=duration_s,
+        chunk_seconds=chunk_seconds,
+        overlap_seconds=overlap_seconds,
+    )
+    return estimate_chunks_analysis(
+        chunks=chunks,
+        model=resolved_model,
+        duration_s=duration_s,
+        fps=fps,
+        media_resolution=media_resolution,
+        output_tokens_per_chunk=output_tokens_per_chunk,
+        chunk_seconds=chunk_seconds,
+        overlap_seconds=overlap_seconds,
+    )
+
+
+def estimate_chunks_analysis(
+    *,
+    chunks: list[GeminiChunk],
+    model: str,
+    duration_s: float,
+    fps: float,
+    media_resolution: str,
+    output_tokens_per_chunk: int,
+    chunk_seconds: float,
+    overlap_seconds: float,
+) -> dict[str, Any]:
+    total_units: dict[str, float | int] = {
+        "input_text_tokens": 0,
+        "input_video_tokens": 0,
+        "input_audio_tokens": 0,
+        "output_tokens": 0,
+    }
+    chunk_estimates = []
+    for chunk in chunks:
+        units = estimate_video_token_units(
+            duration_s=chunk.duration_s,
+            fps=fps,
+            media_resolution=media_resolution,
+            output_tokens=output_tokens_per_chunk,
+        )
+        for key, value in units.items():
+            total_units[key] = float(total_units.get(key, 0)) + float(value)
+        chunk_estimates.append(
+            {
+                "chunk_id": _chunk_id(chunk.index),
+                "chunk_index": chunk.index,
+                "start_s": chunk.start_s,
+                "end_s": chunk.end_s,
+                "duration_s": round(chunk.duration_s, 3),
+                "units": units,
+                "estimated_cost_usd": estimate_api_cost_usd(
+                    provider="google_vertex",
+                    service=f"generate_content:{model}",
+                    units=units,
+                ),
+            }
+        )
+    rounded_units = {
+        key: int(round(value)) if key.endswith("_tokens") else value
+        for key, value in total_units.items()
+    }
+    return {
+        "provider": "google_vertex",
+        "service": f"generate_content:{model}",
+        "duration_s": round(duration_s, 3),
+        "fps": fps,
+        "media_resolution": media_resolution,
+        "chunk_seconds": chunk_seconds,
+        "chunk_overlap_seconds": overlap_seconds,
+        "chunks": len(chunks),
+        "analyzed_duration_s": round(sum(chunk.duration_s for chunk in chunks), 3),
+        "units": rounded_units,
+        "estimated_cost_usd": estimate_api_cost_usd(
+            provider="google_vertex",
+            service=f"generate_content:{model}",
+            units=rounded_units,
+        ),
+        "chunk_estimates": chunk_estimates,
+    }
+
+
+def plan_video_chunks(
+    *,
+    duration_s: float,
+    chunk_seconds: float,
+    overlap_seconds: float = 0.0,
+) -> list[GeminiChunk]:
+    if duration_s <= 0:
+        return []
+    if chunk_seconds <= 0:
+        raise ValueError("chunk_seconds must be greater than 0")
+    if overlap_seconds < 0:
+        raise ValueError("overlap_seconds must be greater than or equal to 0")
+    if overlap_seconds >= chunk_seconds:
+        raise ValueError("overlap_seconds must be smaller than chunk_seconds")
+
+    chunks = []
+    start_s = 0.0
+    index = 1
+    step_s = chunk_seconds - overlap_seconds
+    while start_s < duration_s:
+        end_s = min(duration_s, start_s + chunk_seconds)
+        chunks.append(GeminiChunk(index=index, start_s=round(start_s, 3), end_s=round(end_s, 3)))
+        if end_s >= duration_s:
+            break
+        start_s += step_s
+        index += 1
+    return chunks
 
 
 def estimate_video_token_units(
@@ -282,6 +431,318 @@ def analyze_project_video(
     }
 
 
+def analyze_project_video_chunks(
+    project_dir: Path,
+    *,
+    source_video_id: str | None = None,
+    fps: float | None = None,
+    media_resolution: str | None = None,
+    max_output_tokens: int = 8000,
+    chunk_seconds: float = 900.0,
+    chunk_overlap_seconds: float = 15.0,
+    run_id: str | None = None,
+    start_chunk: int | None = None,
+    limit_chunks: int | None = None,
+    force_clips: bool = False,
+    force_upload: bool = False,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    tapes = read_jsonl(project / "tapes.jsonl")
+    if not tapes:
+        raise FileNotFoundError(f"missing project tapes file: {project / 'tapes.jsonl'}")
+    tape = _select_tape(tapes, source_video_id)
+    video_path = Path(tape["path"]).expanduser().resolve()
+    if not video_path.exists():
+        raise FileNotFoundError(f"video no longer exists: {video_path}")
+
+    config = load_gemini_config()
+    if not config.configured:
+        raise RuntimeError("Gemini Vertex config is incomplete")
+    if not config.gcs_bucket:
+        raise RuntimeError("GEMINI_GCS_BUCKET is required for Vertex video analysis")
+
+    resolved_fps = fps if fps is not None else config.default_fps
+    resolved_media_resolution = media_resolution or config.media_resolution
+    probe = tape.get("probe") or ffprobe_video(video_path)
+    duration_s = float(probe.get("duration_s") or 0.0)
+    if start_chunk is not None and start_chunk <= 0:
+        raise ValueError("start_chunk must be greater than 0")
+    if limit_chunks is not None and limit_chunks <= 0:
+        raise ValueError("limit_chunks must be greater than 0")
+    all_chunks = plan_video_chunks(
+        duration_s=duration_s,
+        chunk_seconds=chunk_seconds,
+        overlap_seconds=chunk_overlap_seconds,
+    )
+    chunks = [chunk for chunk in all_chunks if start_chunk is None or chunk.index >= start_chunk]
+    if limit_chunks is not None:
+        chunks = chunks[:limit_chunks]
+    estimate = estimate_chunks_analysis(
+        chunks=chunks,
+        model=config.model,
+        duration_s=duration_s,
+        fps=resolved_fps,
+        media_resolution=resolved_media_resolution,
+        output_tokens_per_chunk=max_output_tokens,
+        chunk_seconds=chunk_seconds,
+        overlap_seconds=chunk_overlap_seconds,
+    )
+    if start_chunk is not None:
+        estimate["start_chunk"] = start_chunk
+    if limit_chunks is not None:
+        estimate["limited_from_chunks"] = len(all_chunks)
+    _enforce_budget(project, config, estimate)
+
+    analysis_run_id = run_id or f"gem_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
+    raw_dir = project / "gemini_raw" / analysis_run_id
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    prompt = _analysis_prompt()
+    results = []
+    for chunk in chunks:
+        chunk_id = _chunk_id(chunk.index)
+        clip_path = create_video_chunk(
+            project_dir=project,
+            video_path=video_path,
+            source_video_id=tape["id"],
+            chunk=chunk,
+            force=force_clips,
+        )
+        upload = upload_video_to_gcs(
+            project_dir=project,
+            video_path=clip_path,
+            source_video_id=tape["id"],
+            bucket=config.gcs_bucket,
+            location=config.location,
+            cloud_project=config.project or "",
+            force=force_upload,
+            metadata={
+                "analysis_run_id": analysis_run_id,
+                "chunk_id": chunk_id,
+                "chunk_index": chunk.index,
+                "chunk_start_s": chunk.start_s,
+                "chunk_end_s": chunk.end_s,
+                "source_video_path": str(video_path),
+            },
+        )
+        response = generate_content(
+            contents=[
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "fileData": {
+                                "mimeType": _mime_type(clip_path),
+                                "fileUri": upload["gcs_uri"],
+                            },
+                            "videoMetadata": {"fps": resolved_fps},
+                        },
+                        {"text": _chunk_prompt(prompt, chunk)},
+                    ],
+                }
+            ],
+            config=config,
+            operation="video_chunk_analysis",
+            project_dir=project,
+            source_video_id=tape["id"],
+            gcs_uri=upload["gcs_uri"],
+            media_resolution=resolved_media_resolution,
+            fps=resolved_fps,
+            max_output_tokens=max_output_tokens,
+            metadata={
+                "analysis_run_id": analysis_run_id,
+                "chunk_id": chunk_id,
+                "chunk_index": chunk.index,
+                "chunk_start_s": chunk.start_s,
+                "chunk_end_s": chunk.end_s,
+                "chunk_duration_s": round(chunk.duration_s, 3),
+                "source_duration_s": round(duration_s, 3),
+            },
+        )
+        text = _response_text(response)
+        raw_record = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "analysis_run_id": analysis_run_id,
+            "source_video_id": tape["id"],
+            "filename": tape.get("filename"),
+            "chunk_id": chunk_id,
+            "chunk_index": chunk.index,
+            "chunk_start_s": chunk.start_s,
+            "chunk_end_s": chunk.end_s,
+            "chunk_duration_s": round(chunk.duration_s, 3),
+            "time_basis": "chunk",
+            "gcs_uri": upload["gcs_uri"],
+            "local_clip_path": str(clip_path),
+            "model": config.model,
+            "location": config.location,
+            "fps": resolved_fps,
+            "media_resolution": resolved_media_resolution,
+            "usage": response.get("usageMetadata"),
+            "response_id": response.get("responseId"),
+            "finish_reason": ((response.get("candidates") or [{}])[0]).get("finishReason"),
+            "text": text,
+        }
+        write_json(raw_dir / f"{chunk_id}.response.raw.json", raw_record)
+        try:
+            parsed = parse_json_object(text)
+        except json.JSONDecodeError as exc:
+            append_jsonl(
+                project / "gemini_analysis_errors.jsonl",
+                {
+                    **{key: value for key, value in raw_record.items() if key != "text"},
+                    "error": str(exc),
+                },
+            )
+            raise RuntimeError(
+                f"Gemini returned malformed JSON for {chunk_id}; raw response saved to "
+                f"{raw_dir / f'{chunk_id}.response.raw.json'}"
+            ) from exc
+        record = {
+            **{key: value for key, value in raw_record.items() if key != "text"},
+            "analysis": parsed,
+        }
+        append_jsonl(project / "gemini_analyses.jsonl", record)
+        write_json(raw_dir / f"{chunk_id}.analysis.raw.json", record)
+        results.append(
+            {
+                "chunk_id": chunk_id,
+                "chunk_index": chunk.index,
+                "chunk_start_s": chunk.start_s,
+                "chunk_end_s": chunk.end_s,
+                "gcs_uri": upload["gcs_uri"],
+                "usage": response.get("usageMetadata"),
+                "analysis_keys": sorted(parsed.keys()),
+            }
+        )
+
+    run_records = _analysis_records_for_run(project, analysis_run_id)
+    run_results = [
+        {
+            "chunk_id": record.get("chunk_id"),
+            "chunk_index": record.get("chunk_index"),
+            "chunk_start_s": record.get("chunk_start_s"),
+            "chunk_end_s": record.get("chunk_end_s"),
+            "gcs_uri": record.get("gcs_uri"),
+            "usage": record.get("usage"),
+            "analysis_keys": sorted((record.get("analysis") or {}).keys()),
+        }
+        for record in run_records
+    ]
+    manifest = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_run_id": analysis_run_id,
+        "source_video_id": tape["id"],
+        "filename": tape.get("filename"),
+        "source_duration_s": round(duration_s, 3),
+        "chunk_seconds": chunk_seconds,
+        "chunk_overlap_seconds": chunk_overlap_seconds,
+        "chunks_planned": len(all_chunks),
+        "chunks_analyzed": len(run_results),
+        "chunks_analyzed_this_invocation": len(results),
+        "fps": resolved_fps,
+        "media_resolution": resolved_media_resolution,
+        "model": config.model,
+        "estimated_cost_usd_this_invocation": estimate["estimated_cost_usd"],
+        "results": run_results,
+    }
+    write_json(raw_dir / "manifest.json", manifest)
+    write_json(project / "gemini_chunk_run.latest.json", manifest)
+    return {
+        "project": str(project),
+        "analysis_run_id": analysis_run_id,
+        "source_video_id": tape["id"],
+        "model": config.model,
+        "fps": resolved_fps,
+        "media_resolution": resolved_media_resolution,
+        "chunk_seconds": chunk_seconds,
+        "chunk_overlap_seconds": chunk_overlap_seconds,
+        "chunks_planned": len(all_chunks),
+        "chunks_analyzed": len(run_results),
+        "chunks_analyzed_this_invocation": len(results),
+        "estimated_cost_usd_this_invocation": estimate["estimated_cost_usd"],
+        "raw_dir": str(raw_dir),
+    }
+
+
+def create_video_chunk(
+    *,
+    project_dir: Path,
+    video_path: Path,
+    source_video_id: str,
+    chunk: GeminiChunk,
+    force: bool = False,
+) -> Path:
+    chunk_dir = project_dir / "gemini_clips" / source_video_id
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    output = chunk_dir / (
+        f"{source_video_id}_{_chunk_id(chunk.index)}_"
+        f"{int(round(chunk.start_s * 1000)):010d}_"
+        f"{int(round(chunk.end_s * 1000)):010d}.mp4"
+    )
+    if output.exists() and not force:
+        return output
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        f"{chunk.start_s:.3f}",
+        "-i",
+        str(video_path),
+        "-t",
+        f"{chunk.duration_s:.3f}",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "24",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-avoid_negative_ts",
+        "make_zero",
+        str(output),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
+    except FileNotFoundError as exc:
+        raise RuntimeError("ffmpeg is required for Gemini chunk analysis") from exc
+    except subprocess.CalledProcessError:
+        fallback_cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            f"{chunk.start_s:.3f}",
+            "-i",
+            str(video_path),
+            "-t",
+            f"{chunk.duration_s:.3f}",
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "make_zero",
+            str(output),
+        ]
+        try:
+            subprocess.run(fallback_cmd, check=True, capture_output=True, text=True, timeout=7200)
+        except subprocess.CalledProcessError as fallback_exc:
+            detail = fallback_exc.stderr.strip() or fallback_exc.stdout.strip() or str(fallback_exc)
+            raise RuntimeError(f"ffmpeg failed creating Gemini chunk: {detail}") from fallback_exc
+    return output
+
+
 def upload_video_to_gcs(
     *,
     project_dir: Path,
@@ -291,6 +752,7 @@ def upload_video_to_gcs(
     location: str,
     cloud_project: str,
     force: bool = False,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _ensure_bucket(bucket=bucket, location=location, cloud_project=cloud_project)
     object_name = f"{project_dir.name}/{source_video_id}/{video_path.name}"
@@ -316,6 +778,7 @@ def upload_video_to_gcs(
         "gcs_uri": gcs_uri,
         "size_bytes": video_path.stat().st_size,
         "uploaded": force or not exists,
+        "metadata": metadata or {},
     }
     append_jsonl(project_dir / "gemini_uploads.jsonl", record)
     return record
@@ -332,6 +795,7 @@ def generate_content(
     media_resolution: str | None = None,
     fps: float | None = None,
     max_output_tokens: int = 8192,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     access_token = _access_token()
     url = (
@@ -389,6 +853,7 @@ def generate_content(
                     "location": config.location,
                     "media_resolution": media_resolution,
                     "fps": fps,
+                    **(metadata or {}),
                 },
             ),
         )
@@ -529,6 +994,36 @@ Return this JSON shape:
   ]
 }
 """.strip()
+
+
+def _chunk_prompt(base_prompt: str, chunk: GeminiChunk) -> str:
+    return (
+        f"{base_prompt}\n\n"
+        "Chunk-specific instruction: analyze only this uploaded excerpt. "
+        "All JSON start_s and end_s values must be seconds relative to the beginning "
+        f"of this excerpt, not the original tape. This excerpt maps to source seconds "
+        f"{chunk.start_s:.3f} through {chunk.end_s:.3f}; do not output source-global "
+        "timestamps. Use stricter chunk limits: scene_candidates max 6, "
+        "event_candidates max 4, person_mentions max 8, place_candidates max 6, "
+        "date_candidates max 6, followup_segments max 4. Keep evidence_text arrays "
+        "to at most 3 short snippets per event. Do not include transcript blocks, "
+        "long quote lists, or duplicate evidence."
+    )
+
+
+def _chunk_id(index: int) -> str:
+    return f"chunk_{index:04d}"
+
+
+def _analysis_records_for_run(project: Path, analysis_run_id: str) -> list[dict[str, Any]]:
+    return sorted(
+        [
+            row
+            for row in read_jsonl(project / "gemini_analyses.jsonl")
+            if row.get("analysis_run_id") == analysis_run_id
+        ],
+        key=lambda row: (float(row.get("chunk_start_s") or 0.0), int(row.get("chunk_index") or 0)),
+    )
 
 
 def _select_tape(tapes: list[dict[str, Any]], source_video_id: str | None) -> dict[str, Any]:

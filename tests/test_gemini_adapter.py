@@ -1,4 +1,10 @@
-from tapesplit.gemini_adapter import estimate_video_token_units, parse_json_object, usage_units_from_response
+from tapesplit.gemini_adapter import (
+    estimate_chunked_video_analysis,
+    estimate_video_token_units,
+    parse_json_object,
+    plan_video_chunks,
+    usage_units_from_response,
+)
 
 
 def test_estimate_video_token_units_low_resolution():
@@ -15,6 +21,35 @@ def test_estimate_video_token_units_low_resolution():
         "input_audio_tokens": 320,
         "output_tokens": 100,
     }
+
+
+def test_plan_video_chunks_uses_overlap():
+    chunks = plan_video_chunks(duration_s=100, chunk_seconds=40, overlap_seconds=10)
+
+    assert [(chunk.start_s, chunk.end_s) for chunk in chunks] == [
+        (0.0, 40.0),
+        (30.0, 70.0),
+        (60.0, 100.0),
+    ]
+
+
+def test_estimate_chunked_video_analysis_counts_prompt_per_chunk():
+    estimate = estimate_chunked_video_analysis(
+        duration_s=100,
+        model="gemini-2.5-flash",
+        fps=1,
+        media_resolution="low",
+        output_tokens_per_chunk=100,
+        chunk_seconds=40,
+        overlap_seconds=10,
+    )
+
+    assert estimate["chunks"] == 3
+    assert estimate["analyzed_duration_s"] == 120
+    assert estimate["units"]["input_text_tokens"] == 3600
+    assert estimate["units"]["input_video_tokens"] == 7920
+    assert estimate["units"]["input_audio_tokens"] == 3840
+    assert estimate["units"]["output_tokens"] == 300
 
 
 def test_estimate_video_token_units_high_fps_scales_visual_tokens():

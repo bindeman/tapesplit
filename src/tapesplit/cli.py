@@ -17,6 +17,7 @@ from tapesplit.claims import extract_claims
 from tapesplit.evidence import build_evidence
 from tapesplit.geocoding import check_google_maps_config, geocode_candidate
 from tapesplit.gemini_adapter import (
+    analyze_project_video_chunks,
     analyze_project_video,
     check_gemini_config,
     estimate_project_video,
@@ -157,6 +158,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=6000,
         help="Estimated output tokens. Default: 6000.",
     )
+    gemini_estimate.add_argument(
+        "--chunk-seconds",
+        type=float,
+        help="Estimate a chunked run with this chunk duration instead of one whole-video call.",
+    )
+    gemini_estimate.add_argument(
+        "--chunk-overlap-seconds",
+        type=float,
+        default=0.0,
+        help="Chunk overlap for chunked estimates. Default: 0.",
+    )
     gemini_analyze = gemini_subparsers.add_parser(
         "analyze-video",
         help="Analyze a project video with Vertex Gemini and write gemini_analyses.jsonl.",
@@ -171,11 +183,53 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gemini_analyze.add_argument("--max-output-tokens", type=int, default=12000)
     gemini_analyze.add_argument("--force-upload", action="store_true")
+    gemini_analyze_chunks = gemini_subparsers.add_parser(
+        "analyze-video-chunks",
+        help="Analyze a project video with Gemini in source-offset-preserving chunks.",
+    )
+    gemini_analyze_chunks.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_analyze_chunks.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
+    gemini_analyze_chunks.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
+    gemini_analyze_chunks.add_argument(
+        "--media-resolution",
+        choices=["low", "medium", "high"],
+        help="Gemini media resolution. Defaults to GEMINI_MEDIA_RESOLUTION.",
+    )
+    gemini_analyze_chunks.add_argument("--max-output-tokens", type=int, default=8000)
+    gemini_analyze_chunks.add_argument(
+        "--chunk-seconds",
+        type=float,
+        default=900.0,
+        help="Chunk duration in seconds. Default: 900.",
+    )
+    gemini_analyze_chunks.add_argument(
+        "--chunk-overlap-seconds",
+        type=float,
+        default=15.0,
+        help="Context overlap between chunks in seconds. Default: 15.",
+    )
+    gemini_analyze_chunks.add_argument(
+        "--limit-chunks",
+        type=int,
+        help="Analyze only the first N chunks for a bounded test run.",
+    )
+    gemini_analyze_chunks.add_argument(
+        "--run-id",
+        help="Append results to an existing Gemini analysis_run_id instead of creating a new run.",
+    )
+    gemini_analyze_chunks.add_argument(
+        "--start-chunk",
+        type=int,
+        help="Start at this 1-based chunk index. Useful for resuming after a failed chunk.",
+    )
+    gemini_analyze_chunks.add_argument("--force-clips", action="store_true")
+    gemini_analyze_chunks.add_argument("--force-upload", action="store_true")
     gemini_import = gemini_subparsers.add_parser(
         "import-analysis",
         help="Normalize the latest Gemini analysis into reviewable event/evidence JSONL.",
     )
     gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_import.add_argument("--run-id", help="Import a specific Gemini analysis_run_id.")
 
     costs_parser = subparsers.add_parser(
         "costs",
@@ -384,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
                             fps=args.fps,
                             media_resolution=args.media_resolution,
                             output_tokens=args.output_tokens,
+                            chunk_seconds=args.chunk_seconds,
+                            chunk_overlap_seconds=args.chunk_overlap_seconds,
                         ),
                         indent=2,
                         sort_keys=True,
@@ -406,8 +462,30 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
                 return 0
+            if args.gemini_command == "analyze-video-chunks":
+                print(
+                    json.dumps(
+                        analyze_project_video_chunks(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            fps=args.fps,
+                            media_resolution=args.media_resolution,
+                            max_output_tokens=args.max_output_tokens,
+                            chunk_seconds=args.chunk_seconds,
+                            chunk_overlap_seconds=args.chunk_overlap_seconds,
+                            run_id=args.run_id,
+                            start_chunk=args.start_chunk,
+                            limit_chunks=args.limit_chunks,
+                            force_clips=args.force_clips,
+                            force_upload=args.force_upload,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
             if args.gemini_command == "import-analysis":
-                print(json.dumps(import_gemini_analysis(args.project), indent=2, sort_keys=True))
+                print(json.dumps(import_gemini_analysis(args.project, run_id=args.run_id), indent=2, sort_keys=True))
                 return 0
         if args.command == "costs":
             if args.costs_command == "llm":

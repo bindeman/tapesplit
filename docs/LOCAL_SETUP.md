@@ -56,6 +56,17 @@ TwelveLabs:
 .venv/bin/tapesplit twelvelabs list-indexes
 ```
 
+Vertex Gemini:
+
+```bash
+gcloud auth application-default login
+gcloud config set account you@example.com
+gcloud config set project <your-project>
+gcloud auth application-default set-quota-project <your-project>
+
+.venv/bin/tapesplit gemini smoke --project /path/to/family-videos.tapesplit
+```
+
 ## Ingest A Video Folder
 
 ```bash
@@ -105,4 +116,54 @@ Project-level summary:
 
 ```bash
 .venv/bin/tapesplit costs project /path/to/family-videos.tapesplit
+```
+
+## Gemini Video Analysis
+
+For long VHS/DVD transfers, prefer chunked analysis over a single whole-tape
+call. Chunk outputs preserve both chunk-local time and absolute source-video
+time, which makes review/report links safer when Gemini timestamps drift.
+
+Estimate before spending:
+
+```bash
+.venv/bin/tapesplit gemini estimate-video /path/to/family-videos.tapesplit \
+  --chunk-seconds 900 \
+  --chunk-overlap-seconds 15 \
+  --fps 1 \
+  --media-resolution low \
+  --output-tokens 8000
+```
+
+Run a bounded first chunk:
+
+```bash
+.venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
+  --chunk-seconds 900 \
+  --chunk-overlap-seconds 15 \
+  --limit-chunks 1
+```
+
+Run the full chunk pass, import it into reviewable events/evidence, and export
+the static report:
+
+```bash
+.venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
+  --chunk-seconds 900 \
+  --chunk-overlap-seconds 15
+.venv/bin/tapesplit gemini import-analysis /path/to/family-videos.tapesplit
+.venv/bin/tapesplit export-report /path/to/family-videos.tapesplit
+```
+
+Generated chunk clips, raw Gemini responses, and reports stay inside the ignored
+`.tapesplit` project directory. Originals are not modified.
+
+If a chunk fails because Gemini returns malformed or truncated JSON, continue the
+same run after adjusting token limits:
+
+```bash
+.venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
+  --run-id gem_run_... \
+  --start-chunk 3 \
+  --max-output-tokens 12000
 ```

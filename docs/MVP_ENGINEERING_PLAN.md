@@ -84,6 +84,18 @@ Start with Python because it is the fastest path through ffmpeg, scene detection
 OCR, embeddings, and data processing. Keep the model/provider boundary explicit
 so the core VHS layer is not tied to one vendor.
 
+For whole-tape VLM analysis, use map-reduce style chunking by default:
+
+1. Create bounded source excerpts, initially 10-15 minute MP4 sidecars.
+2. Analyze each chunk with source offset metadata.
+3. Import chunk-local model timestamps only after adding the source offset.
+4. Clamp or drop claims that cross known blue-screen/no-signal boundaries.
+5. Synthesize the tape-level story from chunk evidence later.
+
+Single whole-tape Gemini calls are still useful as a cheap exploratory pass, but
+their timestamps are not authoritative enough to drive cuts or metadata exports
+without chunk validation.
+
 ## Data Files
 
 The MVP can use a project directory instead of a server database:
