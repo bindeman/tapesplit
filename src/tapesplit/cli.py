@@ -108,6 +108,12 @@ def _build_parser() -> argparse.ArgumentParser:
     tl_upload.add_argument("--index-id", required=True, help="TwelveLabs index id.")
     tl_upload.add_argument("--wait", action="store_true", help="Wait for indexing tasks to finish.")
     tl_upload.add_argument("--limit", type=int, help="Maximum videos to upload.")
+    tl_upload.add_argument(
+        "--source-video-id",
+        action="append",
+        dest="source_video_ids",
+        help="Specific source video id to upload. Can be passed multiple times.",
+    )
 
     tl_status = tl_subparsers.add_parser("status", help="Show TwelveLabs indexed asset status.")
     tl_status.add_argument("project", type=Path, help="TapeSplit project directory.")
@@ -522,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                     index_id=args.index_id,
                     wait=args.wait,
                     limit=args.limit,
+                    source_video_ids=args.source_video_ids,
                 )
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 0

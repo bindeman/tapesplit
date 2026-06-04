@@ -68,6 +68,7 @@ def upload_project_videos(
     index_id: str,
     wait: bool = False,
     limit: int | None = None,
+    source_video_ids: list[str] | None = None,
 ) -> dict:
     project = project_dir.expanduser().resolve()
     tapes_path = project / "tapes.jsonl"
@@ -76,6 +77,13 @@ def upload_project_videos(
 
     client = require_twelvelabs_client()
     videos = read_jsonl(tapes_path)
+    if source_video_ids:
+        requested = set(source_video_ids)
+        found = {video.get("id") for video in videos}
+        missing = sorted(requested - found)
+        if missing:
+            raise ValueError(f"source video ids not found in project: {', '.join(missing)}")
+        videos = [video for video in videos if video.get("id") in requested]
     if limit is not None:
         videos = videos[:limit]
 
