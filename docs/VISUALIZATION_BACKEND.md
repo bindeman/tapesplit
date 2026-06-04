@@ -51,6 +51,32 @@ Face observations are intentionally not identities. They are reviewable visual
 anchors that can later be linked to `people_groups.jsonl` through local face
 clustering, human confirmation, or both.
 
+## Face Clusters And Identity Candidates
+
+Cluster face thumbnails locally:
+
+```bash
+.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit
+```
+
+This writes:
+
+```text
+face_clusters.jsonl
+face_identity_candidates.jsonl
+```
+
+`face_clusters.jsonl` groups visually similar face crops. `face_identity_candidates.jsonl`
+links a face cluster to possible `people_groups.jsonl` records when the cluster
+appears inside events where those people are already mentioned.
+
+These are still candidates:
+
+- a face cluster is not a confirmed person
+- an identity candidate is based on event co-occurrence, not recognition truth
+- human review should confirm or reject the link before it becomes durable
+  person metadata
+
 ## Visualization Export
 
 Export the UI-ready aggregate:
@@ -71,7 +97,8 @@ This writes `visualization.json` with:
 - `people`: display records for people UIs
 - `relationships.nodes` and `relationships.edges`: graph-ready relationship and
   context edges
-- `assets.visual` and `assets.faces`: raw asset records
+- `relationships.face_identity_candidates`: face-to-person candidates
+- `assets.visual`, `assets.faces`, and `assets.face_clusters`: raw asset records
 
 ## Location Display
 
@@ -100,8 +127,10 @@ The exported data can drive:
 - map views for reviewed/geocoded places
 - album grids with cover thumbnails
 - face-review queues
+- face-cluster identity review
 - context drilldowns from event to evidence, scene, person, place, and source
   video timestamp
 
-The next backend step is identity linking: connect face observations to reviewed
-person groups and store those links as evidence, not as automatic truth.
+The next backend step is reviewed identity persistence: once a user confirms a
+face cluster, store that link as durable person evidence and reuse it across new
+tapes without treating unreviewed clusters as truth.

@@ -37,6 +37,8 @@ def export_visualization_data(
     relationships = _visible_rows(read_jsonl(project / "relationship_candidates.jsonl"), visibility, evidence_by_id)
     visual_assets = read_jsonl(project / "visual_assets.jsonl")
     face_observations = read_jsonl(project / "face_observations.jsonl")
+    face_clusters = read_jsonl(project / "face_clusters.jsonl")
+    face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     people_by_event = _rows_by_event(people)
@@ -44,6 +46,7 @@ def export_visualization_data(
     dates_by_event = _rows_by_event(dates)
     assets_by_subject = _assets_by_subject(visual_assets)
     faces_by_person = _faces_by_person(face_observations)
+    clusters_by_person_candidate = _clusters_by_person_candidate(face_clusters)
     edge_metrics_by_edge = {str(metric.get("edge_id")): metric for metric in edge_metrics if metric.get("edge_id")}
 
     data = {
@@ -70,6 +73,9 @@ def export_visualization_data(
         "tracks": {
             "people": [
                 _people_track(person, events_by_id, faces_by_person)
+                | {
+                    "candidate_face_clusters": clusters_by_person_candidate.get(str(person.get("id") or ""), []),
+                }
                 for person in sorted(people, key=lambda row: str(row.get("label") or "").casefold())
             ],
             "places": [
@@ -82,15 +88,24 @@ def export_visualization_data(
             ],
         },
         "places": [_place_node(place, events_by_id) for place in sorted(places, key=lambda row: _place_sort_key(row))],
-        "people": [_person_node(person, faces_by_person) for person in sorted(people, key=lambda row: str(row.get("label") or "").casefold())],
+        "people": [
+            _person_node(person, faces_by_person)
+            | {
+                "candidate_face_clusters": clusters_by_person_candidate.get(str(person.get("id") or ""), []),
+            }
+            for person in sorted(people, key=lambda row: str(row.get("label") or "").casefold())
+        ],
         "relationships": {
             "nodes": _graph_nodes(people, places, context_edges),
             "edges": _graph_edges(context_edges, edge_metrics_by_edge),
             "candidates": [_relationship_candidate(row, events_by_id) for row in relationships],
+            "face_identity_candidates": face_identity_candidates,
         },
         "assets": {
             "visual": visual_assets,
             "faces": face_observations,
+            "face_clusters": face_clusters,
+            "face_identity_candidates": face_identity_candidates,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -103,6 +118,8 @@ def export_visualization_data(
             "context_edges": len(context_edges),
             "visual_assets": len(visual_assets),
             "face_observations": len(face_observations),
+            "face_clusters": len(face_clusters),
+            "face_identity_candidates": len(face_identity_candidates),
         },
     }
     write_json(output, data)
@@ -357,6 +374,25 @@ def _faces_by_person(faces: list[dict[str, Any]]) -> dict[str, list[dict[str, An
         person_id = str(face.get("person_group_id") or "")
         if person_id:
             grouped[person_id].append(face)
+    return dict(grouped)
+
+
+def _clusters_by_person_candidate(clusters: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for cluster in clusters:
+        for candidate in cluster.get("candidate_people") or []:
+            person_id = str(candidate.get("person_group_id") or "")
+            if not person_id:
+                continue
+            grouped[person_id].append(
+                {
+                    "face_cluster_id": str(cluster.get("id") or ""),
+                    "thumbnail_path": str(cluster.get("thumbnail_path") or ""),
+                    "face_count": cluster.get("face_count"),
+                    "confidence": candidate.get("confidence"),
+                    "review_status": cluster.get("review_status") or "needs_review",
+                }
+            )
     return dict(grouped)
 
 

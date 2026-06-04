@@ -18,6 +18,10 @@ from tapesplit.context_graph import build_context_graph
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.evaluation import build_eval_packet, score_eval_packet
+from tapesplit.face_clustering import (
+    DEFAULT_FACE_CLUSTER_DISTANCE,
+    cluster_faces_for_project,
+)
 from tapesplit.faces import (
     DEFAULT_FACE_MIN_SIZE,
     check_face_detection_config,
@@ -382,6 +386,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Minimum face size in pixels. Default: {DEFAULT_FACE_MIN_SIZE}.",
     )
     faces_parser.add_argument("--force", action="store_true", help="Overwrite existing face thumbnails.")
+
+    cluster_faces_parser = subparsers.add_parser(
+        "cluster-faces",
+        help="Cluster face thumbnails and create reviewable person identity candidates.",
+    )
+    cluster_faces_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    cluster_faces_parser.add_argument(
+        "--max-distance",
+        type=float,
+        default=DEFAULT_FACE_CLUSTER_DISTANCE,
+        help=f"Maximum cosine distance for merging face thumbnails. Default: {DEFAULT_FACE_CLUSTER_DISTANCE}.",
+    )
+    cluster_faces_parser.add_argument(
+        "--min-cluster-size",
+        type=int,
+        default=1,
+        help="Minimum faces per retained cluster. Default: 1.",
+    )
 
     transcribe_parser = subparsers.add_parser(
         "transcribe",
@@ -891,6 +913,19 @@ def main(argv: list[str] | None = None) -> int:
                         subject_type=args.subject_type,
                         min_size=args.min_size,
                         force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "cluster-faces":
+            print(
+                json.dumps(
+                    cluster_faces_for_project(
+                        args.project,
+                        max_distance=args.max_distance,
+                        min_cluster_size=args.min_cluster_size,
                     ),
                     indent=2,
                     sort_keys=True,

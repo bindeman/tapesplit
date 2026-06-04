@@ -109,8 +109,40 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
         [
             {
                 "id": "face_observation_000001",
+                "face_cluster_id": "face_cluster_000001",
                 "person_group_id": "people_group_000001",
                 "face_thumbnail_path": "thumbnails/faces/filip.jpg",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "face_clusters.jsonl",
+        [
+            {
+                "id": "face_cluster_000001",
+                "face_count": 1,
+                "thumbnail_path": "thumbnails/faces/filip.jpg",
+                "candidate_people": [
+                    {
+                        "person_group_id": "people_group_000001",
+                        "person_label": "Filip",
+                        "confidence": 0.68,
+                    }
+                ],
+                "review_status": "needs_review",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "face_identity_candidates.jsonl",
+        [
+            {
+                "id": "face_identity_candidate_000001",
+                "face_cluster_id": "face_cluster_000001",
+                "person_group_id": "people_group_000001",
+                "person_label": "Filip",
+                "confidence": 0.68,
+                "review_status": "needs_review",
             }
         ],
     )
@@ -143,8 +175,11 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert payload["timeline"]["events"][0]["people"][0]["label"] == "Filip"
     assert payload["timeline"]["events"][0]["places"][0]["label"] == "home (Madison, Wisconsin context)"
     assert payload["tracks"]["people"][0]["thumbnail_path"] == "thumbnails/faces/filip.jpg"
+    assert payload["tracks"]["people"][0]["candidate_face_clusters"][0]["face_cluster_id"] == "face_cluster_000001"
     assert payload["tracks"]["places"][0]["display_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["edges"][0]["weight"] == 0.62
+    assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
+    assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 
 

@@ -64,6 +64,8 @@ Current local review pipeline:
 .venv/bin/tapesplit search build /path/to/project.tapesplit
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
 .venv/bin/tapesplit export-report /path/to/project.tapesplit
+.venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene
+.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 ```
 

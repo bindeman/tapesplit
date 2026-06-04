@@ -139,12 +139,13 @@ Extract scene/event thumbnails and optional face thumbnails:
 ```bash
 .venv/bin/tapesplit extract-visuals /path/to/family-videos.tapesplit --force
 .venv/bin/tapesplit detect-faces /path/to/family-videos.tapesplit --subject-type scene
+.venv/bin/tapesplit cluster-faces /path/to/family-videos.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
 ```
 
 `export-visualization` writes `visualization.json`, a UI-ready aggregate for
 event timelines, scene timelines, people tracks, place tracks, relationship
-graphs, visual assets, and face-review queues.
+graphs, visual assets, face clusters, and face-review queues.
 
 ## Upload To TwelveLabs
 
