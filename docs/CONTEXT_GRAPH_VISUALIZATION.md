@@ -235,13 +235,58 @@ Controls:
 
 Graph view with people as nodes and scoped context edges.
 
-Edge thickness can represent:
+Edge thickness should be configurable. Different users will care about different
+relationship signals, and digitizers may want a simple default.
+
+Possible thickness metrics:
 
 - number of shared events
 - number of distinct days
 - number of places
 - review confidence
 - recency inside selected era
+- total observed screen time together
+- number of direct interactions
+- number of times one person addresses the other
+- number of events where both are central, not just background
+- number of repeated event types, such as birthdays, school, trips, dinners
+- number of years or eras where the connection recurs
+- number of reviewed/confirmed supporting facts
+- number of independent evidence modalities, such as transcript, face,
+  location, OCR, and event co-occurrence
+- graph centrality inside the selected era or social circle
+- user-confirmed closeness rating
+
+Subjective/inferred metrics can be optional overlays:
+
+- perceived closeness
+- affection or warmth
+- playfulness/goofiness
+- tension or formality
+- caregiving/directive interaction
+- mentor/teacher-like interaction
+- shared activity intensity
+
+These should be stored as `interaction_style` or `social_style_candidate`
+signals. They should not silently convert into formal relationship facts.
+
+Example style signal:
+
+```json
+{
+  "id": "interaction_style_000041",
+  "subject_entity_id": "person_philip",
+  "object_entity_id": "person_dan",
+  "style": "playful / goofy",
+  "confidence": 0.56,
+  "scope": {
+    "canonical_event_ids": ["canonical_event_000088"],
+    "era_id": "era_2004_2006_childhood"
+  },
+  "evidence_ids": ["tr_00422", "gem_ev_00102"],
+  "review_status": "unreviewed"
+}
+```
 
 Edge color can represent:
 
@@ -251,6 +296,53 @@ Edge color can represent:
 - travel
 - neighborhood
 - unknown social context
+
+Edge pattern can represent review state:
+
+- solid: confirmed
+- dashed: candidate
+- dotted: weak/context-only
+- faded: historical/outside selected era
+- highlighted: current selection or active evidence
+
+Edge labels should be short and composable:
+
+```text
+family candidate
+school context
+appears together often
+Dan's friend group
+playful interactions
+work context
+mentioned but not visible
+```
+
+The UI should let the user switch edge weighting:
+
+```text
+Weight by:
+  shared events
+  total time together
+  direct interactions
+  reviewed confidence
+  era recurrence
+  perceived closeness
+  custom formula
+```
+
+Default weighting should be evidence-heavy:
+
+```text
+edge_weight =
+  shared_event_count
+  + direct_interaction_count * 2
+  + distinct_day_count
+  + reviewed_confirmation_bonus
+  + multimodal_evidence_bonus
+```
+
+Subjective metrics like closeness, warmth, and goofiness should be separate
+view modes so users can understand they are interpretive.
 
 ### Era Timeline
 
@@ -349,10 +441,13 @@ Long term artifacts:
 ```text
 .tapesplit/
   context_edges.jsonl
+  edge_metrics.jsonl
+  interaction_styles.jsonl
   social_circle_candidates.jsonl
   era_slices.jsonl
   person_profiles.jsonl
   graph_review_tasks.jsonl
+  graph_views.jsonl
   graph_exports/
     family_tree.json
     social_context_graph.json
@@ -381,6 +476,50 @@ Person profile projection:
 }
 ```
 
+Edge metric projection:
+
+```json
+{
+  "id": "edge_metric_000123",
+  "edge_id": "context_edge_000123",
+  "metric_set": "default_social_context",
+  "shared_event_count": 8,
+  "distinct_day_count": 4,
+  "distinct_place_count": 3,
+  "total_overlap_seconds": 1920,
+  "direct_interaction_count": 5,
+  "addressed_by_name_count": 2,
+  "central_event_count": 3,
+  "era_recurrence_count": 2,
+  "multimodal_evidence_count": 3,
+  "reviewed_confirmation_count": 1,
+  "computed_weight": 0.76,
+  "review_status": "unreviewed"
+}
+```
+
+Saved graph view:
+
+```json
+{
+  "id": "graph_view_000004",
+  "label": "Philip's Childhood Social Context",
+  "scope": {
+    "anchor_entity_ids": ["person_philip"],
+    "era_ids": ["era_2004_2006_childhood"],
+    "place_group_ids": []
+  },
+  "edge_filters": {
+    "min_weight": 0.25,
+    "include_predicates": ["appears_with", "school_friend_candidate", "family_candidate"],
+    "review_states": ["confirmed", "needs_review", "unreviewed"]
+  },
+  "edge_weight_metric": "shared_events",
+  "layout": "force_directed",
+  "notes": "Freeform view created during review."
+}
+```
+
 ## Review UX
 
 The UI should ask questions in terms humans understand:
@@ -393,6 +532,41 @@ The UI should ask questions in terms humans understand:
 - "Should this relationship only apply to the 2005 school year?"
 
 Corrections should update the graph without mutating raw evidence.
+
+The UI should also allow freeform structure:
+
+- rename a social circle
+- create a custom group
+- pin two people as "connected"
+- mark an edge as "not family, but close"
+- tag an edge as "work", "school", "neighbor", "family friend", or custom text
+- add a note like "Dan's friend from camp"
+- split a social circle into two groups
+- merge two friend groups
+- mark a group as era-specific
+
+Freeform user structure should become first-class correction evidence:
+
+```json
+{
+  "id": "correction_000221",
+  "correction_type": "custom_context_edge",
+  "subject_entity_id": "person_alex",
+  "predicate": "dans_friend_from_camp",
+  "object_entity_id": "person_dan",
+  "scope": {
+    "era_id": "era_1998_2002_childhood"
+  },
+  "label": "Dan's camp friend",
+  "created_by": "reviewer",
+  "review_status": "confirmed"
+}
+```
+
+The graph should support both structured predicates and user-defined labels.
+Structured predicates make search, filtering, and exports reliable. User labels
+capture the real human context that will often be too specific for a fixed
+ontology.
 
 ## Implementation Phases
 
@@ -434,4 +608,3 @@ Humans remember relationships as a mix of family, place, era, events, habits,
 and social proximity. TapeSplit can represent that context explicitly, with
 evidence and uncertainty, instead of forcing every connection into a brittle
 family-tree edge.
-
