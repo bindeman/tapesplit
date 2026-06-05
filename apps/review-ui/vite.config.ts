@@ -35,6 +35,10 @@ function reviewApiPlugin(): Plugin {
             await sendAsset(req, res);
             return;
           }
+          if (req.method === "GET" && req.url.startsWith("/api/video")) {
+            await sendVideo(req, res);
+            return;
+          }
           if (req.method === "POST" && req.url.startsWith("/api/actions")) {
             const body = await readJson(req);
             const actions = Array.isArray(body) ? body : [body];
@@ -90,6 +94,58 @@ async function sendAsset(req: IncomingMessage, res: ServerResponse) {
   const type = mimeType(extname(assetPath));
   res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store" });
   createReadStream(assetPath).pipe(res);
+}
+
+async function sendVideo(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url || "", "http://localhost");
+  const videoId = url.searchParams.get("id") || "";
+  const tape = readJsonlIfExists(join(projectDir, "tapes.jsonl")).find((row) => row.id === videoId);
+  if (!tape) {
+    sendJson(res, { error: "video_not_found" }, 404);
+    return;
+  }
+  const videoPath = resolveVideoPath(tape);
+  if (!videoPath || !existsSync(videoPath) || !statSync(videoPath).isFile()) {
+    sendJson(res, { error: "video_file_not_found" }, 404);
+    return;
+  }
+
+  const stat = statSync(videoPath);
+  const range = req.headers.range;
+  const contentType = mimeType(extname(videoPath));
+  if (!range) {
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": stat.size,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    });
+    createReadStream(videoPath).pipe(res);
+    return;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match) {
+    res.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+    res.end();
+    return;
+  }
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Number(match[2]) : stat.size - 1;
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+    res.writeHead(416, { "Content-Range": `bytes */${stat.size}` });
+    res.end();
+    return;
+  }
+  const safeEnd = Math.min(end, stat.size - 1);
+  res.writeHead(206, {
+    "Content-Type": contentType,
+    "Content-Length": safeEnd - start + 1,
+    "Content-Range": `bytes ${start}-${safeEnd}/${stat.size}`,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "no-store",
+  });
+  createReadStream(videoPath, { start, end: safeEnd }).pipe(res);
 }
 
 async function appendPendingActions(actions: unknown[]) {
@@ -171,6 +227,18 @@ function readJsonlIfExists(path: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line));
 }
 
+function resolveVideoPath(tape: Record<string, unknown>) {
+  const absolutePath = typeof tape.path === "string" ? resolve(tape.path) : "";
+  if (absolutePath) {
+    return absolutePath;
+  }
+  const relativePath = typeof tape.relative_path === "string" ? tape.relative_path : "";
+  if (!relativePath) {
+    return "";
+  }
+  return resolve(projectDir, relativePath);
+}
+
 function sendJson(res: ServerResponse, payload: unknown, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(payload));
@@ -180,6 +248,8 @@ function mimeType(ext: string) {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
+  if (ext === ".mp4" || ext === ".m4v") return "video/mp4";
+  if (ext === ".mov") return "video/quicktime";
   return "application/octet-stream";
 }
 

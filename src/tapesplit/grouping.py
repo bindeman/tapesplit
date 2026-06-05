@@ -20,18 +20,34 @@ ROLE_PERSON_TOKENS = {
     "children",
     "family",
     "families",
+    "father",
+    "fathers",
     "friend",
     "friends",
     "girl",
     "girls",
     "grandma",
     "grandmas",
+    "grandpa",
+    "grandpas",
     "grandmother",
     "grandmothers",
+    "grandfather",
+    "grandfathers",
+    "host",
+    "hostess",
+    "hosts",
+    "hostesses",
     "kid",
     "kids",
     "man",
     "men",
+    "mom",
+    "moms",
+    "mother",
+    "mothers",
+    "dad",
+    "dads",
     "person",
     "people",
     "teacher",
@@ -41,6 +57,65 @@ ROLE_PERSON_TOKENS = {
 }
 
 PERSON_ALIAS_FILENAMES = ("person_aliases.json", "people_aliases.json")
+
+PERSON_NAME_EQUIVALENTS = {
+    "alexander": {"alex", "sasha", "sanya", "shura"},
+    "alexandra": {"alex", "sasha", "shura"},
+    "anna": {"anya", "ania"},
+    "dmitry": {"dima", "dmitri"},
+    "elena": {"alyona", "alena", "lena", "yelena"},
+    "filipp": {"filip", "filya", "philip", "philipp"},
+    "maria": {"masha", "mariya", "mary"},
+    "natalia": {"natasha", "nataliya", "natalya"},
+    "olga": {"olya"},
+    "semyon": {"sema", "semen", "semyon", "syoma", "simon"},
+    "svetlana": {"sveta", "svetla"},
+    "tatiana": {"tania", "tanya", "tatiana", "tatyana"},
+}
+
+PERSON_NAME_EQUIVALENT_KEYS = {
+    alias: canonical
+    for canonical, aliases in PERSON_NAME_EQUIVALENTS.items()
+    for alias in {canonical, *aliases}
+}
+
+CYRILLIC_TRANSLITERATION = str.maketrans(
+    {
+        "а": "a",
+        "б": "b",
+        "в": "v",
+        "г": "g",
+        "д": "d",
+        "е": "e",
+        "ё": "yo",
+        "ж": "zh",
+        "з": "z",
+        "и": "i",
+        "й": "y",
+        "к": "k",
+        "л": "l",
+        "м": "m",
+        "н": "n",
+        "о": "o",
+        "п": "p",
+        "р": "r",
+        "с": "s",
+        "т": "t",
+        "у": "u",
+        "ф": "f",
+        "х": "h",
+        "ц": "ts",
+        "ч": "ch",
+        "ш": "sh",
+        "щ": "sch",
+        "ъ": "",
+        "ы": "y",
+        "ь": "",
+        "э": "e",
+        "ю": "yu",
+        "я": "ya",
+    }
+)
 
 ROOM_PLACE_TOKENS = {
     "bedroom",
@@ -268,6 +343,8 @@ def _build_people_groups(
     for event in events:
         for person in _metadata_list(event, "people"):
             key, kind = _person_key_and_kind(person, person_alias_keys)
+            if kind == "role_candidate":
+                key = _role_person_key(key, event)
             bucket = buckets.setdefault(
                 key,
                 {
@@ -300,11 +377,14 @@ def _build_people_groups(
         source_video_ids = _source_video_ids(evidence_ids, evidence_by_id)
         kind = bucket["kind"]
         review_status = "needs_review" if kind == "role_candidate" or len(aliases) > 1 else "unreviewed"
+        label = " / ".join(aliases)
+        if kind == "role_candidate":
+            label = _role_person_label(label, events_for_group)
         groups.append(
             {
                 "id": f"people_group_{index:06d}",
                 "kind": kind,
-                "label": " / ".join(aliases),
+                "label": label,
                 "aliases": aliases,
                 "canonical_event_ids": event_ids,
                 "evidence_ids": evidence_ids,
@@ -882,6 +962,21 @@ def _person_key_and_kind(value: str, person_alias_keys: dict[str, str]) -> tuple
     return person_alias_keys.get(normalized) or person_alias_keys.get(spelling_key) or spelling_key, "person_candidate"
 
 
+def _role_person_key(key: str, event: dict[str, Any]) -> str:
+    event_id = str(event.get("id") or "")
+    if event_id:
+        return f"role:{key}:{event_id}"
+    return f"role:{key}:{_normalize_key(event.get('title'))}"
+
+
+def _role_person_label(label: str, events: list[dict[str, Any]]) -> str:
+    event = events[0] if events else {}
+    event_title = str(event.get("title") or "").strip()
+    if event_title:
+        return f"{label} ({event_title})"
+    return label
+
+
 def _person_alias_keys(project: Path) -> dict[str, str]:
     groups = _load_project_person_alias_groups(project)
     keys: dict[str, str] = {}
@@ -935,13 +1030,21 @@ def _alias_group_labels(item: Any) -> list[str]:
 def _person_spelling_key(value: str) -> str:
     tokens = []
     for token in value.split():
+        token = _transliterate_cyrillic(token)
         if re.fullmatch(r"[a-z]+", token):
             token = token.replace("ph", "f")
             token = re.sub(r"([bcdfghjklmnpqrstvwxyz])\1+", r"\1", token)
+            if len(token) > 3 and token.endswith("ia"):
+                token = token[:-2] + "ya"
             if len(token) > 3 and token.endswith("ie"):
                 token = token[:-2] + "y"
+            token = PERSON_NAME_EQUIVALENT_KEYS.get(token, token)
         tokens.append(token)
     return " ".join(tokens)
+
+
+def _transliterate_cyrillic(value: str) -> str:
+    return value.translate(CYRILLIC_TRANSLITERATION)
 
 
 def _place_admin_alias_resolution(labels: Any) -> dict[str, Any]:

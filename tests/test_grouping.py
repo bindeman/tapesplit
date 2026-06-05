@@ -155,12 +155,12 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
     result = build_project_groups(tmp_path)
 
     assert result["source_events"] == 8
-    assert result["people_groups"] == 5
+    assert result["people_groups"] == 3
     assert result["albums"] >= 4
 
     people = read_jsonl(tmp_path / "people_groups.jsonl")
-    filip = next(group for group in people if group["metadata"]["normalized_key"] == "filip")
-    assert filip["aliases"] == ["Filip", "Philip"]
+    filip = next(group for group in people if group["metadata"]["normalized_key"] == "filipp")
+    assert filip["aliases"] == ["Filip", "Filya", "Philip", "Филя"]
     assert filip["review_status"] == "needs_review"
     assert filip["canonical_event_ids"] == [
         "canonical_event_000001",
@@ -169,9 +169,8 @@ def test_build_project_groups_writes_reviewable_indexes(tmp_path: Path):
         "canonical_event_000005",
         "canonical_event_000006",
         "canonical_event_000007",
+        "canonical_event_000008",
     ]
-    assert next(group for group in people if group["metadata"]["normalized_key"] == "filya")
-    assert next(group for group in people if group["metadata"]["normalized_key"] == "филя")
 
     dates = read_jsonl(tmp_path / "date_groups.jsonl")
     historical = next(group for group in dates if group["date_value"] == "1856")
@@ -247,6 +246,80 @@ def test_build_project_groups_excludes_unrelated_people_from_context_groups(tmp_
     unrelated_album = next(album for album in albums if album["title"] == "Alice in Wonderland Broadcast")
     assert unrelated_album["album_type"] == "unrelated_content"
     assert unrelated_album["export_status"] == "excluded"
+
+
+def test_build_project_groups_merges_cross_script_and_nickname_person_variants(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Class Party",
+                "start_s": 0,
+                "end_s": 100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_1"],
+                "metadata": {
+                    "event_type": "party",
+                    "people": ["Semyon", "Syoma", "Сема", "СЁМА", "Tania", "Tanya", "Sveta", "Света"],
+                },
+            }
+        ],
+    )
+    _write_jsonl(tmp_path / "gemini_evidence.jsonl", [{"id": "ev_1", "source_video_id": "video_000001"}])
+
+    result = build_project_groups(tmp_path)
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+
+    assert result["people_groups"] == 3
+    assert next(group for group in people if group["metadata"]["normalized_key"] == "semyon")["aliases"] == [
+        "Semyon",
+        "Syoma",
+        "Сема",
+        "СЁМА",
+    ]
+    assert next(group for group in people if group["metadata"]["normalized_key"] == "tatiana")["aliases"] == ["Tania", "Tanya"]
+    assert next(group for group in people if group["metadata"]["normalized_key"] == "svetlana")["aliases"] == ["Sveta", "Света"]
+
+
+def test_build_project_groups_scopes_role_people_to_event_context(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Birthday Party",
+                "start_s": 0,
+                "end_s": 100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_1"],
+                "metadata": {"event_type": "birthday", "people": ["host"]},
+            },
+            {
+                "id": "canonical_event_000002",
+                "title": "New Year Party",
+                "start_s": 120,
+                "end_s": 220,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_2"],
+                "metadata": {"event_type": "holiday", "people": ["host"]},
+            },
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "gemini_evidence.jsonl",
+        [
+            {"id": "ev_1", "source_video_id": "video_000001"},
+            {"id": "ev_2", "source_video_id": "video_000001"},
+        ],
+    )
+
+    result = build_project_groups(tmp_path)
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+
+    assert result["people_groups"] == 2
+    assert {group["label"] for group in people} == {"host (Birthday Party)", "host (New Year Party)"}
+    assert all(group["kind"] == "role_candidate" for group in people)
 
 
 def test_build_project_groups_merges_place_admin_aliases_and_scopes_generic_places(tmp_path: Path):

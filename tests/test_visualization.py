@@ -201,12 +201,29 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
         tmp_path / "edge_metrics.jsonl",
         [{"id": "edge_metric_000001", "edge_id": "context_edge_000001", "computed_weight": 0.62}],
     )
+    _write_jsonl(
+        tmp_path / "relationship_candidates.jsonl",
+        [
+            {
+                "id": "relationship_candidate_000001",
+                "subject_entity_id": "role_entity_grandmother_of_people_group_000001",
+                "subject_label": "Unresolved grandmother",
+                "predicate": "grandparent_candidate",
+                "object_entity_id": "people_group_000001",
+                "object_label": "Filip",
+                "confidence": 0.72,
+                "review_status": "needs_review",
+                "scope": {"source_video_ids": ["video_000001"], "start_s": 10, "end_s": 18},
+            }
+        ],
+    )
 
     result = export_visualization_data(tmp_path)
     payload = json.loads((tmp_path / "visualization.json").read_text(encoding="utf-8"))
 
     assert result["events"] == 1
     assert payload["timeline"]["events"][0]["people"][0]["label"] == "Filip"
+    assert payload["media"][0]["offset_s"] == 0.0
     assert payload["timeline"]["events"][0]["places"][0]["label"] == "home (Madison, Wisconsin context)"
     assert payload["tracks"]["people"][0]["thumbnail_path"] == "thumbnails/faces/filip.jpg"
     assert payload["tracks"]["people"][0]["candidate_face_clusters"][0]["face_cluster_id"] == "face_cluster_000001"
@@ -227,13 +244,19 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert {item["task_type"] for item in payload["review_queue"]} == {
         "resolve_face_cluster",
         "confirm_place_context",
+        "confirm_relationship",
     }
     assert {item["source_id"] for item in payload["review_queue"]} == {
         "face_cluster_000001",
         "context_edge_000002",
+        "relationship_candidate_000001",
     }
     assert payload["review_queue"][0]["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
-    assert payload["summary"]["review_items"] == 2
+    relationship_review = next(item for item in payload["review_queue"] if item["source_id"] == "relationship_candidate_000001")
+    assert relationship_review["related_event_ids"] == ["canonical_event_000001"]
+    assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
+    assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"
+    assert payload["summary"]["review_items"] == 3
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

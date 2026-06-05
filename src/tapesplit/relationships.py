@@ -462,7 +462,7 @@ def _alias_variants(labels: list[str], key: str) -> set[str]:
             if cleaned and cleaned not in ROLE_ONLY_PEOPLE:
                 variants.add(cleaned)
     variants.update(CYRILLIC_NAME_VARIANTS.get(key, set()))
-    if key == "filip":
+    if key in {"filip", "filipp"}:
         variants.update(CYRILLIC_NAME_VARIANTS["philip"])
     return {variant for variant in variants if variant}
 

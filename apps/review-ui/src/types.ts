@@ -52,6 +52,7 @@ export interface MediaRecord {
   id: string;
   filename: string;
   relative_path: string;
+  offset_s?: number;
   duration_s?: number;
   width?: number;
   height?: number;

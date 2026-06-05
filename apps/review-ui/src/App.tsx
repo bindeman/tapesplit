@@ -20,11 +20,13 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { applyReviewActions, assetUrl, loadProject, queueReviewAction, removeReviewAction } from "./api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { applyReviewActions, assetUrl, loadProject, queueReviewAction, removeReviewAction, videoUrl } from "./api";
 import type {
   AlbumRecord,
+  EventEntry,
   EventRecord,
+  MediaRecord,
   PersonRecord,
   PlaceContext,
   PlaceRecord,
@@ -35,6 +37,14 @@ import type {
 } from "./types";
 
 type ViewMode = "review" | "timeline" | "places" | "people";
+
+type PlayerMoment = {
+  videoId: string;
+  videoLabel: string;
+  startS: number;
+  endS?: number;
+  title: string;
+};
 
 const taskLabels: Record<string, string> = {
   resolve_face_cluster: "Faces",
@@ -59,6 +69,7 @@ export function App() {
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
+  const [activeMoment, setActiveMoment] = useState<PlayerMoment | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -239,18 +250,32 @@ export function App() {
             key={selectedItem.id}
             item={selectedItem}
             pending={itemHasPendingAction(selectedItem, pendingActions)}
+            events={bundle.data.timeline.events}
+            media={bundle.data.media}
+            people={bundle.data.people}
+            places={bundle.data.places}
+            onPlay={setActiveMoment}
             onQueue={queueAction}
           />
         )}
         {view === "review" && !selectedItem && <EmptyState icon={Inbox} title="No review items" />}
-        {view === "timeline" && <TimelineView events={bundle.data.timeline.events} />}
-        {view === "places" && <PlacesView contexts={bundle.data.place_contexts} places={bundle.data.places} />}
-        {view === "people" && <PeopleView people={bundle.data.people} />}
+        {view === "timeline" && <TimelineView events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />}
+        {view === "places" && (
+          <PlacesView
+            contexts={bundle.data.place_contexts}
+            places={bundle.data.places}
+            events={bundle.data.timeline.events}
+            media={bundle.data.media}
+            onPlay={setActiveMoment}
+          />
+        )}
+        {view === "people" && <PeopleView people={bundle.data.people} media={bundle.data.media} onPlay={setActiveMoment} />}
       </main>
 
       <aside className="right-rail">
+        <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
         <PendingActionsPanel actions={pendingActions} busy={busy} onApply={applyActions} onRemove={removeAction} />
-        <ContextPanel item={selectedItem} events={bundle.data.timeline.events} />
+        <ContextPanel item={selectedItem} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
       </aside>
     </div>
   );
@@ -315,12 +340,23 @@ function ReviewQueue({
 function ReviewDetail({
   item,
   pending,
+  events,
+  media,
+  people,
+  places,
+  onPlay,
   onQueue,
 }: {
   item: ReviewItem;
   pending: boolean;
+  events: EventRecord[];
+  media: MediaRecord[];
+  people: PersonRecord[];
+  places: PlaceRecord[];
+  onPlay: (moment: PlayerMoment) => void;
   onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
 }) {
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   return (
     <section className="review-surface">
       <div className="review-media">
@@ -340,10 +376,109 @@ function ReviewDetail({
         </div>
         <h2>{item.title}</h2>
         <p>{item.prompt}</p>
-        <EvidenceList item={item} />
+        <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
+        <EvidenceList item={item} media={media} onPlay={onPlay} />
         <ReviewActionControls item={item} onQueue={onQueue} />
       </div>
     </section>
+  );
+}
+
+function ReviewSubjectPreview({
+  item,
+  eventsById,
+  people,
+  places,
+}: {
+  item: ReviewItem;
+  eventsById: Map<string, EventRecord>;
+  people: PersonRecord[];
+  places: PlaceRecord[];
+}) {
+  if (item.task_type === "confirm_relationship") {
+    const candidate = item.candidate as {
+      subject_entity_id?: string;
+      subject_label?: string;
+      object_entity_id?: string;
+      object_label?: string;
+      predicate?: string;
+    };
+    return (
+      <div className="relation-preview">
+        <PersonChip
+          label={candidate.subject_label || "Unknown person"}
+          person={findPerson(people, candidate.subject_entity_id, candidate.subject_label)}
+        />
+        <span className="relation-predicate">{predicateLabel(candidate.predicate)}</span>
+        <PersonChip
+          label={candidate.object_label || "Unknown person"}
+          person={findPerson(people, candidate.object_entity_id, candidate.object_label)}
+        />
+      </div>
+    );
+  }
+
+  if (item.task_type === "confirm_place_context") {
+    const candidate = item.candidate as { source_place_id?: string; target_place_id?: string; predicate?: string };
+    const source = places.find((place) => place.id === candidate.source_place_id);
+    const target = places.find((place) => place.id === candidate.target_place_id);
+    return (
+      <div className="relation-preview">
+        <PlaceChip place={source} eventsById={eventsById} label={source?.display_label || "Source place"} />
+        <span className="relation-predicate">{predicateLabel(candidate.predicate)}</span>
+        <PlaceChip place={target} eventsById={eventsById} label={target?.display_label || "Target place"} />
+      </div>
+    );
+  }
+
+  if (item.task_type === "resolve_place") {
+    const candidate = item.candidate as { display_label?: string; label?: string };
+    const place = places.find((row) => row.id === item.source_id);
+    return <PlaceChip place={place} eventsById={eventsById} label={candidate.display_label || candidate.label || item.title} wide />;
+  }
+
+  return null;
+}
+
+function PersonChip({ label, person }: { label: string; person?: PersonRecord }) {
+  const thumbs = personFaceThumbs(person);
+  return (
+    <div className="subject-chip">
+      <div className="face-stack">
+        {thumbs.length ? (
+          thumbs.slice(0, 3).map((path) => <img key={path} src={assetUrl(path)} alt="" />)
+        ) : (
+          <Users size={18} />
+        )}
+      </div>
+      <div>
+        <strong>{person?.label || label}</strong>
+        <small>{person ? "person candidate" : "unresolved role"}</small>
+      </div>
+    </div>
+  );
+}
+
+function PlaceChip({
+  place,
+  eventsById,
+  label,
+  wide,
+}: {
+  place?: PlaceRecord;
+  eventsById: Map<string, EventRecord>;
+  label: string;
+  wide?: boolean;
+}) {
+  const thumb = firstPlaceThumbnail(place, eventsById);
+  return (
+    <div className={`subject-chip ${wide ? "wide" : ""}`}>
+      <div className="place-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" /> : <MapPin size={18} />}</div>
+      <div>
+        <strong>{label}</strong>
+        <small>{place ? `${place.place_type ?? "place"} · ${place.review_status}` : "place context"}</small>
+      </div>
+    </div>
   );
 }
 
@@ -594,7 +729,15 @@ function CommandButton({
   );
 }
 
-function EvidenceList({ item }: { item: ReviewItem }) {
+function EvidenceList({
+  item,
+  media,
+  onPlay,
+}: {
+  item: ReviewItem;
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
   return (
     <div className="evidence-list">
       {item.events.map((event) => (
@@ -602,9 +745,79 @@ function EvidenceList({ item }: { item: ReviewItem }) {
           <Clock3 size={14} />
           <span>{event.title}</span>
           <small>{event.source_video_ids.join(", ")} · {formatTime(event.start_s)}</small>
+          <MomentButton event={event} media={media} onPlay={onPlay} />
         </div>
       ))}
     </div>
+  );
+}
+
+function MomentButton({
+  event,
+  media,
+  onPlay,
+}: {
+  event: EventEntry | EventRecord;
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const moment = momentFromEvent(event, media);
+  if (!moment) {
+    return null;
+  }
+  return (
+    <button className="moment-button" onClick={() => onPlay(moment)} title={`Play ${moment.videoLabel} at ${formatTime(moment.startS)}`}>
+      <Clock3 size={13} />
+      <span>{formatTime(moment.startS)}</span>
+    </button>
+  );
+}
+
+function VideoPlayerPanel({ moment, onClear }: { moment: PlayerMoment | null; onClear: () => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !moment) {
+      return;
+    }
+    const seek = () => {
+      video.currentTime = moment.startS;
+      void video.play().catch(() => undefined);
+    };
+    if (video.readyState >= 1) {
+      seek();
+    } else {
+      video.addEventListener("loadedmetadata", seek, { once: true });
+      return () => video.removeEventListener("loadedmetadata", seek);
+    }
+  }, [moment]);
+
+  return (
+    <section className="side-panel player-panel">
+      <div className="panel-heading">
+        <h2>Player</h2>
+        {moment && (
+          <button className="text-button" onClick={onClear} title="Clear player">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {moment ? (
+        <>
+          <video key={moment.videoId} ref={videoRef} controls preload="metadata" src={videoUrl(moment.videoId)} />
+          <div className="player-meta">
+            <strong>{moment.title}</strong>
+            <small>
+              {moment.videoLabel} · {formatTime(moment.startS)}
+              {typeof moment.endS === "number" ? `-${formatTime(moment.endS)}` : ""}
+            </small>
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">Select any timestamp to preview the source tape.</p>
+      )}
+    </section>
   );
 }
 
@@ -651,7 +864,17 @@ function PendingActionsPanel({
   );
 }
 
-function ContextPanel({ item, events }: { item: ReviewItem | null; events: EventRecord[] }) {
+function ContextPanel({
+  item,
+  events,
+  media,
+  onPlay,
+}: {
+  item: ReviewItem | null;
+  events: EventRecord[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
   const related = item?.related_event_ids?.map((id) => events.find((event) => event.id === id)).filter(Boolean) as EventRecord[] | undefined;
   return (
     <section className="side-panel context-panel">
@@ -683,6 +906,7 @@ function ContextPanel({ item, events }: { item: ReviewItem | null; events: Event
                   <strong>{event.title}</strong>
                   <small>{event.event_type ?? "event"} · {formatTime(event.start_s)}</small>
                 </div>
+                <MomentButton event={event} media={media} onPlay={onPlay} />
               </div>
             ))}
           </div>
@@ -692,7 +916,15 @@ function ContextPanel({ item, events }: { item: ReviewItem | null; events: Event
   );
 }
 
-function TimelineView({ events }: { events: EventRecord[] }) {
+function TimelineView({
+  events,
+  media,
+  onPlay,
+}: {
+  events: EventRecord[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
   return (
     <section className="timeline-view">
       {events.map((event) => (
@@ -701,7 +933,7 @@ function TimelineView({ events }: { events: EventRecord[] }) {
           <div className="timeline-copy">
             <div className="row-heading">
               <h2>{event.title}</h2>
-              <span>{formatTime(event.start_s)}</span>
+              <MomentButton event={event} media={media} onPlay={onPlay} />
             </div>
             <p>{event.summary}</p>
             <div className="token-row">
@@ -717,7 +949,20 @@ function TimelineView({ events }: { events: EventRecord[] }) {
   );
 }
 
-function PlacesView({ contexts, places }: { contexts: PlaceContext[]; places: PlaceRecord[] }) {
+function PlacesView({
+  contexts,
+  places,
+  events,
+  media,
+  onPlay,
+}: {
+  contexts: PlaceContext[];
+  places: PlaceRecord[];
+  events: EventRecord[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   return (
     <section className="entity-view">
       <div className="context-grid">
@@ -727,10 +972,21 @@ function PlacesView({ contexts, places }: { contexts: PlaceContext[]; places: Pl
               <h2>{context.label}</h2>
               <span>{context.place_count} places</span>
             </div>
+            <div className="moment-strip">
+              {context.events.slice(0, 5).map((event) => {
+                const fullEvent = eventsById.get(event.event_id);
+                return (
+                  <button key={event.event_id} className="moment-tile" onClick={() => playEvent(event, media, onPlay)}>
+                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                    <span>{event.title}</span>
+                  </button>
+                );
+              })}
+            </div>
             <div className="place-list">
               {context.places.map((place) => (
                 <div key={place.id} className="place-row">
-                  <MapPin size={15} />
+                  <PlaceThumb place={places.find((row) => row.id === place.id)} eventsById={eventsById} />
                   <span>{place.display_label}</span>
                   <small>{place.review_status}</small>
                 </div>
@@ -742,6 +998,7 @@ function PlacesView({ contexts, places }: { contexts: PlaceContext[]; places: Pl
       <div className="flat-list">
         {places.map((place) => (
           <div key={place.id} className="flat-row">
+            <PlaceThumb place={place} eventsById={eventsById} />
             <span>{place.display_label}</span>
             <small>{place.kind} · {place.place_type} · {place.review_status}</small>
           </div>
@@ -751,26 +1008,60 @@ function PlacesView({ contexts, places }: { contexts: PlaceContext[]; places: Pl
   );
 }
 
-function PeopleView({ people }: { people: PersonRecord[] }) {
+function PeopleView({
+  people,
+  media,
+  onPlay,
+}: {
+  people: PersonRecord[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
   return (
     <section className="people-grid">
       {people.map((person) => (
         <article key={person.id} className="person-row">
           <div className="person-avatar">
-            {person.thumbnail_path ? <img src={assetUrl(person.thumbnail_path)} alt="" /> : <Users size={18} />}
+            {primaryPersonThumb(person) ? <img src={assetUrl(primaryPersonThumb(person))} alt="" /> : <Users size={18} />}
           </div>
           <div>
             <h2>{person.label}</h2>
             <small>{person.kind} · {person.review_status}</small>
+            <FaceThumbStrip person={person} />
             <div className="token-row">
               {(person.aliases ?? []).slice(0, 4).map((alias) => <Token key={alias}>{alias}</Token>)}
               {(person.candidate_face_clusters ?? []).slice(0, 2).map((cluster) => <Token key={cluster.face_cluster_id}>{cluster.face_count ?? 0} faces</Token>)}
+            </div>
+            <div className="person-moments">
+              {(person.appearances ?? []).slice(0, 3).map((event) => (
+                <MomentButton key={event.event_id} event={event} media={media} onPlay={onPlay} />
+              ))}
             </div>
           </div>
         </article>
       ))}
     </section>
   );
+}
+
+function FaceThumbStrip({ person }: { person: PersonRecord }) {
+  const thumbs = personFaceThumbs(person);
+  if (!thumbs.length) {
+    return null;
+  }
+  return (
+    <div className="face-thumb-strip">
+      {thumbs.slice(0, 5).map((path) => (
+        <img key={path} src={assetUrl(path)} alt="" title="Candidate face, not confirmed" />
+      ))}
+      <small>candidate faces</small>
+    </div>
+  );
+}
+
+function PlaceThumb({ place, eventsById }: { place?: PlaceRecord; eventsById: Map<string, EventRecord> }) {
+  const thumb = firstPlaceThumbnail(place, eventsById);
+  return <span className="inline-place-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" /> : <MapPin size={15} />}</span>;
 }
 
 function EmptyState({ icon: Icon, title }: { icon: typeof Inbox; title: string }) {
@@ -813,6 +1104,85 @@ function itemHasPendingAction(item: ReviewItem, actions: ReviewAction[]) {
     identityCandidates(item).forEach((candidate) => targetIds.add(candidate.face_identity_candidate_id));
   }
   return actions.some((action) => targetIds.has(String(action.target_id)));
+}
+
+function playEvent(event: EventEntry | EventRecord, media: MediaRecord[], onPlay: (moment: PlayerMoment) => void) {
+  const moment = momentFromEvent(event, media);
+  if (moment) {
+    onPlay(moment);
+  }
+}
+
+function momentFromEvent(event: EventEntry | EventRecord, media: MediaRecord[]): PlayerMoment | null {
+  const videoId = event.source_video_ids[0];
+  if (!videoId) {
+    return null;
+  }
+  const tape = media.find((row) => row.id === videoId);
+  const offset = tape?.offset_s ?? 0;
+  const start = Math.max(0, (event.start_s ?? offset) - offset);
+  const end = typeof event.end_s === "number" ? Math.max(start, event.end_s - offset) : undefined;
+  return {
+    videoId,
+    videoLabel: tape?.filename || videoId,
+    startS: start,
+    endS: end,
+    title: event.title,
+  };
+}
+
+function findPerson(people: PersonRecord[], id?: string, label?: string) {
+  const byId = id ? people.find((person) => person.id === id) : undefined;
+  if (byId) {
+    return byId;
+  }
+  const normalized = normalizeLabel(label);
+  if (!normalized) {
+    return undefined;
+  }
+  return people.find((person) => {
+    const labels = [person.label, ...(person.aliases ?? [])].map(normalizeLabel);
+    return labels.includes(normalized);
+  });
+}
+
+function primaryPersonThumb(person?: PersonRecord) {
+  return personFaceThumbs(person)[0] || "";
+}
+
+function personFaceThumbs(person?: PersonRecord) {
+  if (!person) {
+    return [];
+  }
+  return uniqueStrings([
+    person.thumbnail_path || "",
+    ...((person.candidate_face_clusters ?? []).map((cluster) => cluster.thumbnail_path || "")),
+  ]);
+}
+
+function firstPlaceThumbnail(place: PlaceRecord | undefined, eventsById: Map<string, EventRecord>) {
+  if (!place) {
+    return "";
+  }
+  for (const appearance of place.appearances ?? []) {
+    const event = eventsById.get(appearance.event_id);
+    if (event?.thumbnail_path) {
+      return event.thumbnail_path;
+    }
+  }
+  return "";
+}
+
+function uniqueStrings(values: string[]) {
+  return values.filter((value, index) => value && values.indexOf(value) === index);
+}
+
+function normalizeLabel(value?: string) {
+  return String(value || "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function predicateLabel(value?: string) {
+  return String(value || "related").replace(/_/g, " ");
 }
 
 function countBy<T>(rows: T[], getKey: (row: T) => string) {

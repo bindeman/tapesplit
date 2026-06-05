@@ -129,6 +129,52 @@ def test_build_relationship_candidates_uses_nearby_name_mentions(tmp_path: Path)
     assert candidates[0]["confidence"] >= 0.7
 
 
+def test_build_relationship_candidates_matches_cyrillic_mentions_after_alias_merge(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Birthday",
+                "start_s": 0,
+                "end_s": 80,
+                "metadata": {"people": ["Filipp"], "event_type": "birthday"},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            {
+                "id": "people_group_000001",
+                "label": "Filip / Filipp / Filya",
+                "aliases": ["Filip", "Filipp", "Filya"],
+                "metadata": {"normalized_key": "filipp"},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "transcript_segments.jsonl",
+        [
+            {
+                "id": "tr_000001",
+                "source_video_id": "video_000001",
+                "start_s": 20,
+                "end_s": 22,
+                "text": "Филипп, скажи бабушке привет.",
+                "language": "ru",
+            }
+        ],
+    )
+
+    result = build_relationship_candidates(tmp_path)
+
+    assert result["relationship_candidates"] == 1
+    candidates = read_jsonl(tmp_path / "relationship_candidates.jsonl")
+    assert candidates[0]["object_entity_id"] == "people_group_000001"
+    assert candidates[0]["metadata"]["context_source"] == "name_mention"
+
+
 def test_build_relationship_candidates_does_not_guess_without_person_context(tmp_path: Path):
     _write_jsonl(
         tmp_path / "transcript_segments.jsonl",

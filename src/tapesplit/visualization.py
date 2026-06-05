@@ -52,6 +52,7 @@ def export_visualization_data(
     faces_by_person = _faces_by_person(face_observations)
     clusters_by_person_candidate = _clusters_by_person_candidate(face_clusters)
     edge_metrics_by_edge = {str(metric.get("edge_id")): metric for metric in edge_metrics if metric.get("edge_id")}
+    video_offsets = _video_offsets(tapes)
     place_contexts = _place_context_groups(places, events_by_id)
     place_context_edges = _place_context_edges(context_edges, places_by_id, edge_metrics_by_edge)
     review_queue = _review_queue(
@@ -66,13 +67,14 @@ def export_visualization_data(
         people_by_id=people_by_id,
         face_clusters_by_id=face_clusters_by_id,
         assets_by_subject=assets_by_subject,
+        video_offsets=video_offsets,
     )
 
     data = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "project": str(project),
-        "media": [_media_record(tape) for tape in tapes],
+        "media": [_media_record(tape, offset_s=video_offsets.get(str(tape.get("id") or ""), 0.0)) for tape in tapes],
         "timeline": {
             "events": [
                 _event_timeline_entry(
@@ -118,7 +120,10 @@ def export_visualization_data(
         "relationships": {
             "nodes": _graph_nodes(people, places, context_edges),
             "edges": _graph_edges(context_edges, edge_metrics_by_edge),
-            "candidates": [_relationship_candidate(row, events_by_id) for row in relationships],
+            "candidates": [
+                _relationship_candidate(row, events_by_id, events=events, video_offsets=video_offsets)
+                for row in relationships
+            ],
             "place_context_edges": place_context_edges,
             "face_identity_candidates": face_identity_candidates,
         },
@@ -454,17 +459,26 @@ def _graph_edges(
     return graph_edges
 
 
-def _relationship_candidate(row: dict[str, Any], events_by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _relationship_candidate(
+    row: dict[str, Any],
+    events_by_id: dict[str, dict[str, Any]],
+    *,
+    events: list[dict[str, Any]],
+    video_offsets: dict[str, float],
+) -> dict[str, Any]:
     scope = row.get("scope") if isinstance(row.get("scope"), dict) else {}
+    event_ids = _scope_event_ids(scope, events=events, video_offsets=video_offsets)
     return {
         "id": str(row.get("id") or ""),
+        "subject_entity_id": row.get("subject_entity_id"),
         "subject_label": row.get("subject_label"),
         "predicate": row.get("predicate"),
+        "object_entity_id": row.get("object_entity_id"),
         "object_label": row.get("object_label"),
         "confidence": row.get("confidence"),
         "review_status": row.get("review_status") or "needs_review",
         "supporting_signals": row.get("supporting_signals") or [],
-        "events": _event_entries(scope.get("canonical_event_ids") or [], events_by_id),
+        "events": _event_entries(event_ids, events_by_id),
     }
 
 
@@ -481,6 +495,7 @@ def _review_queue(
     people_by_id: dict[str, dict[str, Any]],
     face_clusters_by_id: dict[str, dict[str, Any]],
     assets_by_subject: dict[str, list[dict[str, Any]]],
+    video_offsets: dict[str, float],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
 
@@ -538,6 +553,7 @@ def _review_queue(
                 "review_status": edge.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
                 "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": _event_thumbnail_path(event_ids, assets_by_subject),
                 "candidate": {
                     "source_place_id": edge.get("source"),
                     "target_place_id": edge.get("target"),
@@ -552,7 +568,7 @@ def _review_queue(
         if not _needs_review(relationship):
             continue
         scope = relationship.get("scope") if isinstance(relationship.get("scope"), dict) else {}
-        event_ids = [str(item) for item in scope.get("canonical_event_ids") or []]
+        event_ids = _scope_event_ids(scope, events=events, video_offsets=video_offsets)
         items.append(
             {
                 "task_type": "confirm_relationship",
@@ -565,9 +581,12 @@ def _review_queue(
                 "review_status": relationship.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
                 "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": _event_thumbnail_path(event_ids, assets_by_subject),
                 "candidate": {
                     "predicate": relationship.get("predicate"),
+                    "subject_entity_id": relationship.get("subject_entity_id"),
                     "subject_label": relationship.get("subject_label"),
+                    "object_entity_id": relationship.get("object_entity_id"),
                     "object_label": relationship.get("object_label"),
                 },
                 "actions": ["confirm_relationship", "reject_relationship", "edit_relationship"],
@@ -590,6 +609,7 @@ def _review_queue(
                 "review_status": place.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
                 "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": _event_thumbnail_path(event_ids, assets_by_subject),
                 "candidate": {
                     "label": place.get("label"),
                     "display_label": _place_display_label(place),
@@ -682,16 +702,31 @@ def _review_queue(
     return ordered
 
 
-def _media_record(tape: dict[str, Any]) -> dict[str, Any]:
+def _media_record(tape: dict[str, Any], *, offset_s: float = 0.0) -> dict[str, Any]:
     probe = tape.get("probe") if isinstance(tape.get("probe"), dict) else {}
     return {
         "id": str(tape.get("id") or ""),
         "filename": tape.get("filename"),
         "relative_path": tape.get("relative_path"),
+        "offset_s": offset_s,
         "duration_s": probe.get("duration_s"),
         "width": (probe.get("video") or {}).get("width") if isinstance(probe.get("video"), dict) else None,
         "height": (probe.get("video") or {}).get("height") if isinstance(probe.get("video"), dict) else None,
     }
+
+
+def _video_offsets(tapes: list[dict[str, Any]]) -> dict[str, float]:
+    offsets: dict[str, float] = {}
+    cursor = 0.0
+    for tape in tapes:
+        tape_id = str(tape.get("id") or "")
+        if tape_id:
+            offsets[tape_id] = cursor
+        probe = tape.get("probe") if isinstance(tape.get("probe"), dict) else {}
+        duration = _number_or_none(probe.get("duration_s"))
+        if duration is not None:
+            cursor += duration
+    return offsets
 
 
 def _rows_by_event(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -782,6 +817,87 @@ def _event_entries(event_ids: list[Any], events_by_id: dict[str, dict[str, Any]]
             }
         )
     return sorted(entries, key=lambda row: _number_or_large(row.get("start_s")))
+
+
+def _event_thumbnail_path(event_ids: list[Any], assets_by_subject: dict[str, list[dict[str, Any]]]) -> str:
+    for event_id in event_ids:
+        path = _first_path(assets_by_subject.get(f"event:{event_id}", []), "thumbnail_path")
+        if path:
+            return path
+    return ""
+
+
+def _scope_event_ids(
+    scope: dict[str, Any],
+    *,
+    events: list[dict[str, Any]],
+    video_offsets: dict[str, float],
+) -> list[str]:
+    explicit = [str(item) for item in scope.get("canonical_event_ids") or [] if item]
+    if explicit:
+        return _unique_items(explicit)
+
+    source_video_ids = {str(item) for item in scope.get("source_video_ids") or [] if item}
+    if not source_video_ids:
+        return []
+
+    start = _number_or_none(scope.get("start_s"))
+    end = _number_or_none(scope.get("end_s"))
+    if start is None and end is None:
+        return []
+    if start is None:
+        start = end
+    if end is None:
+        end = start
+    if start is None or end is None:
+        return []
+    if end < start:
+        start, end = end, start
+
+    matched = _scope_event_ids_with_range(source_video_ids, start, end, events, video_offsets=video_offsets)
+    if matched:
+        return matched
+    return _scope_event_ids_with_range(source_video_ids, start, end, events, video_offsets={})
+
+
+def _scope_event_ids_with_range(
+    source_video_ids: set[str],
+    start: float,
+    end: float,
+    events: list[dict[str, Any]],
+    *,
+    video_offsets: dict[str, float],
+) -> list[str]:
+    event_ids: list[str] = []
+    ranges = [
+        (start + video_offsets.get(video_id, 0.0), end + video_offsets.get(video_id, 0.0))
+        for video_id in source_video_ids
+    ]
+    for event in events:
+        event_id = str(event.get("id") or "")
+        if not event_id:
+            continue
+        if source_video_ids and source_video_ids.isdisjoint(set(_event_source_video_ids(event))):
+            continue
+        event_start = _number_or_none(event.get("start_s"))
+        event_end = _number_or_none(event.get("end_s"))
+        if event_start is None and event_end is None:
+            continue
+        if event_start is None:
+            event_start = event_end
+        if event_end is None:
+            event_end = event_start
+        if event_start is None or event_end is None:
+            continue
+        if event_end < event_start:
+            event_start, event_end = event_end, event_start
+        if any(_ranges_overlap(start_s, end_s, event_start, event_end) for start_s, end_s in ranges):
+            event_ids.append(event_id)
+    return _unique_items(event_ids)
+
+
+def _ranges_overlap(start_a: float, end_a: float, start_b: float, end_b: float) -> bool:
+    return start_a <= end_b and start_b <= end_a
 
 
 def _ref(node_type: str, row: dict[str, Any]) -> dict[str, Any]:

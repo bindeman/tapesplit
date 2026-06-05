@@ -12,6 +12,7 @@ The Vite dev server exposes a local middleware API:
 
 - `GET /api/project` loads `visualization.json` and pending review actions.
 - `GET /api/asset?path=...` serves project-relative thumbnails and keyframes.
+- `GET /api/video?id=...` streams a source tape by `video_id` with byte-range support for the player.
 - `POST /api/actions` appends review actions to `review-actions.pending.jsonl`.
 - `DELETE /api/actions?id=...` removes one pending action, or clears all when no id is provided.
 - `POST /api/apply` runs `tapesplit review apply` and refreshes `visualization.json`.

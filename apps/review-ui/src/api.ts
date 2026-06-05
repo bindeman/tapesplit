@@ -30,6 +30,10 @@ export function assetUrl(path?: string) {
   return path ? `/api/asset?path=${encodeURIComponent(path)}` : "";
 }
 
+export function videoUrl(videoId?: string) {
+  return videoId ? `/api/video?id=${encodeURIComponent(videoId)}` : "";
+}
+
 async function readResponse<T>(response: Response): Promise<T> {
   const payload = await response.json();
   if (!response.ok) {
