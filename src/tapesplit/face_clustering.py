@@ -1,15 +1,35 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 import math
 from pathlib import Path
+import re
 from typing import Any
 
+from tapesplit.face_quality import analyze_face_quality
 from tapesplit.storage import append_jsonl, read_jsonl
 from tapesplit.visibility import build_visibility_filter
 
 
 DEFAULT_FACE_CLUSTER_DISTANCE = 0.28
+
+FACE_IDENTITY_EXCLUDED_KINDS = {
+    "role_candidate",
+    "fictional_person",
+    "group_candidate",
+}
+
+FACE_IDENTITY_GROUP_LABELS = {
+    "adult",
+    "adults",
+    "children",
+    "family",
+    "friends",
+    "group",
+    "kids",
+    "people",
+    "russians",
+}
 
 
 def cluster_faces_for_project(
@@ -42,11 +62,26 @@ def cluster_faces_for_project(
         if visibility.visible_row(person, evidence_by_id=evidence_by_id)
     ]
 
+    prepared_faces = []
     feature_rows = []
     skipped = 0
+    skipped_low_quality = 0
+    review_only_faces = []
     for face in sorted(faces, key=_face_sort_key):
+        quality = analyze_face_quality(project / str(face.get("face_thumbnail_path") or ""))
+        prepared_face = {
+            **face,
+            "face_quality": quality,
+            "face_quality_status": quality.get("status"),
+            "face_quality_notes": quality.get("notes") or [],
+        }
+        prepared_faces.append(prepared_face)
+        if not quality.get("usable"):
+            skipped_low_quality += 1
+            review_only_faces.append(prepared_face)
+            continue
         try:
-            feature = _face_feature(project, face)
+            feature = _face_feature(project, prepared_face)
         except RuntimeError:
             raise
         except Exception:
@@ -54,10 +89,12 @@ def cluster_faces_for_project(
         if not feature:
             skipped += 1
             continue
-        feature_rows.append({"face": face, "feature": feature})
+        feature_rows.append({"face": prepared_face, "feature": feature})
 
     clusters = _cluster_feature_rows(feature_rows, max_distance=max_distance)
     clusters = [cluster for cluster in clusters if len(cluster["faces"]) >= min_cluster_size]
+    if min_cluster_size <= 1:
+        clusters.extend(_review_only_face_clusters(review_only_faces))
     face_to_cluster_id = {
         str(face.get("id")): f"face_cluster_{index:06d}"
         for index, cluster in enumerate(clusters, start=1)
@@ -69,7 +106,7 @@ def cluster_faces_for_project(
             **face,
             "face_cluster_id": face_to_cluster_id.get(str(face.get("id") or ""), ""),
         }
-        for face in faces
+        for face in prepared_faces
     ]
     _write_jsonl(project / "face_observations.jsonl", enriched_faces)
 
@@ -112,6 +149,9 @@ def cluster_faces_for_project(
         "face_observations": len(faces),
         "faces_clustered": len(face_to_cluster_id),
         "faces_skipped": skipped,
+        "faces_skipped_from_similarity": skipped + skipped_low_quality,
+        "faces_skipped_low_quality": skipped_low_quality,
+        "faces_review_only_low_quality": len(review_only_faces) if min_cluster_size <= 1 else 0,
         "face_clusters": len(cluster_records),
         "identity_candidates": len(candidate_records),
         "max_distance": max_distance,
@@ -165,6 +205,19 @@ def _cluster_feature_rows(rows: list[dict[str, Any]], *, max_distance: float) ->
     return clusters
 
 
+def _review_only_face_clusters(faces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "faces": [face],
+            "features": [],
+            "centroid": [],
+            "max_observed_distance": None,
+            "review_only": True,
+        }
+        for face in faces
+    ]
+
+
 def _cluster_record(
     cluster_id: str,
     faces: list[dict[str, Any]],
@@ -180,6 +233,15 @@ def _cluster_record(
     last_end = max([value for value in ends if value is not None], default=None)
     representative = faces[0] if faces else {}
     review_status = "needs_review" if candidate_people or len(faces) > 1 else "unreviewed"
+    quality = _cluster_quality(faces)
+    review_only = bool(faces) and not any(face.get("face_quality_status") == "usable" for face in faces)
+    notes = [
+        "Face clusters are visual similarity candidates, not confirmed identities.",
+        "Candidate people are inferred from event co-occurrence and require review.",
+    ]
+    if review_only:
+        review_status = "needs_review"
+        notes.append("This is a review-only low-quality face crop; it was not used for visual similarity matching.")
     return {
         "id": cluster_id,
         "label": f"Face cluster {int(cluster_id.rsplit('_', 1)[-1])}",
@@ -197,10 +259,12 @@ def _cluster_record(
         "method": "local_face_thumbnail_similarity",
         "feature_model": "opencv_equalized_gray_32",
         "max_distance": max_distance,
-        "notes": [
-            "Face clusters are visual similarity candidates, not confirmed identities.",
-            "Candidate people are inferred from event co-occurrence and require review.",
-        ],
+        "review_only": review_only,
+        "quality_status": quality["status"],
+        "face_quality_counts": quality["counts"],
+        "face_quality_notes": quality["notes"],
+        "low_quality_face_count": quality["low_quality_count"],
+        "notes": notes,
     }
 
 
@@ -211,14 +275,21 @@ def _candidate_people_for_cluster(
     people_by_event: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
     buckets: dict[str, dict[str, Any]] = {}
+    cluster_event_ids: set[str] = set()
     for face in faces:
         face_id = str(face.get("id") or "")
         for event in face_event_context.get(face_id, []):
             event_id = str(event.get("id") or "")
-            for person in people_by_event.get(event_id, []):
+            if event_id:
+                cluster_event_ids.add(event_id)
+            event_people = [person for person in people_by_event.get(event_id, []) if _identity_eligible_person(person)]
+            event_people_count = max(1, len(event_people))
+            event_weight = 1.0 / math.sqrt(event_people_count)
+            for person in event_people:
                 person_id = str(person.get("id") or "")
                 if not person_id:
                     continue
+                direct_name_signal = _person_event_name_signal(person, event)
                 bucket = buckets.setdefault(
                     person_id,
                     {
@@ -227,6 +298,11 @@ def _candidate_people_for_cluster(
                         "face_observation_ids": [],
                         "supporting_event_ids": [],
                         "supporting_event_titles": [],
+                        "direct_name_event_ids": [],
+                        "direct_name_strength": 0.0,
+                        "event_person_counts": {},
+                        "_score": 0.0,
+                        "_direct_name_strength": 0.0,
                     },
                 )
                 if face_id and face_id not in bucket["face_observation_ids"]:
@@ -234,24 +310,177 @@ def _candidate_people_for_cluster(
                 if event_id and event_id not in bucket["supporting_event_ids"]:
                     bucket["supporting_event_ids"].append(event_id)
                     bucket["supporting_event_titles"].append(str(event.get("title") or event_id))
+                if event_id:
+                    bucket["event_person_counts"][event_id] = event_people_count
+                    if direct_name_signal and event_id not in bucket["direct_name_event_ids"]:
+                        bucket["direct_name_event_ids"].append(event_id)
+                bucket["_score"] += event_weight + direct_name_signal
+                bucket["_direct_name_strength"] += direct_name_signal
+                bucket["direct_name_strength"] = round(bucket["_direct_name_strength"], 3)
     candidates = []
     face_count = max(1, len(faces))
+    cluster_event_count = max(1, len(cluster_event_ids))
+    quality = _cluster_quality(faces)
+    quality_multiplier = _quality_confidence_multiplier(quality)
     for bucket in buckets.values():
         face_support = len(bucket["face_observation_ids"])
         event_support = len(bucket["supporting_event_ids"])
-        confidence = min(0.85, 0.25 + (face_support / face_count) * 0.35 + min(event_support * 0.08, 0.25))
+        direct_support = len(bucket["direct_name_event_ids"])
+        coverage = face_support / face_count
+        event_coverage = event_support / cluster_event_count
+        direct_rate = direct_support / max(1, event_support)
+        direct_strength_rate = min(float(bucket["_direct_name_strength"]) / max(1, event_support), 1.0)
+        avg_people_count = (
+            sum(bucket["event_person_counts"].values()) / len(bucket["event_person_counts"])
+            if bucket["event_person_counts"]
+            else 1.0
+        )
+        confidence = (
+            0.12
+            + coverage * 0.28
+            + min(event_coverage, 1.0) * 0.18
+            + min(bucket["_score"] / face_count, 1.0) * 0.18
+            + direct_rate * 0.15
+            + direct_strength_rate * 0.07
+        )
+        if direct_support == 0:
+            confidence = min(confidence, 0.56)
+        if avg_people_count >= 4 and direct_support == 0:
+            confidence -= 0.08
+        confidence *= quality_multiplier
+        if quality["status"] != "usable":
+            confidence = min(confidence, 0.52 if direct_support else 0.38)
+        confidence = max(0.05, min(0.9, confidence))
+        ambiguity = "low" if avg_people_count <= 1.5 else "medium" if avg_people_count <= 3 else "high"
+        basis = [
+            "candidate person appears in events overlapping this face cluster",
+            *(
+                ["event title/summary directly names this person"]
+                if direct_support
+                else ["no direct visual identity signal; event co-occurrence only"]
+            ),
+        ]
+        if quality["status"] != "usable":
+            basis.append("face crop quality is weak; use as review evidence only")
+        basis.append("not a confirmed identity")
         candidates.append(
             {
-                **bucket,
+                **{key: value for key, value in bucket.items() if not key.startswith("_")},
                 "confidence": round(confidence, 3),
-                "basis": [
-                    "candidate person appears in events overlapping this face cluster",
-                    "not a confirmed identity",
-                ],
+                "candidate_ambiguity": ambiguity,
+                "average_event_people_count": round(avg_people_count, 2),
+                "face_quality_status": quality["status"],
+                "face_quality_notes": quality["notes"],
+                "basis": basis,
             }
         )
-    candidates.sort(key=lambda row: (row["confidence"], len(row["supporting_event_ids"]), row["person_label"]), reverse=True)
+    candidates.sort(
+        key=lambda row: (
+            row["confidence"],
+            row.get("direct_name_strength") or 0.0,
+            len(row.get("direct_name_event_ids") or []),
+            len(row["supporting_event_ids"]),
+            row["person_label"],
+        ),
+        reverse=True,
+    )
     return candidates[:5]
+
+
+def _cluster_quality(faces: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = Counter(str(face.get("face_quality_status") or "unknown") for face in faces)
+    low_quality_count = sum(count for status, count in counts.items() if status not in {"usable", "unknown"})
+    notes = _unique_items(
+        note
+        for face in faces
+        for note in face.get("face_quality_notes") or []
+    )
+    if not faces:
+        status = "unknown"
+    elif counts.get("usable") == len(faces):
+        status = "usable"
+    elif counts.get("usable"):
+        status = "mixed_quality"
+    else:
+        status = "low_quality"
+    return {
+        "status": status,
+        "counts": dict(sorted(counts.items())),
+        "low_quality_count": low_quality_count,
+        "notes": notes,
+    }
+
+
+def _quality_confidence_multiplier(quality: dict[str, Any]) -> float:
+    status = str(quality.get("status") or "")
+    if status == "usable":
+        return 1.0
+    if status == "mixed_quality":
+        return 0.82
+    if status == "low_quality":
+        return 0.62
+    return 0.7
+
+
+def _identity_eligible_person(person: dict[str, Any]) -> bool:
+    kind = str(person.get("kind") or "person_candidate")
+    if kind in FACE_IDENTITY_EXCLUDED_KINDS:
+        return False
+    labels = [str(person.get("label") or ""), *[str(alias) for alias in person.get("aliases") or []]]
+    normalized = {_normalize_label(label) for label in labels if label}
+    if normalized & FACE_IDENTITY_GROUP_LABELS:
+        return False
+    return True
+
+
+def _person_event_name_signal(person: dict[str, Any], event: dict[str, Any]) -> float:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    weighted_sources = [
+        (event.get("title"), 1.0),
+        (metadata.get("title"), 1.0),
+        (event.get("summary"), 0.65),
+        (metadata.get("summary"), 0.65),
+    ]
+    return max(
+        (weight for value, weight in weighted_sources if _person_terms_in_text(person, value)),
+        default=0.0,
+    )
+
+
+def _person_terms_in_text(person: dict[str, Any], value: Any) -> bool:
+    normalized_text = _normalize_label(value)
+    if not normalized_text:
+        return False
+    tokens = set(normalized_text.split())
+    for term in _person_name_terms(person):
+        if " " in term:
+            if f" {term} " in f" {normalized_text} ":
+                return True
+        elif term in tokens:
+            return True
+    return False
+
+
+def _person_name_terms(person: dict[str, Any]) -> set[str]:
+    terms = set()
+    for label in [person.get("label"), *(person.get("aliases") or [])]:
+        normalized = _normalize_label(label)
+        if not normalized:
+            continue
+        if "/" in str(label):
+            continue
+        if normalized not in FACE_IDENTITY_GROUP_LABELS:
+            terms.add(normalized)
+        for part in normalized.split():
+            if len(part) > 2 and part not in FACE_IDENTITY_GROUP_LABELS:
+                terms.add(part)
+    return terms
+
+
+def _normalize_label(value: Any) -> str:
+    text = str(value or "").casefold().replace("&", " and ")
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _face_event_context(faces: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

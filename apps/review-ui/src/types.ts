@@ -114,6 +114,9 @@ export interface PersonRecord {
     thumbnail_path?: string;
     face_count?: number;
     confidence?: number;
+    quality_status?: string;
+    face_quality_notes?: string[];
+    review_only?: boolean;
     review_status?: string;
   }>;
 }
@@ -248,6 +251,13 @@ export interface FaceIdentityCandidate {
   review_status: string;
   supporting_event_ids?: string[];
   supporting_event_titles?: string[];
+  direct_name_event_ids?: string[];
+  direct_name_strength?: number;
+  candidate_ambiguity?: string;
+  average_event_people_count?: number;
+  face_quality_status?: string;
+  face_quality_notes?: string[];
+  basis?: string[];
 }
 
 export interface FaceCluster {
@@ -259,7 +269,19 @@ export interface FaceCluster {
     person_group_id: string;
     person_label: string;
     confidence?: number;
+    direct_name_event_ids?: string[];
+    direct_name_strength?: number;
+    candidate_ambiguity?: string;
+    average_event_people_count?: number;
+    face_quality_status?: string;
+    face_quality_notes?: string[];
+    basis?: string[];
   }>;
+  quality_status?: string;
+  face_quality_counts?: Record<string, number>;
+  face_quality_notes?: string[];
+  low_quality_face_count?: number;
+  review_only?: boolean;
   review_status: string;
 }
 
@@ -269,6 +291,8 @@ export interface FaceObservation {
   person_group_id?: string;
   face_thumbnail_path?: string;
   source_subject_id?: string;
+  face_quality_status?: string;
+  face_quality_notes?: string[];
 }
 
 export interface VisualAsset {

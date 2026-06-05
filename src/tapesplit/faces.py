@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from tapesplit.face_quality import analyze_face_quality
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -58,6 +59,7 @@ def detect_face_thumbnails_for_project(
             face_path = project / face_rel
             if force or not face_path.exists():
                 _crop_face_thumbnail(image_path, face_path, detection["bbox"])
+            quality = analyze_face_quality(face_path)
             append_jsonl(
                 output_path,
                 {
@@ -71,6 +73,9 @@ def detect_face_thumbnails_for_project(
                     "bbox": detection["bbox"],
                     "bbox_format": "pixel_xywh",
                     "face_thumbnail_path": str(face_rel),
+                    "face_quality": quality,
+                    "face_quality_status": quality.get("status"),
+                    "face_quality_notes": quality.get("notes") or [],
                     "detector": detection.get("detector") or "opencv_haar_frontalface_default",
                     "confidence": detection.get("confidence"),
                     "person_group_id": "",

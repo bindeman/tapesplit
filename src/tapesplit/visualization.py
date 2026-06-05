@@ -767,6 +767,9 @@ def _clusters_by_person_candidate(clusters: list[dict[str, Any]]) -> dict[str, l
                     "thumbnail_path": str(cluster.get("thumbnail_path") or ""),
                     "face_count": cluster.get("face_count"),
                     "confidence": candidate.get("confidence"),
+                    "quality_status": cluster.get("quality_status") or candidate.get("face_quality_status"),
+                    "face_quality_notes": cluster.get("face_quality_notes") or candidate.get("face_quality_notes") or [],
+                    "review_only": bool(cluster.get("review_only")),
                     "review_status": cluster.get("review_status") or "needs_review",
                 }
             )
@@ -797,6 +800,13 @@ def _face_identity_candidate_for_review(
         "confidence": candidate.get("confidence"),
         "supporting_event_ids": [str(item) for item in candidate.get("supporting_event_ids") or []],
         "supporting_event_titles": [str(item) for item in candidate.get("supporting_event_titles") or []],
+        "direct_name_event_ids": [str(item) for item in candidate.get("direct_name_event_ids") or []],
+        "direct_name_strength": candidate.get("direct_name_strength"),
+        "candidate_ambiguity": candidate.get("candidate_ambiguity"),
+        "average_event_people_count": candidate.get("average_event_people_count"),
+        "face_quality_status": candidate.get("face_quality_status"),
+        "face_quality_notes": [str(item) for item in candidate.get("face_quality_notes") or []],
+        "basis": [str(item) for item in candidate.get("basis") or []],
         "review_status": candidate.get("review_status") or "needs_review",
     }
 

@@ -534,7 +534,15 @@ function FaceClusterActions({ item, onQueue }: { item: ReviewItem; onQueue: (act
             />
             <span>
               <strong>{candidate.person_label}</strong>
-              <small>{formatConfidence(candidate.confidence)} · {candidate.supporting_event_titles.join(", ")}</small>
+              <small>
+                {formatConfidence(candidate.confidence)} · {candidate.candidate_ambiguity ?? "unknown"} ambiguity
+                {candidate.direct_name_event_ids?.length ? " · named in event" : " · co-occurrence only"}
+                {candidate.face_quality_status && candidate.face_quality_status !== "usable"
+                  ? ` · ${qualityShortLabel(candidate.face_quality_status)}`
+                  : ""}
+              </small>
+              <small>{candidate.supporting_event_titles.join(", ")}</small>
+              {candidate.face_quality_notes?.length ? <small>{candidate.face_quality_notes.join(" ")}</small> : null}
             </span>
           </label>
         ))}
@@ -1030,7 +1038,9 @@ function PeopleView({
             <FaceThumbStrip person={person} />
             <div className="token-row">
               {(person.aliases ?? []).slice(0, 4).map((alias) => <Token key={alias}>{alias}</Token>)}
-              {(person.candidate_face_clusters ?? []).slice(0, 2).map((cluster) => <Token key={cluster.face_cluster_id}>{cluster.face_count ?? 0} faces</Token>)}
+              {(person.candidate_face_clusters ?? []).slice(0, 2).map((cluster) => (
+                <Token key={cluster.face_cluster_id}>{faceClusterTokenLabel(cluster)}</Token>
+              ))}
             </div>
             <div className="person-moments">
               {(person.appearances ?? []).slice(0, 3).map((event) => (
@@ -1045,15 +1055,20 @@ function PeopleView({
 }
 
 function FaceThumbStrip({ person }: { person: PersonRecord }) {
+  const clusters = person.candidate_face_clusters ?? [];
   const thumbs = personFaceThumbs(person);
   if (!thumbs.length) {
     return null;
   }
   return (
     <div className="face-thumb-strip">
-      {thumbs.slice(0, 5).map((path) => (
-        <img key={path} src={assetUrl(path)} alt="" title="Candidate face, not confirmed" />
-      ))}
+      {thumbs.slice(0, 5).map((path) => {
+        const cluster = clusters.find((item) => item.thumbnail_path === path);
+        const title = cluster
+          ? `Candidate face, not confirmed. ${qualityShortLabel(cluster.quality_status)}${cluster.review_only ? ". Review-only crop." : ""}`
+          : "Candidate face, not confirmed";
+        return <img key={path} src={assetUrl(path)} alt="" title={title} />;
+      })}
       <small>candidate faces</small>
     </div>
   );
@@ -1093,6 +1108,13 @@ function identityCandidates(item: ReviewItem) {
       person_label: string;
       confidence?: number;
       supporting_event_titles: string[];
+      direct_name_event_ids?: string[];
+      direct_name_strength?: number;
+      candidate_ambiguity?: string;
+      average_event_people_count?: number;
+      face_quality_status?: string;
+      face_quality_notes?: string[];
+      basis?: string[];
     }>;
   };
   return candidate.identity_candidates ?? [];
@@ -1158,6 +1180,19 @@ function personFaceThumbs(person?: PersonRecord) {
     person.thumbnail_path || "",
     ...((person.candidate_face_clusters ?? []).map((cluster) => cluster.thumbnail_path || "")),
   ]);
+}
+
+function faceClusterTokenLabel(cluster: NonNullable<PersonRecord["candidate_face_clusters"]>[number]) {
+  const count = cluster.face_count ?? 0;
+  const quality = cluster.quality_status && cluster.quality_status !== "usable" ? `${qualityShortLabel(cluster.quality_status)} ` : "";
+  return `${count} ${quality}${count === 1 ? "face" : "faces"}`;
+}
+
+function qualityShortLabel(value?: string) {
+  if (!value) {
+    return "unknown quality";
+  }
+  return value.replaceAll("_", " ");
 }
 
 function firstPlaceThumbnail(place: PlaceRecord | undefined, eventsById: Map<string, EventRecord>) {
