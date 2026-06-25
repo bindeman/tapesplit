@@ -77,9 +77,22 @@ def transcribe_project_local(
             else:
                 kept_audio_files.append(item)
         audio_files = kept_audio_files
+    elif not force:
+        existing_sources = _transcribed_source_ids(project)
+        overlapping_sources = sorted(
+            source_id
+            for source_id in {item["source_video_id"] for item in audio_files}
+            if source_id in existing_sources
+        )
+        if overlapping_sources:
+            raise FileExistsError(
+                "transcript segments already exist for "
+                f"{', '.join(overlapping_sources)}; pass --force to replace them "
+                "or --skip-existing to append only missing sources"
+            )
 
-    all_segments = []
     run_records = []
+    total_written = 0
     for item in audio_files:
         source_id = item["source_video_id"]
         audio_path = Path(item["audio_path"])
@@ -103,7 +116,8 @@ def transcribe_project_local(
                 "engine": selected_engine,
                 "raw_output": str(output_path),
             }
-        all_segments.extend(segments)
+        written = write_transcript_segments(project, segments, force=force, source_video_id=source_id)
+        total_written += written
         run_records.append(
             {
                 "run_id": run_id,
@@ -114,18 +128,15 @@ def transcribe_project_local(
                 "language": language or "auto",
                 "audio_path": str(audio_path),
                 "raw_output": str(output_path),
-                "segments": len(segments),
+                "segments": written,
             }
         )
-
-    written = write_transcript_segments(project, all_segments, force=force, source_video_id=source_video_id)
-    for record in run_records:
-        append_jsonl(project / "transcript_runs.jsonl", record)
+        append_jsonl(project / "transcript_runs.jsonl", run_records[-1])
     return {
         "project": str(project),
         "run_id": run_id,
         "engine": selected_engine,
-        "segments_written": written,
+        "segments_written": total_written,
         "videos_transcribed": len(audio_files),
         "skipped_existing_source_video_ids": skipped_existing,
         "raw_dir": str(transcript_dir),
