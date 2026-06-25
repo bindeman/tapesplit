@@ -28,6 +28,7 @@ class GeminiConfig:
     default_fps: float
     gcs_bucket: str | None
     project_budget_usd: float
+    thinking_budget: int | None
 
     @property
     def configured(self) -> bool:
@@ -50,15 +51,17 @@ DEFAULT_GEMINI_MAX_UPLOAD_BYTES = 1_450_000_000
 
 def load_gemini_config(env_path: Path | None = None) -> GeminiConfig:
     load_dotenv(env_path)
+    model = os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
     return GeminiConfig(
         use_vertex=_truthy(os.environ.get("GEMINI_USE_VERTEX"), default=True),
         project=_empty_to_none(os.environ.get("GOOGLE_CLOUD_PROJECT")),
         location=os.environ.get("GOOGLE_CLOUD_LOCATION") or "us-central1",
-        model=os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash",
+        model=model,
         media_resolution=(os.environ.get("GEMINI_MEDIA_RESOLUTION") or "low").lower(),
         default_fps=float(os.environ.get("GEMINI_DEFAULT_FPS") or 1),
         gcs_bucket=_empty_to_none(os.environ.get("GEMINI_GCS_BUCKET")),
         project_budget_usd=float(os.environ.get("GEMINI_PROJECT_BUDGET_USD") or 10),
+        thinking_budget=_gemini_thinking_budget(model),
     )
 
 
@@ -72,6 +75,7 @@ def check_gemini_config(env_path: Path | None = None) -> dict[str, Any]:
         "gemini_media_resolution": config.media_resolution,
         "gemini_default_fps": config.default_fps,
         "gemini_gcs_bucket": bool(config.gcs_bucket),
+        "gemini_thinking_budget": config.thinking_budget,
         "gemini_configured": config.configured,
         "gemini_adc": _has_adc(),
     }
@@ -622,7 +626,7 @@ def analyze_project_video(
     analysis_run_id: str | None = None,
     fps: float | None = None,
     media_resolution: str | None = None,
-    max_output_tokens: int = 12000,
+    max_output_tokens: int = 8000,
     force_upload: bool = False,
     use_proxy: bool = True,
     force_proxy: bool = False,
@@ -685,7 +689,7 @@ def analyze_project_video(
             "prepared_video": prepared_video,
         },
     )
-    prompt = _analysis_prompt()
+    prompt = _analysis_prompt(duration_s=duration_s)
     response = generate_content(
         contents=[
             {
@@ -731,7 +735,20 @@ def analyze_project_video(
         "text": text,
     }
     write_json(project / "gemini_response.raw.json", raw_record)
-    parsed = parse_json_object(text)
+    try:
+        parsed = parse_json_object(text)
+    except json.JSONDecodeError as exc:
+        append_jsonl(
+            project / "gemini_analysis_errors.jsonl",
+            {
+                **{key: value for key, value in raw_record.items() if key != "text"},
+                "error": str(exc),
+            },
+        )
+        raise RuntimeError(
+            f"Gemini returned malformed JSON for {tape['id']}; raw response saved to "
+            f"{project / 'gemini_response.raw.json'}"
+        ) from exc
     record = {
         **{key: value for key, value in raw_record.items() if key != "text"},
         "analysis": parsed,
@@ -763,7 +780,7 @@ def analyze_project_videos(
     continue_on_error: bool = False,
     fps: float | None = None,
     media_resolution: str | None = None,
-    max_output_tokens: int = 12000,
+    max_output_tokens: int = 8000,
     force_upload: bool = False,
     use_proxy: bool = True,
     force_proxy: bool = False,
@@ -892,7 +909,7 @@ def analyze_project_video_chunks(
     analysis_run_id = run_id or f"gem_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
     raw_dir = project / "gemini_raw" / analysis_run_id
     raw_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _analysis_prompt()
+    prompt = _analysis_prompt(duration_s=duration_s)
     results = []
     for chunk in chunks:
         chunk_id = _chunk_id(chunk.index)
@@ -1209,6 +1226,8 @@ def generate_content(
     }
     if media_resolution:
         payload["generationConfig"]["mediaResolution"] = _media_resolution_enum(media_resolution)
+    if config.thinking_budget is not None:
+        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": config.thinking_budget}
 
     request = Request(
         url,
@@ -1304,6 +1323,14 @@ def _loads_json_object(text: str) -> dict[str, Any]:
         if repaired_sliced != sliced:
             candidates.append(repaired_sliced)
 
+    for candidate in list(candidates):
+        salvaged = _salvage_truncated_json(candidate)
+        if salvaged and salvaged not in candidates:
+            candidates.append(salvaged)
+            repaired_salvaged = _normalize_bare_timestamp_values(salvaged)
+            if repaired_salvaged != salvaged and repaired_salvaged not in candidates:
+                candidates.append(repaired_salvaged)
+
     last_error: json.JSONDecodeError | None = None
     for candidate in candidates:
         try:
@@ -1314,6 +1341,54 @@ def _loads_json_object(text: str) -> dict[str, Any]:
     if last_error is not None:
         raise last_error
     raise json.JSONDecodeError("expected JSON object", text, 0)
+
+
+def _salvage_truncated_json(text: str) -> str | None:
+    start = text.find("{")
+    if start < 0:
+        return None
+    text = text[start:]
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+    last_complete: tuple[int, list[str]] | None = None
+
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append(char)
+        elif char in "}]":
+            if not stack:
+                break
+            opener = stack[-1]
+            if (opener, char) not in {("{", "}"), ("[", "]")}:
+                break
+            stack.pop()
+            if not stack:
+                return text[: index + 1]
+            last_complete = (index + 1, stack.copy())
+        elif char == "," and stack == ["{"]:
+            last_complete = (index, stack.copy())
+
+    if not last_complete:
+        return None
+
+    cut_index, cut_stack = last_complete
+    prefix = text[:cut_index].rstrip()
+    while prefix.endswith(","):
+        prefix = prefix[:-1].rstrip()
+    suffix = "".join("}" if opener == "{" else "]" for opener in reversed(cut_stack))
+    return prefix + suffix
 
 
 def _normalize_bare_timestamp_values(text: str) -> str:
@@ -1333,12 +1408,26 @@ def _normalize_bare_timestamp_values(text: str) -> str:
     )
 
 
-def _analysis_prompt() -> str:
-    return """
+def _analysis_prompt(*, duration_s: float | None = None) -> str:
+    duration_instruction = ""
+    if duration_s is not None and duration_s > 0:
+        duration_instruction = (
+            f"\nUploaded video duration: {duration_s:.3f} seconds "
+            f"({_format_seconds(duration_s)}). All start_s and end_s values must be true "
+            "elapsed seconds from the beginning of this uploaded video. For example, "
+            "00:25:15 must be 1515, not 25 or 151."
+        )
+    return (
+        """
 Analyze this digitized VHS/home-video transfer as an archival assistant.
 Return only valid JSON. Use numeric seconds for all start_s and end_s values.
 Do not use markdown. Do not include newline characters inside JSON strings.
 Keep every string concise. Prefer broad ranges over exhaustive micro-events.
+Hard cap tape_summary at 40 words and story at 80 words.
+If a pattern repeats, summarize it once; do not repeat the same sentence.
+"""
+        + duration_instruction
+        + """
 
 Hard limits:
 - scene_candidates: max 12
@@ -1350,6 +1439,7 @@ Hard limits:
 - non_content_ranges: max 10
 - unrelated_ranges: max 8
 - followup_segments: max 8
+- evidence_text arrays: max 3 snippets, each under 80 characters
 
 Goals:
 - Identify family/home-video content versus unrelated movie/TV/noise content.
@@ -1357,8 +1447,12 @@ Goals:
   mentions, place candidates, date candidates, and confidence.
 - Preserve uncertainty. Do not invent exact dates, identities, cities, schools,
   GPS coordinates, or relationships.
+- Do not list every repeated classroom, performance, party, song, or cartoon
+  beat. Collapse repeated material into one range with one concise label.
 - Include evidence_text for each event: short quoted or paraphrased clues from
   audio/visual context that support the event.
+- Do not repeat filler words, singing, animal sounds, applause, laughter, or
+  long OCR/transcript fragments.
 - Flag sections that need higher-fidelity follow-up, such as signs, visible
   dates, landmarks, fast transitions, or uncertain OCR.
 - Treat metadata/export dates as digitization dates unless directly corroborated
@@ -1425,6 +1519,7 @@ Return this JSON shape:
   ]
 }
 """.strip()
+    )
 
 
 def _chunk_prompt(base_prompt: str, chunk: GeminiChunk) -> str:
@@ -1444,6 +1539,13 @@ def _chunk_prompt(base_prompt: str, chunk: GeminiChunk) -> str:
 
 def _chunk_id(index: int) -> str:
     return f"chunk_{index:04d}"
+
+
+def _format_seconds(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 def _analysis_records_for_run(project: Path, analysis_run_id: str) -> list[dict[str, Any]]:
@@ -1554,6 +1656,15 @@ def _media_resolution_enum(value: str) -> str:
     if normalized.startswith("MEDIA_RESOLUTION_"):
         return normalized
     raise ValueError(f"unsupported media resolution: {value}")
+
+
+def _gemini_thinking_budget(model: str) -> int | None:
+    value = os.environ.get("GEMINI_THINKING_BUDGET")
+    if value is not None and value.strip() != "":
+        return int(value)
+    if "2.5-flash" in model.lower():
+        return 0
+    return None
 
 
 def _mime_type(path: Path) -> str:

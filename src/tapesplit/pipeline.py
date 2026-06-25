@@ -20,6 +20,7 @@ def rebuild_project_outputs(
     import_gemini: bool = False,
     gemini_run_id: str | None = None,
     import_all_gemini: bool = False,
+    include_duplicate_gemini_runs: bool = False,
     max_gap_seconds: float = 120.0,
     include_legacy_events: bool = False,
     relationship_context_seconds: float = 8.0,
@@ -39,6 +40,7 @@ def rebuild_project_outputs(
                     project,
                     run_id=gemini_run_id,
                     all_runs=import_all_gemini,
+                    best_per_source=not include_duplicate_gemini_runs,
                 ),
             }
         )

@@ -151,9 +151,86 @@ def test_import_all_gemini_analysis_runs_keeps_source_videos(tmp_path):
     evidence = read_jsonl(tmp_path / "gemini_evidence.jsonl")
 
     assert result["analysis_run_id"] == "all"
+    assert result["selection"] == "best_per_source"
     assert result["source_video_ids"] == ["video_000001", "video_000002"]
     assert [(event["title"], event["source_video_id"]) for event in events] == [
         ("First tape event", "video_000001"),
         ("Second tape event", "video_000002"),
     ]
     assert [row["source_video_id"] for row in evidence] == ["video_000001", "video_000002"]
+
+
+def test_import_all_prefers_whole_tape_over_older_chunks(tmp_path):
+    (tmp_path / "tapes.jsonl").write_text(
+        '{"id":"video_000001","probe":{"duration_s":1000}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "gemini_analyses.jsonl").write_text(
+        "\n".join(
+            [
+                (
+                    '{"analysis_run_id":"chunk_run","source_video_id":"video_000001",'
+                    '"chunk_id":"chunk_0001","chunk_index":1,"chunk_start_s":0,'
+                    '"chunk_end_s":100,"chunk_duration_s":100,"time_basis":"chunk",'
+                    '"analysis":{"event_candidates":[{"title":"Chunk event","start_s":10,'
+                    '"end_s":20,"summary":"chunk","confidence":0.8}]}}'
+                ),
+                (
+                    '{"analysis_run_id":"whole_run","source_video_id":"video_000001",'
+                    '"time_basis":"source_video",'
+                    '"analysis":{"event_candidates":[{"title":"Whole tape event","start_s":30,'
+                    '"end_s":40,"summary":"whole","confidence":0.9}]}}'
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = import_gemini_analysis(tmp_path, all_runs=True)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert result["analyses"] == 1
+    assert result["selection"] == "best_per_source"
+    assert [(event["title"], event["start_s"], event["end_s"]) for event in events] == [
+        ("Whole tape event", 30, 40),
+    ]
+
+
+def test_import_all_falls_back_to_chunks_when_whole_tape_timing_is_compressed(tmp_path):
+    (tmp_path / "tapes.jsonl").write_text(
+        '{"id":"video_000001","probe":{"duration_s":3600}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "gemini_analyses.jsonl").write_text(
+        "\n".join(
+            [
+                (
+                    '{"analysis_run_id":"chunk_run","source_video_id":"video_000001",'
+                    '"chunk_id":"chunk_0001","chunk_index":1,"chunk_start_s":1200,'
+                    '"chunk_end_s":1300,"chunk_duration_s":100,"time_basis":"chunk",'
+                    '"analysis":{"event_candidates":[{"title":"Aligned chunk event","start_s":10,'
+                    '"end_s":20,"summary":"chunk","confidence":0.8}]}}'
+                ),
+                (
+                    '{"analysis_run_id":"whole_run","source_video_id":"video_000001",'
+                    '"time_basis":"source_video",'
+                    '"analysis":{"event_candidates":['
+                    '{"title":"Compressed A","start_s":10,"end_s":20},'
+                    '{"title":"Compressed B","start_s":30,"end_s":40},'
+                    '{"title":"Compressed C","start_s":50,"end_s":60}],'
+                    '"scene_candidates":[{"start_s":0,"end_s":60}]}}'
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = import_gemini_analysis(tmp_path, all_runs=True)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert result["analyses"] == 1
+    assert [(event["title"], event["start_s"], event["end_s"]) for event in events] == [
+        ("Aligned chunk event", 1210, 1220),
+    ]

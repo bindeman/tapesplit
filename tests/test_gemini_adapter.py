@@ -191,3 +191,30 @@ def test_parse_json_object_repairs_bare_timestamp_values():
         {"start_s": 3723, "end_s": 3730},
     ]
     assert payload["date_candidates"][0]["start_s"] == 10
+
+
+def test_parse_json_object_salvages_complete_prefix_from_truncated_response():
+    payload = parse_json_object(
+        """
+        {
+          "tape_summary": "family birthday",
+          "event_candidates": [
+            {"title": "Birthday", "start_s": 10, "end_s": 20},
+            {"title": "Animal sounds", "evidence_text": ["rrrrrrrr
+        """
+    )
+
+    assert payload == {
+        "tape_summary": "family birthday",
+        "event_candidates": [
+            {"title": "Birthday", "start_s": 10, "end_s": 20},
+        ],
+    }
+
+
+def test_parse_json_object_salvages_top_level_fields_from_truncated_string():
+    payload = parse_json_object(
+        '{"tape_summary": "holiday show", "story": "The video then repeats repeats repeats'
+    )
+
+    assert payload == {"tape_summary": "holiday show"}

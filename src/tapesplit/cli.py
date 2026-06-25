@@ -258,7 +258,7 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["low", "medium", "high"],
         help="Gemini media resolution. Defaults to GEMINI_MEDIA_RESOLUTION.",
     )
-    gemini_analyze.add_argument("--max-output-tokens", type=int, default=12000)
+    gemini_analyze.add_argument("--max-output-tokens", type=int, default=8000)
     gemini_analyze.add_argument("--force-upload", action="store_true")
     gemini_analyze.add_argument(
         "--no-proxy",
@@ -326,7 +326,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_import.add_argument("--run-id", help="Import a specific Gemini analysis_run_id.")
-    gemini_import.add_argument("--all", action="store_true", help="Import all Gemini analysis runs.")
+    gemini_import.add_argument(
+        "--all",
+        action="store_true",
+        help="Import the best available analysis per source video across Gemini runs.",
+    )
+    gemini_import.add_argument(
+        "--include-duplicate-runs",
+        action="store_true",
+        help="With --all, import every Gemini analysis row, including older duplicate runs.",
+    )
     gemini_summary = gemini_subparsers.add_parser(
         "summarize-analyses",
         help="Summarize Gemini analysis coverage, entities, and follow-up signals.",
@@ -638,7 +647,12 @@ def _build_parser() -> argparse.ArgumentParser:
     rebuild_parser.add_argument(
         "--import-all-gemini",
         action="store_true",
-        help="Import all Gemini analysis runs instead of the latest run.",
+        help="Import the best available Gemini analysis per source video instead of the latest run.",
+    )
+    rebuild_parser.add_argument(
+        "--include-duplicate-gemini-runs",
+        action="store_true",
+        help="With --import-all-gemini, import every Gemini analysis row including older duplicate runs.",
     )
     rebuild_parser.add_argument(
         "--max-gap-seconds",
@@ -1036,7 +1050,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.gemini_command == "import-analysis":
                 print(
                     json.dumps(
-                        import_gemini_analysis(args.project, run_id=args.run_id, all_runs=args.all),
+                        import_gemini_analysis(
+                            args.project,
+                            run_id=args.run_id,
+                            all_runs=args.all,
+                            best_per_source=not args.include_duplicate_runs,
+                        ),
                         indent=2,
                         sort_keys=True,
                     )
@@ -1294,6 +1313,7 @@ def main(argv: list[str] | None = None) -> int:
                         import_gemini=args.import_gemini,
                         gemini_run_id=args.gemini_run_id,
                         import_all_gemini=args.import_all_gemini,
+                        include_duplicate_gemini_runs=args.include_duplicate_gemini_runs,
                         max_gap_seconds=args.max_gap_seconds,
                         include_legacy_events=args.include_legacy_events,
                         relationship_context_seconds=args.relationship_context_seconds,

@@ -6,14 +6,26 @@ from typing import Any
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
-def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None, all_runs: bool = False) -> dict[str, Any]:
+def import_gemini_analysis(
+    project_dir: Path,
+    *,
+    run_id: str | None = None,
+    all_runs: bool = False,
+    best_per_source: bool = True,
+) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     analyses = read_jsonl(project / "gemini_analyses.jsonl")
     if not analyses:
         raise FileNotFoundError(f"missing Gemini analysis file: {project / 'gemini_analyses.jsonl'}")
     if all_runs and run_id is not None:
         raise ValueError("run_id cannot be combined with all_runs")
-    selected = _select_analyses(analyses, run_id, all_runs=all_runs)
+    selected = _select_analyses(
+        analyses,
+        run_id,
+        all_runs=all_runs,
+        best_per_source=best_per_source,
+        source_durations=_source_durations(project),
+    )
     selected_run_id = "all" if all_runs else selected[-1].get("analysis_run_id")
     source_video_ids = _unique_string_items(row.get("source_video_id") for row in selected)
 
@@ -237,6 +249,7 @@ def import_gemini_analysis(project_dir: Path, *, run_id: str | None = None, all_
         "source_video_id": source_video_ids[0] if len(source_video_ids) == 1 else None,
         "source_video_ids": source_video_ids,
         "analysis_run_id": selected_run_id,
+        "selection": "best_per_source" if all_runs and best_per_source else "all" if all_runs else "latest_run",
         "analyses": len(selected),
         "evidence": evidence_count,
         "claims": claim_count,
@@ -289,9 +302,16 @@ def _normalize_interval(
     return round(start_s, 3), round(end_s, 3), notes
 
 
-def _select_analyses(analyses: list[dict[str, Any]], run_id: str | None, *, all_runs: bool = False) -> list[dict[str, Any]]:
+def _select_analyses(
+    analyses: list[dict[str, Any]],
+    run_id: str | None,
+    *,
+    all_runs: bool = False,
+    best_per_source: bool = True,
+    source_durations: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
     if all_runs:
-        selected = analyses
+        selected = _best_analyses_per_source(analyses, source_durations or {}) if best_per_source else analyses
     elif run_id is not None:
         selected = [row for row in analyses if row.get("analysis_run_id") == run_id]
         if not selected:
@@ -311,6 +331,81 @@ def _select_analyses(analyses: list[dict[str, Any]], run_id: str | None, *, all_
             int(row.get("chunk_index") or 0),
         ),
     )
+
+
+def _best_analyses_per_source(
+    analyses: list[dict[str, Any]],
+    source_durations: dict[str, float],
+) -> list[dict[str, Any]]:
+    indexed = list(enumerate(analyses))
+    by_source: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for index, row in indexed:
+        source_video_id = str(row.get("source_video_id") or "")
+        if not source_video_id:
+            continue
+        by_source.setdefault(source_video_id, []).append((index, row))
+
+    selected: list[dict[str, Any]] = []
+    for source_video_id in sorted(by_source):
+        source_rows = by_source[source_video_id]
+        whole_rows = [
+            (index, row)
+            for index, row in source_rows
+            if str(row.get("time_basis") or "") == "source_video"
+            and not _whole_tape_timing_suspect(row, source_durations.get(source_video_id, 0.0))
+        ]
+        if whole_rows:
+            selected.append(max(whole_rows, key=lambda item: item[0])[1])
+            continue
+
+        chunk_rows = [
+            (index, row)
+            for index, row in source_rows
+            if str(row.get("time_basis") or "") != "source_video"
+        ]
+        latest_run_id = _latest_run_id(chunk_rows or source_rows)
+        if latest_run_id is None:
+            selected.append(max(chunk_rows or source_rows, key=lambda item: item[0])[1])
+            continue
+        selected.extend(row for _, row in (chunk_rows or source_rows) if row.get("analysis_run_id") == latest_run_id)
+
+    return selected
+
+
+def _whole_tape_timing_suspect(row: dict[str, Any], duration_s: float) -> bool:
+    if str(row.get("time_basis") or "") != "source_video" or duration_s < 1800:
+        return False
+    analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
+    event_count = len(analysis.get("event_candidates") or [])
+    if event_count < 3:
+        return False
+    max_end = 0.0
+    for field in [
+        "event_candidates",
+        "scene_candidates",
+        "date_candidates",
+        "non_content_ranges",
+        "unrelated_ranges",
+    ]:
+        for item in analysis.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            end_s = _number_or_none(item.get("end_s"))
+            start_s = _number_or_none(item.get("start_s"))
+            max_end = max(max_end, end_s or 0.0, start_s or 0.0)
+    return bool(max_end and max_end < min(duration_s * 0.12, 600.0))
+
+
+def _latest_run_id(rows: list[tuple[int, dict[str, Any]]]) -> str | None:
+    latest: tuple[int, str] | None = None
+    for index, row in rows:
+        run_id = row.get("analysis_run_id")
+        if not run_id:
+            continue
+        candidate = (index, str(run_id))
+        if latest is None or candidate[0] > latest[0]:
+            latest = candidate
+    return latest[1] if latest else None
 
 
 def _chunk_metadata(record: dict[str, Any]) -> dict[str, Any]:
@@ -340,6 +435,14 @@ def _duration_for_source(project: Path, source_video_id: str | None) -> float:
         if source_video_id is None or tape.get("id") == source_video_id:
             return float((tape.get("probe") or {}).get("duration_s") or 0.0)
     return 0.0
+
+
+def _source_durations(project: Path) -> dict[str, float]:
+    return {
+        str(row.get("id")): float((row.get("probe") or {}).get("duration_s") or 0.0)
+        for row in read_jsonl(project / "tapes.jsonl")
+        if row.get("id")
+    }
 
 
 def _hard_non_content_boundaries(project: Path, source_video_id: str | None) -> list[tuple[float, float, str]]:
