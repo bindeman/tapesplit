@@ -56,6 +56,7 @@ def transcribe_project_local(
     model_path: Path | None = None,
     language: str | None = None,
     force: bool = False,
+    skip_existing: bool = False,
 ) -> dict[str, Any]:
     load_dotenv()
     project = project_dir.expanduser().resolve()
@@ -65,9 +66,21 @@ def transcribe_project_local(
     transcript_dir.mkdir(parents=True, exist_ok=True)
 
     audio_result = extract_project_audio(project, source_video_id=source_video_id, force=False)
+    audio_files = audio_result["audio_files"]
+    skipped_existing = []
+    if skip_existing and not force:
+        existing_sources = _transcribed_source_ids(project)
+        kept_audio_files = []
+        for item in audio_files:
+            if item["source_video_id"] in existing_sources:
+                skipped_existing.append(item["source_video_id"])
+            else:
+                kept_audio_files.append(item)
+        audio_files = kept_audio_files
+
     all_segments = []
     run_records = []
-    for item in audio_result["audio_files"]:
+    for item in audio_files:
         source_id = item["source_video_id"]
         audio_path = Path(item["audio_path"])
         output_path = _run_transcription_engine(
@@ -113,6 +126,8 @@ def transcribe_project_local(
         "run_id": run_id,
         "engine": selected_engine,
         "segments_written": written,
+        "videos_transcribed": len(audio_files),
+        "skipped_existing_source_video_ids": skipped_existing,
         "raw_dir": str(transcript_dir),
     }
 
@@ -172,22 +187,43 @@ def write_transcript_segments(
 ) -> int:
     output = project / "transcript_segments.jsonl"
     existing = read_jsonl(output)
+    normalized_new = [_normalize_segment(segment) for segment in segments if _clean_text(segment.get("text"))]
+    new_source_ids = {row.get("source_video_id") for row in normalized_new if row.get("source_video_id")}
     if source_video_id and any(row.get("source_video_id") == source_video_id for row in existing) and not force:
         raise FileExistsError(
             f"transcript segments already exist for {source_video_id}; pass --force to replace them"
         )
+    if not source_video_id and not force:
+        overlapping_sources = sorted(
+            source_id
+            for source_id in new_source_ids
+            if any(row.get("source_video_id") == source_id for row in existing)
+        )
+        if overlapping_sources:
+            raise FileExistsError(
+                "transcript segments already exist for "
+                f"{', '.join(overlapping_sources)}; pass --force to replace them "
+                "or --skip-existing to append only missing sources"
+            )
     kept = [
         row
         for row in existing
-        if not source_video_id or row.get("source_video_id") != source_video_id
+        if row.get("source_video_id") not in (new_source_ids if not source_video_id else {source_video_id})
     ]
-    normalized_new = [_normalize_segment(segment) for segment in segments if _clean_text(segment.get("text"))]
     rows = kept + normalized_new
     if output.exists():
         output.unlink()
     for index, row in enumerate(rows, start=1):
         append_jsonl(output, {"id": f"tr_{index:06d}", **row})
     return len(normalized_new)
+
+
+def _transcribed_source_ids(project: Path) -> set[str]:
+    return {
+        str(row.get("source_video_id"))
+        for row in read_jsonl(project / "transcript_segments.jsonl")
+        if row.get("source_video_id")
+    }
 
 
 def _selected_tapes(project: Path, source_video_id: str | None) -> list[dict[str, Any]]:

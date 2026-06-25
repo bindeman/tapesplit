@@ -504,6 +504,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional ASR language hint, e.g. ru or en. Omit for auto-detect.",
     )
     transcribe_local.add_argument("--force", action="store_true", help="Replace existing transcript segments for the selected source.")
+    transcribe_local.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="When transcribing multiple videos, skip sources that already have transcript segments.",
+    )
 
     transcribe_import = transcribe_subparsers.add_parser("import", help="Import an existing JSON/SRT/VTT transcript.")
     transcribe_import.add_argument("project", type=Path, help="TapeSplit project directory.")
@@ -1175,6 +1180,7 @@ def main(argv: list[str] | None = None) -> int:
                             model_path=args.model_path,
                             language=args.language,
                             force=args.force,
+                            skip_existing=args.skip_existing,
                         ),
                         indent=2,
                         sort_keys=True,

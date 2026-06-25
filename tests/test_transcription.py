@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tapesplit.storage import read_jsonl
-from tapesplit.transcription import import_transcript, parse_transcript_file
+from tapesplit.transcription import import_transcript, parse_transcript_file, write_transcript_segments
 
 
 def test_parse_openai_whisper_json_segments(tmp_path: Path):
@@ -115,3 +115,68 @@ def test_import_transcript_requires_force_for_existing_source(tmp_path: Path):
 
     with pytest.raises(FileExistsError):
         import_transcript(tmp_path, transcript, source_video_id="video_000001")
+
+
+def test_write_transcript_segments_appends_missing_sources_without_duplicates(tmp_path: Path):
+    write_transcript_segments(
+        tmp_path,
+        [
+            {
+                "source_video_id": "video_000001",
+                "start_s": 1,
+                "end_s": 2,
+                "text": "One",
+                "language": "en",
+            }
+        ],
+        force=False,
+    )
+
+    written = write_transcript_segments(
+        tmp_path,
+        [
+            {
+                "source_video_id": "video_000002",
+                "start_s": 3,
+                "end_s": 4,
+                "text": "Two",
+                "language": "en",
+            }
+        ],
+        force=False,
+    )
+
+    rows = read_jsonl(tmp_path / "transcript_segments.jsonl")
+    assert written == 1
+    assert [row["source_video_id"] for row in rows] == ["video_000001", "video_000002"]
+
+
+def test_write_transcript_segments_rejects_duplicate_source_in_batch(tmp_path: Path):
+    write_transcript_segments(
+        tmp_path,
+        [
+            {
+                "source_video_id": "video_000001",
+                "start_s": 1,
+                "end_s": 2,
+                "text": "One",
+                "language": "en",
+            }
+        ],
+        force=False,
+    )
+
+    with pytest.raises(FileExistsError):
+        write_transcript_segments(
+            tmp_path,
+            [
+                {
+                    "source_video_id": "video_000001",
+                    "start_s": 3,
+                    "end_s": 4,
+                    "text": "Duplicate",
+                    "language": "en",
+                }
+            ],
+            force=False,
+        )
