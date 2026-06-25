@@ -253,13 +253,17 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     face_review = next(item for item in payload["review_backlog"] if item["source_id"] == "face_cluster_000001")
     assert face_review["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
     assert face_review["review_tier"] == "backlog"
+    assert face_review["suggested_action"]["action"] == "confirm_identity"
+    assert face_review["suggested_action"]["target_id"] == "face_identity_candidate_000001"
     relationship_review = next(item for item in payload["review_queue"] if item["source_id"] == "relationship_candidate_000001")
+    assert relationship_review["suggested_action"]["action"] == "confirm_relationship"
     assert relationship_review["related_event_ids"] == ["canonical_event_000001"]
     assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
     assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"
     assert payload["summary"]["review_items"] == 1
     assert payload["summary"]["review_backlog_items"] == 2
     assert payload["summary"]["review_total_items"] == 3
+    assert payload["summary"]["suggested_review_actions"] == 3
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

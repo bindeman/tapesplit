@@ -266,11 +266,22 @@ export interface ReviewItem {
   review_status: string;
   review_tier?: "primary" | "backlog";
   review_reason?: string;
+  suggested_action?: SuggestedReviewAction;
   related_event_ids?: string[];
   events: EventEntry[];
   thumbnail_path?: string;
   candidate: Record<string, unknown>;
   actions: string[];
+}
+
+export interface SuggestedReviewAction {
+  action: string;
+  target_id: string;
+  target_type?: string;
+  label: string;
+  rationale?: string;
+  confidence?: number;
+  payload?: Record<string, unknown>;
 }
 
 export interface FaceIdentityCandidate {

@@ -141,7 +141,7 @@ small {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: #e1e6dd;
   border-bottom: 1px solid #e1e6dd;
@@ -428,6 +428,48 @@ small {
   margin: 0;
   color: #46514d;
   line-height: 1.45;
+}
+
+.suggested-resolution {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #c9d9d2;
+  border-left: 4px solid #1f6f62;
+  border-radius: 6px;
+  background: #f5faf7;
+}
+
+.suggested-resolution div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.suggested-resolution small {
+  color: #47635b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.suggested-resolution strong,
+.suggested-resolution span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggested-resolution strong {
+  color: #183d35;
+}
+
+.suggested-resolution span {
+  color: #51635c;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .evidence-list {

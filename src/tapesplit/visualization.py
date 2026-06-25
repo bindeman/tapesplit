@@ -154,6 +154,7 @@ def export_visualization_data(
             "review_items": len(review_queue),
             "review_backlog_items": len(review_backlog),
             "review_total_items": len(review_queue) + len(review_backlog),
+            "suggested_review_actions": sum(1 for item in [*review_queue, *review_backlog] if item.get("suggested_action")),
             "visual_assets": len(visual_assets),
             "face_observations": len(face_observations),
             "face_clusters": len(face_clusters),
@@ -574,6 +575,8 @@ def _review_queues(
                 "candidate": {
                     "source_place_id": edge.get("source"),
                     "target_place_id": edge.get("target"),
+                    "source_label": edge.get("source_label"),
+                    "target_label": edge.get("target_label"),
                     "predicate": edge.get("predicate"),
                     "source_kind": edge.get("source_kind"),
                     "target_kind": edge.get("target_kind"),
@@ -609,6 +612,7 @@ def _review_queues(
                     "subject_label": relationship.get("subject_label"),
                     "object_entity_id": relationship.get("object_entity_id"),
                     "object_label": relationship.get("object_label"),
+                    "supporting_signals": relationship.get("supporting_signals") or [],
                 },
                 "actions": ["confirm_relationship", "reject_relationship", "edit_relationship"],
             }
@@ -637,6 +641,7 @@ def _review_queues(
                     "kind": place.get("kind"),
                     "place_type": place.get("place_type"),
                     "context": _place_context_identity(place),
+                    "coordinates": _place_coordinates(place),
                     "evidence_basis": _place_evidence_basis(place),
                     "location_options": _place_location_options(place),
                 },
@@ -735,6 +740,9 @@ def _partition_review_items(items: list[dict[str, Any]]) -> dict[str, list[dict[
         tier, reason = _review_item_tier(item)
         item["review_tier"] = tier
         item["review_reason"] = reason
+        suggestion = _suggested_review_action(item)
+        if suggestion:
+            item["suggested_action"] = suggestion
         if tier == "primary":
             primary.append(item)
         else:
@@ -832,6 +840,183 @@ def _date_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
     if precision in {"day", "month"} and candidate.get("date_value"):
         return "primary", "Specific date candidate can affect album/export metadata."
     return "backlog", "Loose date clue should remain editable without blocking first-pass review."
+
+
+def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
+    task_type = str(item.get("task_type") or "")
+    candidate = item.get("candidate") if isinstance(item.get("candidate"), dict) else {}
+    confidence = _number_or_none(item.get("confidence"))
+
+    if task_type == "resolve_face_cluster":
+        identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
+        top = identity_candidates[0] if identity_candidates and isinstance(identity_candidates[0], dict) else {}
+        person_label = str(top.get("person_label") or "").strip()
+        face_identity_candidate_id = str(top.get("face_identity_candidate_id") or "").strip()
+        person_group_id = str(top.get("person_group_id") or "").strip()
+        if not person_label or not face_identity_candidate_id or not person_group_id:
+            return {}
+        rationale_bits = [
+            f"Top candidate from {top.get('candidate_ambiguity') or 'unknown'}-ambiguity face/event evidence.",
+            "Directly named in an overlapping event." if top.get("direct_name_event_ids") else "Based on event co-occurrence; user can change it.",
+        ]
+        if str(top.get("face_quality_status") or "") == "low_quality":
+            rationale_bits.append("Face crop is low quality, so this should stay easy to correct.")
+        return _suggestion(
+            action="confirm_identity",
+            target_id=face_identity_candidate_id,
+            target_type="face_identity_candidate",
+            label=f"Appears to be {person_label}",
+            rationale=" ".join(rationale_bits),
+            confidence=_number_or_none(top.get("confidence")) or confidence,
+            payload={"face_cluster_id": item.get("source_id"), "person_group_id": person_group_id},
+        )
+
+    if task_type == "confirm_relationship":
+        subject = str(candidate.get("subject_label") or "Unknown person")
+        object_ = str(candidate.get("object_label") or "unknown person")
+        predicate = str(candidate.get("predicate") or "relationship_candidate")
+        return _suggestion(
+            action="confirm_relationship",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "relationship_candidate"),
+            label=f"Appears to link {subject} to {object_} as {_humanize_token(predicate)}",
+            rationale="Relationship candidate is supported by transcript/context signals; keep it as the default unless a reviewer corrects it.",
+            confidence=confidence,
+            payload={
+                "predicate": predicate,
+                "subject_entity_id": candidate.get("subject_entity_id"),
+                "subject_label": candidate.get("subject_label"),
+                "object_entity_id": candidate.get("object_entity_id"),
+                "object_label": candidate.get("object_label"),
+            },
+        )
+
+    if task_type == "confirm_place_context":
+        source = str(candidate.get("source_label") or "Source place")
+        target = str(candidate.get("target_label") or "context")
+        predicate = str(candidate.get("predicate") or "place_context")
+        return _suggestion(
+            action="confirm_place_context",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "context_edge"),
+            label=f"Use {target} as context for {source}",
+            rationale="Best current place context from direct mention, continuity, or same-event evidence; not treated as GPS unless later confirmed.",
+            confidence=confidence,
+            payload={"exportable_as_gps": False, "predicate": predicate},
+        )
+
+    if task_type == "resolve_place":
+        options = candidate.get("location_options") if isinstance(candidate.get("location_options"), list) else []
+        selected = next((option for option in options if isinstance(option, dict) and option.get("selected")), None)
+        if selected is None and options and isinstance(options[0], dict):
+            selected = options[0]
+        label = str((selected or {}).get("label") or candidate.get("label") or "").strip()
+        display_label = str((selected or {}).get("display_label") or candidate.get("display_label") or label)
+        scope = str((selected or {}).get("scope_label") or (candidate.get("context") or {}).get("label") or "")
+        place_type = str(candidate.get("place_type") or "")
+        evidence_basis = candidate.get("evidence_basis") if isinstance(candidate.get("evidence_basis"), dict) else {}
+        source_label = str((selected or {}).get("source_label") or evidence_basis.get("source_label") or "from context")
+        exportable_as_gps = bool(candidate.get("coordinates")) and str(candidate.get("kind") or "") == "named_place_candidate"
+        return _suggestion(
+            action="confirm_place",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "place_group"),
+            label=f"Use {display_label}",
+            rationale=f"Selected as the strongest place guess {source_label}. Generic/contextual places remain non-GPS by default.",
+            confidence=_number_or_none((selected or {}).get("confidence")) or confidence,
+            payload={
+                "label": label,
+                "scope_label": scope,
+                "place_type": place_type,
+                "selected_location_option_id": (selected or {}).get("id") or "selected",
+                "selected_location_option": selected or {},
+                "exportable_as_gps": exportable_as_gps,
+            },
+        )
+
+    if task_type == "resolve_person":
+        label = str(candidate.get("label") or "").strip()
+        aliases = [str(alias) for alias in candidate.get("aliases") or [] if alias]
+        if str(candidate.get("kind") or "") == "role_candidate":
+            return _suggestion(
+                action="mark_role_only",
+                target_id=str(item.get("source_id") or ""),
+                target_type=str(item.get("source_record_type") or "people_group"),
+                label=f"Keep {label or 'this mention'} as a role until stronger identity evidence appears",
+                rationale="Role-only mentions are useful context but should not become durable person identities by default.",
+                confidence=confidence,
+                payload={},
+            )
+        return _suggestion(
+            action="confirm_person",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "people_group"),
+            label=f"Use person group: {label}",
+            rationale="Alias and nickname variants are already grouped; this accepts the current best canonical person label.",
+            confidence=confidence,
+            payload={"label": label, "aliases": aliases},
+        )
+
+    if task_type == "review_event":
+        title = str(candidate.get("title") or item.get("title") or "").removeprefix("Review event: ").strip()
+        relatedness = str(candidate.get("relatedness") or "")
+        if "unrelated" in relatedness.casefold():
+            return _suggestion(
+                action="mark_unrelated",
+                target_id=str(item.get("source_id") or ""),
+                target_type=str(item.get("source_record_type") or "event"),
+                label=f"Treat {title or 'this event'} as unrelated",
+                rationale="The best current classification says this is probably not family footage.",
+                confidence=confidence,
+                payload={},
+            )
+        return _suggestion(
+            action="confirm_event",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "event"),
+            label=f"Keep event: {title}",
+            rationale="Current title/type/relatedness are the best event-level guess; corrections can rename or mark unrelated.",
+            confidence=confidence,
+            payload={"title": title, "event_type": candidate.get("event_type"), "relatedness": relatedness},
+        )
+
+    if task_type == "resolve_date":
+        date_value = candidate.get("date_value")
+        precision = candidate.get("precision") or "unknown"
+        label = str(candidate.get("label") or date_value or "date clue")
+        historical = bool(candidate.get("excluded_as_event_date"))
+        return _suggestion(
+            action="mark_historical_context" if historical else "confirm_event_date",
+            target_id=str(item.get("source_id") or ""),
+            target_type=str(item.get("source_record_type") or "date_group"),
+            label=f"{'Keep as context only' if historical else 'Use as event date'}: {label}",
+            rationale="Date clues default to context when the pipeline marked them as historical/loose, otherwise to event-date metadata.",
+            confidence=confidence,
+            payload={"label": label, "date_value": date_value, "precision": precision},
+        )
+
+    return {}
+
+
+def _suggestion(
+    *,
+    action: str,
+    target_id: str,
+    target_type: str,
+    label: str,
+    rationale: str,
+    confidence: float | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "target_id": target_id,
+        "target_type": target_type,
+        "label": label,
+        "rationale": rationale,
+        "confidence": confidence,
+        "payload": {key: value for key, value in payload.items() if value is not None},
+    }
 
 
 def _media_record(tape: dict[str, Any], *, offset_s: float = 0.0) -> dict[str, Any]:
@@ -1404,6 +1589,10 @@ def _review_item_sort_key(row: dict[str, Any]) -> tuple[int, float, float, str]:
 
 def _normalize_context_text(value: Any) -> str:
     return " ".join(str(value or "").casefold().replace(",", " ").split())
+
+
+def _humanize_token(value: Any) -> str:
+    return " ".join(str(value or "").replace("_", " ").split())
 
 
 def _first_path(rows: list[dict[str, Any]], key: str) -> str:

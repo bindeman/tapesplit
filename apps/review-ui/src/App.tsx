@@ -39,6 +39,7 @@ import type {
 } from "./types";
 
 type ViewMode = "review" | "timeline" | "places" | "people";
+type ReviewScope = "primary" | "backlog" | "all";
 
 type PlayerMoment = {
   videoId: string;
@@ -68,6 +69,7 @@ const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
 export function App() {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [view, setView] = useState<ViewMode>("review");
+  const [reviewScope, setReviewScope] = useState<ReviewScope>("primary");
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
@@ -94,8 +96,17 @@ export function App() {
     void refresh();
   }, []);
 
-  const reviewItems = bundle?.data.review_queue ?? [];
+  const primaryReviewItems = bundle?.data.review_queue ?? [];
   const reviewBacklog = bundle?.data.review_backlog ?? [];
+  const reviewItems = useMemo(() => {
+    if (reviewScope === "backlog") {
+      return reviewBacklog;
+    }
+    if (reviewScope === "all") {
+      return [...primaryReviewItems, ...reviewBacklog];
+    }
+    return primaryReviewItems;
+  }, [primaryReviewItems, reviewBacklog, reviewScope]);
   const pendingActions = bundle?.pendingActions ?? [];
   const taskCounts = useMemo(() => countBy(reviewItems, (item) => item.task_type), [reviewItems]);
 
@@ -207,6 +218,14 @@ export function App() {
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter review items" />
           </label>
+          <div className="task-filter">
+            <Inbox size={15} />
+            <select value={reviewScope} onChange={(event) => setReviewScope(event.target.value as ReviewScope)}>
+              <option value="primary">Primary guesses ({primaryReviewItems.length})</option>
+              <option value="backlog">Backlog guesses ({reviewBacklog.length})</option>
+              <option value="all">All guesses ({primaryReviewItems.length + reviewBacklog.length})</option>
+            </select>
+          </div>
           <div className="task-filter">
             <ListFilter size={15} />
             <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
@@ -380,11 +399,36 @@ function ReviewDetail({
         </div>
         <h2>{item.title}</h2>
         <p>{item.prompt}</p>
+        <SuggestedResolution item={item} onQueue={onQueue} />
         <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
         <EvidenceList item={item} media={media} onPlay={onPlay} />
         <ReviewActionControls item={item} onQueue={onQueue} />
       </div>
     </section>
+  );
+}
+
+function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction) => Promise<void> }) {
+  const suggestion = item.suggested_action;
+  if (!suggestion) {
+    return null;
+  }
+  const action: ReviewAction = {
+    action: suggestion.action,
+    target_id: suggestion.target_id,
+    target_type: suggestion.target_type,
+    payload: suggestion.payload ?? {},
+    notes: suggestion.rationale ?? "",
+  };
+  return (
+    <div className="suggested-resolution">
+      <div>
+        <small>Best Guess</small>
+        <strong>{suggestion.label}</strong>
+        {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
+      </div>
+      <CommandButton icon={CheckCircle2} label="Accept Guess" onClick={() => onQueue(action)} />
+    </div>
   );
 }
 
