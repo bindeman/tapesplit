@@ -265,6 +265,7 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             ("relationship_review_tasks.jsonl", "relationship_review_task", "question"),
             ("context_edges.jsonl", "context_edge", "predicate"),
             ("edge_metrics.jsonl", "edge_metric", "metric_set"),
+            ("event_continuity_contexts.jsonl", "event_continuity_context", "context_label"),
         ]:
             for row in read_jsonl(project / filename):
                 if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
@@ -328,6 +329,9 @@ def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) ->
         "object_label",
         "predicate",
         "supporting_signals",
+        "context_label",
+        "anchor_event_ids",
+        "basis",
         "question",
         "candidate_ids",
         "subject_type",

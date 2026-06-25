@@ -594,6 +594,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "date_group",
             "edge_metric",
             "event",
+            "event_continuity_context",
             "event_group",
             "evidence",
             "language_group",

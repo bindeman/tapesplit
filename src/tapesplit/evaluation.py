@@ -164,6 +164,7 @@ def _collect_eval_items(project: Path, *, max_items: int) -> list[dict[str, Any]
     rows.extend(_people_items(project, visibility, evidence_by_id))
     rows.extend(_date_items(project, visibility, evidence_by_id))
     rows.extend(_relationship_items(project, visibility, evidence_by_id))
+    rows.extend(_continuity_items(project, visibility, evidence_by_id))
     rows.extend(_context_edge_items(project, visibility, evidence_by_id))
     rows = [
         row
@@ -462,6 +463,39 @@ def _context_edge_items(project: Path, visibility: Any, evidence_by_id: dict[str
                 ],
                 tags=["context_edge", str(row.get("predicate") or "unknown")],
                 reachout_suggested=row.get("review_status") == "needs_review",
+            )
+        )
+    return items
+
+
+def _continuity_items(project: Path, visibility: Any, evidence_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    items = []
+    for row in read_jsonl(project / "event_continuity_contexts.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        items.append(
+            _eval_item(
+                task_type="continuity_context",
+                source_record_type="event_continuity_context",
+                row=row,
+                evidence_by_id=evidence_by_id,
+                prompt="Is this carried-forward location context useful, or does continuity break before this event?",
+                predicted_label=f"{row.get('canonical_event_id')} appears to be in {row.get('context_label')}",
+                predicted_summary="; ".join(str(signal) for signal in row.get("supporting_signals") or []),
+                predicted_fields={
+                    "canonical_event_id": row.get("canonical_event_id"),
+                    "context_label": row.get("context_label"),
+                    "anchor_event_ids": row.get("anchor_event_ids") or [],
+                    "basis": row.get("basis") or [],
+                    "not_exportable_as_gps": row.get("not_exportable_as_gps"),
+                },
+                reviewer_guidance=[
+                    "Use correct if the nearby tape continuity makes this a useful context clue.",
+                    "Use incorrect if a hard scene/location boundary occurs before the target event.",
+                    "Use partial if the broad area is plausible but the exact carried context is too specific.",
+                ],
+                tags=["continuity", "place"],
+                reachout_suggested=True,
             )
         )
     return items

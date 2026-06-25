@@ -440,6 +440,66 @@ def test_build_project_groups_merges_place_admin_aliases_and_scopes_generic_plac
     ]
 
 
+def test_build_project_groups_carries_place_context_across_strong_tape_continuity(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "School Exterior Sign",
+                "start_s": 0,
+                "end_s": 100,
+                "confidence": 0.9,
+                "evidence_ids": ["ev_1"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "school",
+                    "place_candidates": ["Madison, Wisconsin, USA", "Roosevelt Middle School"],
+                    "source_video_ids": ["video_000001"],
+                },
+            },
+            {
+                "id": "canonical_event_000002",
+                "title": "Classroom Cleanup",
+                "start_s": 105,
+                "end_s": 170,
+                "confidence": 0.85,
+                "evidence_ids": ["ev_2"],
+                "relatedness": "likely_family",
+                "metadata": {
+                    "event_type": "home",
+                    "place_candidates": ["classroom"],
+                    "source_video_ids": ["video_000001"],
+                },
+            },
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "gemini_evidence.jsonl",
+        [
+            {"id": "ev_1", "source_video_id": "video_000001"},
+            {"id": "ev_2", "source_video_id": "video_000001"},
+        ],
+    )
+
+    result = build_project_groups(tmp_path)
+    places = read_jsonl(tmp_path / "place_groups.jsonl")
+    continuity = read_jsonl(tmp_path / "event_continuity_contexts.jsonl")
+
+    assert result["event_continuity_contexts"] == 1
+    classroom = next(group for group in places if group["label"] == "classroom")
+    assert classroom["scope_label"] == "Madison, Wisconsin, USA context"
+    assert "Madison, Wisconsin, USA" in classroom["parent_place_labels"]
+    parent_candidate = classroom["metadata"]["parent_place_candidates"][0]
+    assert parent_candidate["basis"] == ["continuity_admin_context"]
+    assert parent_candidate["confidence"] == 0.66
+
+    assert continuity[0]["canonical_event_id"] == "canonical_event_000002"
+    assert continuity[0]["context_label"] == "Madison, Wisconsin, USA"
+    assert continuity[0]["anchor_event_ids"] == ["canonical_event_000001"]
+    assert continuity[0]["not_exportable_as_gps"] is True
+
+
 def test_build_project_groups_uses_spelling_normalization_and_project_person_aliases(tmp_path: Path):
     _write_jsonl(
         tmp_path / "canonical_events.jsonl",

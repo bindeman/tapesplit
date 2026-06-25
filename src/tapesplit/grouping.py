@@ -136,6 +136,7 @@ GENERIC_PLACE_TOKENS = ROOM_PLACE_TOKENS | {
     "beach",
     "botanical garden",
     "chapel",
+    "classroom",
     "community garden",
     "community gardens",
     "crater",
@@ -296,6 +297,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
 
     people_groups = _build_people_groups(context_events, evidence_by_id, person_alias_keys)
     place_groups = _build_place_groups(context_events, evidence_by_id)
+    event_continuity_contexts = _build_event_continuity_contexts(context_events, evidence_by_id)
     date_groups = _build_date_groups(context_events, evidence_by_id)
     language_groups = _build_language_groups(context_events, evidence_by_id)
     event_groups = _build_event_groups(context_events, date_groups)
@@ -303,6 +305,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
 
     outputs = {
         "event_place_roles": project / "event_place_roles.jsonl",
+        "event_continuity_contexts": project / "event_continuity_contexts.jsonl",
         "people_groups": project / "people_groups.jsonl",
         "place_groups": project / "place_groups.jsonl",
         "date_groups": project / "date_groups.jsonl",
@@ -311,6 +314,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "albums": project / "albums.jsonl",
     }
     _write_jsonl(outputs["event_place_roles"], place_roles)
+    _write_jsonl(outputs["event_continuity_contexts"], event_continuity_contexts)
     _write_jsonl(outputs["people_groups"], people_groups)
     _write_jsonl(outputs["place_groups"], place_groups)
     _write_jsonl(outputs["date_groups"], date_groups)
@@ -323,6 +327,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "source_events": len(source_events),
         "context_events": len(context_events),
         "event_place_roles": len(place_roles),
+        "event_continuity_contexts": len(event_continuity_contexts),
         "people_groups": len(people_groups),
         "place_groups": len(place_groups),
         "date_groups": len(date_groups),
@@ -1201,7 +1206,18 @@ def _place_contexts_by_event(
         base_contexts[event_id] = {
             "source_video_ids": source_video_ids,
             "direct_admin_keys": direct_admin_keys,
+            "continuity_admin_keys": [],
             "nearby_admin_keys": [],
+            "admin_key_sources": {
+                key: [
+                    {
+                        "basis": "direct_admin_context",
+                        "canonical_event_id": event_id,
+                        "confidence": 0.74,
+                    }
+                ]
+                for key in direct_admin_keys
+            },
         }
 
     event_index_by_id = {str(event.get("id")): index for index, event in enumerate(events) if event.get("id")}
@@ -1211,29 +1227,211 @@ def _place_contexts_by_event(
             continue
         if _event_is_multiplace_compilation(event):
             base_contexts[event_id]["nearby_admin_keys"] = []
+            base_contexts[event_id]["continuity_admin_keys"] = []
             base_contexts[event_id]["admin_keys"] = base_contexts[event_id]["direct_admin_keys"]
             base_contexts[event_id]["admin_labels"] = [_admin_label_for_key(key, place_aliases) for key in base_contexts[event_id]["admin_keys"]]
             continue
         source_video_ids = set(base_contexts[event_id]["source_video_ids"])
+        direct_keys = [str(key) for key in base_contexts[event_id]["direct_admin_keys"]]
+        if direct_keys:
+            base_contexts[event_id]["continuity_admin_keys"] = []
+            base_contexts[event_id]["nearby_admin_keys"] = []
+            base_contexts[event_id]["admin_keys"] = direct_keys
+            base_contexts[event_id]["admin_labels"] = [_admin_label_for_key(key, place_aliases) for key in direct_keys]
+            continue
+        continuity_keys: list[str] = []
         nearby_keys: list[str] = []
         for other in events:
             other_id = str(other.get("id") or "")
             if not other_id or other_id == event_id:
                 continue
-            if not _can_carry_place_context_between(events, event_index_by_id[event_id], event_index_by_id[other_id]):
-                continue
             if source_video_ids and not (source_video_ids & set(base_contexts[other_id]["source_video_ids"])):
                 continue
-            if _event_gap_seconds(event, other) > nearby_gap_s:
+            separation = _event_separation_seconds(event, other)
+            if separation > nearby_gap_s:
                 continue
+            strong_continuity = _has_strong_place_continuity(events, event_index_by_id[event_id], event_index_by_id[other_id])
+            if not strong_continuity and not _can_carry_place_context_between(events, event_index_by_id[event_id], event_index_by_id[other_id]):
+                continue
+            basis = "continuity_admin_context" if strong_continuity else "nearby_admin_context"
+            confidence = 0.66 if strong_continuity else 0.56
             for key in base_contexts[other_id]["direct_admin_keys"]:
-                if key not in nearby_keys:
-                    nearby_keys.append(key)
+                target_list = continuity_keys if strong_continuity else nearby_keys
+                if key not in target_list:
+                    target_list.append(key)
+                _append_admin_key_source(
+                    base_contexts[event_id],
+                    str(key),
+                    basis=basis,
+                    anchor_event_id=other_id,
+                    gap_s=separation,
+                    confidence=confidence,
+                )
+        base_contexts[event_id]["continuity_admin_keys"] = continuity_keys
         base_contexts[event_id]["nearby_admin_keys"] = nearby_keys
-        admin_keys = _unique_items([*base_contexts[event_id]["direct_admin_keys"], *nearby_keys])
+        admin_keys = _unique_items([*base_contexts[event_id]["direct_admin_keys"], *continuity_keys, *nearby_keys])
         base_contexts[event_id]["admin_keys"] = admin_keys
         base_contexts[event_id]["admin_labels"] = [_admin_label_for_key(key, place_aliases) for key in admin_keys]
     return base_contexts
+
+
+def _build_event_continuity_contexts(
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    place_aliases = _place_admin_alias_resolution(
+        place for event in events for place in _metadata_list(event, "place_candidates")
+    )
+    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases)
+    events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
+    rows = []
+    for event_id, context in sorted(event_contexts.items(), key=lambda item: _event_order(events_by_id.get(item[0]))):
+        continuity_keys = [str(key) for key in context.get("continuity_admin_keys") or []]
+        for admin_key in continuity_keys:
+            sources = [
+                source
+                for source in context.get("admin_key_sources", {}).get(admin_key, [])
+                if source.get("basis") == "continuity_admin_context"
+            ]
+            if not sources:
+                continue
+            label = _admin_label_for_key(admin_key, place_aliases)
+            rows.append(
+                {
+                    "id": f"event_continuity_context_{len(rows) + 1:06d}",
+                    "canonical_event_id": event_id,
+                    "context_label": label,
+                    "context_key": admin_key,
+                    "predicate": "possible_location_context",
+                    "source": "continuity",
+                    "anchor_event_ids": _unique_items(source.get("canonical_event_id") for source in sources),
+                    "source_video_ids": context.get("source_video_ids") or [],
+                    "confidence": round(max(float(source.get("confidence") or 0.0) for source in sources), 3),
+                    "basis": _unique_items(source.get("basis") for source in sources),
+                    "supporting_signals": _continuity_supporting_signals(sources, events_by_id, label),
+                    "not_exportable_as_gps": True,
+                    "review_status": "needs_review",
+                }
+            )
+    return rows
+
+
+def _append_admin_key_source(
+    context: dict[str, Any],
+    key: str,
+    *,
+    basis: str,
+    anchor_event_id: str,
+    gap_s: float,
+    confidence: float,
+) -> None:
+    sources = context.setdefault("admin_key_sources", {}).setdefault(key, [])
+    candidate = {
+        "basis": basis,
+        "canonical_event_id": anchor_event_id,
+        "gap_s": round(max(0.0, gap_s), 3),
+        "confidence": confidence,
+    }
+    if not any(
+        source.get("basis") == candidate["basis"] and source.get("canonical_event_id") == candidate["canonical_event_id"]
+        for source in sources
+    ):
+        sources.append(candidate)
+
+
+def _continuity_supporting_signals(
+    sources: list[dict[str, Any]],
+    events_by_id: dict[str, dict[str, Any]],
+    label: str,
+) -> list[str]:
+    signals = []
+    for source in sources:
+        anchor = events_by_id.get(str(source.get("canonical_event_id") or ""))
+        title = str(anchor.get("title") or source.get("canonical_event_id") or "nearby event") if anchor else "nearby event"
+        gap = _number_or_none(source.get("gap_s"))
+        if gap is not None and gap <= 0:
+            signals.append(f"{label} carried from overlapping event {title}")
+        elif gap is not None:
+            signals.append(f"{label} carried from {title}, {int(round(gap))} seconds away")
+        else:
+            signals.append(f"{label} carried from nearby event {title}")
+    return signals
+
+
+def _admin_context_basis(context: dict[str, Any], admin_key: str) -> str:
+    sources = context.get("admin_key_sources", {}).get(admin_key, [])
+    bases = [str(source.get("basis") or "") for source in sources]
+    if "direct_admin_context" in bases:
+        return "direct_admin_context"
+    if "continuity_admin_context" in bases:
+        return "continuity_admin_context"
+    if "nearby_admin_context" in bases:
+        return "nearby_admin_context"
+    if admin_key in (context.get("direct_admin_keys") or []):
+        return "direct_admin_context"
+    if admin_key in (context.get("continuity_admin_keys") or []):
+        return "continuity_admin_context"
+    return "nearby_admin_context"
+
+
+def _admin_context_confidence(basis: str) -> float:
+    if basis == "direct_admin_context":
+        return 0.74
+    if basis == "continuity_admin_context":
+        return 0.66
+    return 0.56
+
+
+def _has_strong_place_continuity(
+    events: list[dict[str, Any]],
+    target_index: int,
+    anchor_index: int,
+    *,
+    max_gap_s: float = 180.0,
+) -> bool:
+    target = events[target_index]
+    anchor = events[anchor_index]
+    if _event_is_multiplace_compilation(target) or _event_is_multiplace_compilation(anchor):
+        return False
+    if _event_separation_seconds(target, anchor) > max_gap_s:
+        return False
+    target_type = str(_metadata_value(target, "event_type") or "")
+    anchor_type = str(_metadata_value(anchor, "event_type") or "")
+    if "travel" in {target_type, anchor_type} and target_type != anchor_type:
+        return False
+    if _has_intervening_place_boundary(events, target_index, anchor_index):
+        return False
+    if _event_has_generic_place_context(target):
+        return True
+    if _events_share_people(target, anchor):
+        return True
+    if abs(target_index - anchor_index) == 1 and {target_type, anchor_type} & {"school", "holiday", "home"}:
+        return True
+    return False
+
+
+def _has_intervening_place_boundary(events: list[dict[str, Any]], left_index: int, right_index: int) -> bool:
+    start = min(left_index, right_index)
+    end = max(left_index, right_index)
+    for event in events[start + 1 : end]:
+        if _event_is_multiplace_compilation(event):
+            return True
+        event_type = str(_metadata_value(event, "event_type") or "")
+        if event_type == "travel":
+            return True
+    return False
+
+
+def _event_has_generic_place_context(event: dict[str, Any]) -> bool:
+    return any(_is_generic_place_key(_normalize_key(place)) for place in _metadata_list(event, "place_candidates"))
+
+
+def _events_share_people(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_people = {_person_spelling_key(_normalize_key(person)) for person in _metadata_list(left, "people")}
+    right_people = {_person_spelling_key(_normalize_key(person)) for person in _metadata_list(right, "people")}
+    left_people.discard("")
+    right_people.discard("")
+    return bool(left_people & right_people)
 
 
 def _can_carry_place_context_between(events: list[dict[str, Any]], left_index: int, right_index: int) -> bool:
@@ -1343,11 +1541,20 @@ def _place_scope_metadata(
     )
     admin_keys = _unique_items(key for context in contexts for key in context.get("admin_keys", []))
     admin_labels = _unique_items(label for context in contexts for label in context.get("admin_labels", []))
+    admin_key_sources: dict[str, list[dict[str, Any]]] = {}
+    for context in contexts:
+        sources = context.get("admin_key_sources") if isinstance(context.get("admin_key_sources"), dict) else {}
+        for key, source_rows in sources.items():
+            bucket = admin_key_sources.setdefault(str(key), [])
+            for source in source_rows or []:
+                if isinstance(source, dict) and source not in bucket:
+                    bucket.append(source)
     return {
         "source_video_ids": source_video_ids,
         "date_years": _date_years_for_events(events),
         "admin_context_keys": admin_keys,
         "admin_context_labels": admin_labels,
+        "admin_key_sources": admin_key_sources,
     }
 
 
@@ -1379,8 +1586,8 @@ def _attach_place_context_candidates(
                 parent = groups_by_resolution_key.get(str(admin_key))
                 if parent and parent.get("id") != group.get("id") and _can_attach_admin_parent(parent, group):
                     relation = "within_region_candidate"
-                    basis = "direct_admin_context" if admin_key in (context.get("direct_admin_keys") or []) else "nearby_admin_context"
-                    confidence = 0.74 if basis == "direct_admin_context" else 0.56
+                    basis = _admin_context_basis(context, str(admin_key))
+                    confidence = _admin_context_confidence(basis)
                     _add_place_context_candidate(parent_candidates, parent, relation, confidence, basis, [event_id])
 
             if not _event_is_multiplace_compilation(event):
@@ -1589,6 +1796,20 @@ def _events_from_group_row(group: dict[str, Any], events_by_id: dict[str, dict[s
 
 
 def _event_gap_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_start = _number_or_none(left.get("start_s"))
+    left_end = _number_or_none(left.get("end_s")) or left_start
+    right_start = _number_or_none(right.get("start_s"))
+    right_end = _number_or_none(right.get("end_s")) or right_start
+    if None in {left_start, left_end, right_start, right_end}:
+        return 1_000_000_000.0
+    if left_end < right_start:
+        return right_start - left_end
+    if right_end < left_start:
+        return left_start - right_end
+    return 0.0
+
+
+def _event_separation_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
     left_start = _number_or_none(left.get("start_s"))
     left_end = _number_or_none(left.get("end_s")) or left_start
     right_start = _number_or_none(right.get("start_s"))
