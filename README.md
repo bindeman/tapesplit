@@ -55,7 +55,10 @@ Current local review pipeline:
 .venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
 .venv/bin/tapesplit detect-scenes /path/to/project.tapesplit
 .venv/bin/tapesplit extract-visuals /path/to/project.tapesplit
-.venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit
+.venv/bin/tapesplit gemini prepare-video /path/to/project.tapesplit
+.venv/bin/tapesplit gemini estimate-video /path/to/project.tapesplit --all --output-tokens 12000
+.venv/bin/tapesplit gemini analyze-video /path/to/project.tapesplit --all --continue-on-error
+.venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit  # optional high-fidelity follow-up
 .venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/project.tapesplit
 .venv/bin/tapesplit build-groups /path/to/project.tapesplit

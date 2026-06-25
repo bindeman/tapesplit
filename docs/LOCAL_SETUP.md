@@ -197,40 +197,40 @@ Project-level summary:
 
 ## Gemini Video Analysis
 
-For long VHS/DVD transfers, prefer chunked analysis over a single whole-tape
-call. Chunk outputs preserve both chunk-local time and absolute source-video
-time, which makes review/report links safer when Gemini timestamps drift.
+For long VHS/DVD transfers, start with a whole-tape Gemini pass when the video
+fits under the upload limit or can be compressed into a proxy. This gives the
+model continuity across events, recurring people, repeated places, unrelated
+footage, and date/location carryover. Use chunked analysis later as a
+high-fidelity follow-up for signs, OCR, confusing transitions, or timestamps
+where the whole-tape pass asks for more detail.
 
 Estimate before spending:
 
 ```bash
 .venv/bin/tapesplit gemini estimate-video /path/to/family-videos.tapesplit \
-  --chunk-seconds 900 \
-  --chunk-overlap-seconds 15 \
+  --all \
   --fps 1 \
   --media-resolution low \
-  --output-tokens 8000
+  --output-tokens 12000
 ```
 
-Run a bounded first chunk:
+Prepare whole-tape analysis files under the Gemini upload size limit:
 
 ```bash
-.venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
-  --chunk-seconds 900 \
-  --chunk-overlap-seconds 15 \
-  --limit-chunks 1
+.venv/bin/tapesplit gemini prepare-video /path/to/family-videos.tapesplit
 ```
 
-Run the full chunk pass, import it into reviewable events/evidence, and export
+Run the whole-tape pass, import it into reviewable events/evidence, and export
 the static report:
 
 ```bash
 .venv/bin/tapesplit detect-non-content /path/to/family-videos.tapesplit
 .venv/bin/tapesplit detect-scenes /path/to/family-videos.tapesplit
 .venv/bin/tapesplit extract-visuals /path/to/family-videos.tapesplit
-.venv/bin/tapesplit gemini analyze-video-chunks /path/to/family-videos.tapesplit \
-  --chunk-seconds 900 \
-  --chunk-overlap-seconds 15
+.venv/bin/tapesplit gemini prepare-video /path/to/family-videos.tapesplit
+.venv/bin/tapesplit gemini analyze-video /path/to/family-videos.tapesplit \
+  --all \
+  --continue-on-error
 .venv/bin/tapesplit gemini import-analysis /path/to/family-videos.tapesplit
 .venv/bin/tapesplit stitch-events /path/to/family-videos.tapesplit
 .venv/bin/tapesplit build-groups /path/to/family-videos.tapesplit
@@ -239,8 +239,13 @@ the static report:
 .venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
 ```
 
-`stitch-events` creates `canonical_events.jsonl`. It prefers Gemini chunk events
-when available and keeps raw event candidates as provenance through
+If you only want to retry videos already uploaded to TwelveLabs, add
+`--uploaded-to-twelvelabs-only` to the `estimate-video` and `analyze-video`
+commands. Existing chunked results are not overwritten; whole-tape analyses are
+appended to `gemini_analyses.jsonl` and can be imported alongside prior runs.
+
+`stitch-events` creates `canonical_events.jsonl`. It keeps whole-tape and
+chunk-derived event candidates tied back to their raw provenance through
 `source_event_ids`.
 
 `build-groups` is local and deterministic. It creates reviewable album, event,

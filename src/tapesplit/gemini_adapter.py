@@ -45,6 +45,9 @@ class GeminiChunk:
         return max(0.0, self.end_s - self.start_s)
 
 
+DEFAULT_GEMINI_MAX_UPLOAD_BYTES = 1_450_000_000
+
+
 def load_gemini_config(env_path: Path | None = None) -> GeminiConfig:
     load_dotenv(env_path)
     return GeminiConfig(
@@ -148,6 +151,83 @@ def estimate_project_video(
         }
     )
     return estimate
+
+
+def estimate_project_videos(
+    project_dir: Path,
+    *,
+    source_video_id: str | None = None,
+    all_videos: bool = False,
+    uploaded_to_twelvelabs_only: bool = False,
+    fps: float | None = None,
+    media_resolution: str | None = None,
+    output_tokens: int = 6000,
+    chunk_seconds: float | None = None,
+    chunk_overlap_seconds: float = 0.0,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    tapes = read_jsonl(project / "tapes.jsonl")
+    if not tapes:
+        raise FileNotFoundError(f"missing project tapes file: {project / 'tapes.jsonl'}")
+    selected_tapes = _select_tapes(
+        project,
+        tapes,
+        source_video_id=source_video_id,
+        all_videos=all_videos,
+        uploaded_to_twelvelabs_only=uploaded_to_twelvelabs_only,
+    )
+    config = load_gemini_config()
+    results = []
+    for tape in selected_tapes:
+        duration_s = float((tape.get("probe") or {}).get("duration_s") or 0.0)
+        if chunk_seconds is None:
+            estimate = estimate_video_analysis(
+                duration_s=duration_s,
+                model=config.model,
+                fps=fps if fps is not None else config.default_fps,
+                media_resolution=media_resolution or config.media_resolution,
+                output_tokens=output_tokens,
+            )
+        else:
+            estimate = estimate_chunked_video_analysis(
+                duration_s=duration_s,
+                model=config.model,
+                fps=fps if fps is not None else config.default_fps,
+                media_resolution=media_resolution or config.media_resolution,
+                output_tokens_per_chunk=output_tokens,
+                chunk_seconds=chunk_seconds,
+                overlap_seconds=chunk_overlap_seconds,
+            )
+        estimate.update(
+            {
+                "project": str(project),
+                "source_video_id": tape.get("id"),
+                "filename": tape.get("filename"),
+            }
+        )
+        results.append(estimate)
+
+    known_cost = 0.0
+    unknown_cost_estimates = 0
+    for result in results:
+        cost = result.get("estimated_cost_usd")
+        if cost is None:
+            unknown_cost_estimates += 1
+        else:
+            known_cost += float(cost)
+
+    return {
+        "project": str(project),
+        "videos": len(results),
+        "all_videos": all_videos,
+        "uploaded_to_twelvelabs_only": uploaded_to_twelvelabs_only,
+        "total_duration_s": round(sum(float(result.get("duration_s") or 0.0) for result in results), 3),
+        "units": _sum_estimate_units(results),
+        "known_estimated_cost_usd": round(known_cost, 8),
+        "unknown_cost_estimates": unknown_cost_estimates,
+        "total_estimated_cost_usd": None if unknown_cost_estimates else round(known_cost, 8),
+        "results": results,
+    }
 
 
 def estimate_chunked_video_analysis(
@@ -292,6 +372,217 @@ def estimate_video_token_units(
     }
 
 
+def prepare_project_video_proxy(
+    project_dir: Path,
+    *,
+    source_video_id: str | None = None,
+    enabled: bool = True,
+    force: bool = False,
+    max_upload_bytes: int | None = None,
+    target_height: int = 480,
+    target_fps: float = 12.0,
+    audio_bitrate_kbps: int = 96,
+) -> dict[str, Any]:
+    load_dotenv()
+    project = project_dir.expanduser().resolve()
+    tapes = read_jsonl(project / "tapes.jsonl")
+    if not tapes:
+        raise FileNotFoundError(f"missing project tapes file: {project / 'tapes.jsonl'}")
+    tape = _select_tape(tapes, source_video_id)
+    video_path = Path(tape["path"]).expanduser().resolve()
+    if not video_path.exists():
+        raise FileNotFoundError(f"video no longer exists: {video_path}")
+
+    resolved_max_bytes = _gemini_max_upload_bytes(max_upload_bytes)
+    source_size = video_path.stat().st_size
+    probe = tape.get("probe") or ffprobe_video(video_path)
+    duration_s = float(probe.get("duration_s") or 0.0)
+    if not enabled or (source_size <= resolved_max_bytes and not force):
+        record = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source_video_id": tape["id"],
+            "filename": tape.get("filename"),
+            "source_path": str(video_path),
+            "analysis_path": str(video_path),
+            "proxy_path": "",
+            "proxy_created": False,
+            "proxy_reason": "disabled" if not enabled else "source_under_limit",
+            "duration_s": round(duration_s, 3),
+            "source_size_bytes": source_size,
+            "analysis_size_bytes": source_size,
+            "max_upload_bytes": resolved_max_bytes,
+            "under_limit": source_size <= resolved_max_bytes,
+        }
+        append_jsonl(project / "gemini_video_proxies.jsonl", record)
+        return record
+
+    if duration_s <= 0:
+        raise ValueError(f"cannot prepare Gemini proxy without duration: {video_path}")
+
+    profile = _proxy_encoding_profile(
+        duration_s=duration_s,
+        max_upload_bytes=resolved_max_bytes,
+        target_height=target_height,
+        target_fps=target_fps,
+        audio_bitrate_kbps=audio_bitrate_kbps,
+    )
+    proxy_dir = project / "gemini_proxies" / str(tape["id"])
+    proxy_dir.mkdir(parents=True, exist_ok=True)
+    output = proxy_dir / (
+        f"{tape['id']}_whole_"
+        f"h{profile['height']}_fps{str(profile['fps']).replace('.', 'p')}_"
+        f"{int(resolved_max_bytes / 1_000_000)}mb.mp4"
+    )
+    if force or not output.exists() or output.stat().st_size > resolved_max_bytes:
+        _create_video_proxy(video_path, output, profile=profile)
+
+    output_size = output.stat().st_size
+    if output_size > resolved_max_bytes:
+        tighter_profile = _proxy_encoding_profile(
+            duration_s=duration_s,
+            max_upload_bytes=int(resolved_max_bytes * 0.82),
+            target_height=min(target_height, 360),
+            target_fps=min(target_fps, 8.0),
+            audio_bitrate_kbps=min(audio_bitrate_kbps, 64),
+        )
+        _create_video_proxy(video_path, output, profile=tighter_profile)
+        profile = tighter_profile
+        output_size = output.stat().st_size
+
+    if output_size > resolved_max_bytes:
+        raise RuntimeError(
+            f"Gemini proxy is still over upload limit: {output_size} > {resolved_max_bytes} bytes ({output})"
+        )
+
+    record = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_video_id": tape["id"],
+        "filename": tape.get("filename"),
+        "source_path": str(video_path),
+        "analysis_path": str(output),
+        "proxy_path": str(output),
+        "proxy_created": True,
+        "proxy_reason": "source_over_limit" if source_size > resolved_max_bytes else "forced",
+        "duration_s": round(duration_s, 3),
+        "source_size_bytes": source_size,
+        "analysis_size_bytes": output_size,
+        "max_upload_bytes": resolved_max_bytes,
+        "under_limit": output_size <= resolved_max_bytes,
+        "encoding_profile": profile,
+    }
+    append_jsonl(project / "gemini_video_proxies.jsonl", record)
+    return record
+
+
+def prepare_project_video_proxies(
+    project_dir: Path,
+    *,
+    source_video_id: str | None = None,
+    enabled: bool = True,
+    force: bool = False,
+    max_upload_bytes: int | None = None,
+    target_height: int = 480,
+    target_fps: float = 12.0,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    tapes = read_jsonl(project / "tapes.jsonl")
+    if source_video_id:
+        tapes = [_select_tape(tapes, source_video_id)]
+    results = [
+        prepare_project_video_proxy(
+            project,
+            source_video_id=str(tape.get("id") or ""),
+            enabled=enabled,
+            force=force,
+            max_upload_bytes=max_upload_bytes,
+            target_height=target_height,
+            target_fps=target_fps,
+        )
+        for tape in tapes
+    ]
+    return {
+        "project": str(project),
+        "videos": len(results),
+        "proxies_created": sum(1 for result in results if result.get("proxy_created")),
+        "under_limit": all(result.get("under_limit") for result in results),
+        "max_upload_bytes": _gemini_max_upload_bytes(max_upload_bytes),
+        "results": results,
+    }
+
+
+def _proxy_encoding_profile(
+    *,
+    duration_s: float,
+    max_upload_bytes: int,
+    target_height: int,
+    target_fps: float,
+    audio_bitrate_kbps: int,
+) -> dict[str, Any]:
+    usable_kbps = max(1.0, (max_upload_bytes * 8 * 0.9) / max(duration_s, 1.0) / 1000)
+    audio_kbps = min(audio_bitrate_kbps, max(48, int(usable_kbps * 0.18)))
+    video_kbps = max(250, int(usable_kbps - audio_kbps))
+    return {
+        "height": max(180, int(target_height)),
+        "fps": max(4.0, float(target_fps)),
+        "video_bitrate_kbps": video_kbps,
+        "audio_bitrate_kbps": audio_kbps,
+    }
+
+
+def _create_video_proxy(video_path: Path, output: Path, *, profile: dict[str, Any]) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    video_kbps = int(profile["video_bitrate_kbps"])
+    audio_kbps = int(profile["audio_bitrate_kbps"])
+    fps = float(profile["fps"])
+    height = int(profile["height"])
+    vf = f"scale=-2:{height}:flags=bicubic,fps={fps:g}"
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(video_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-b:v",
+        f"{video_kbps}k",
+        "-maxrate",
+        f"{max(video_kbps, int(video_kbps * 1.4))}k",
+        "-bufsize",
+        f"{max(video_kbps * 2, 500)}k",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        f"{audio_kbps}k",
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        "-movflags",
+        "+faststart",
+        str(output),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=7200)
+    except FileNotFoundError as exc:
+        raise RuntimeError("ffmpeg is required for Gemini whole-video proxy preparation") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+        raise RuntimeError(f"ffmpeg failed creating Gemini proxy: {detail}") from exc
+
+
 def smoke_test(project_dir: Path | None = None) -> dict[str, Any]:
     config = load_gemini_config()
     if not config.configured:
@@ -328,10 +619,16 @@ def analyze_project_video(
     project_dir: Path,
     *,
     source_video_id: str | None = None,
+    analysis_run_id: str | None = None,
     fps: float | None = None,
     media_resolution: str | None = None,
     max_output_tokens: int = 12000,
     force_upload: bool = False,
+    use_proxy: bool = True,
+    force_proxy: bool = False,
+    max_upload_bytes: int | None = None,
+    proxy_height: int = 480,
+    proxy_fps: float = 12.0,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     tapes = read_jsonl(project / "tapes.jsonl")
@@ -350,8 +647,21 @@ def analyze_project_video(
 
     resolved_fps = fps if fps is not None else config.default_fps
     resolved_media_resolution = media_resolution or config.media_resolution
+    resolved_analysis_run_id = analysis_run_id or (
+        f"gem_video_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
+    )
     probe = tape.get("probe") or ffprobe_video(video_path)
     duration_s = float(probe.get("duration_s") or 0.0)
+    prepared_video = prepare_project_video_proxy(
+        project,
+        source_video_id=tape["id"],
+        enabled=use_proxy,
+        force=force_proxy,
+        max_upload_bytes=max_upload_bytes,
+        target_height=proxy_height,
+        target_fps=proxy_fps,
+    )
+    analysis_video_path = Path(prepared_video["analysis_path"]).expanduser().resolve()
     estimate = estimate_video_analysis(
         duration_s=duration_s,
         model=config.model,
@@ -363,12 +673,17 @@ def analyze_project_video(
 
     upload = upload_video_to_gcs(
         project_dir=project,
-        video_path=video_path,
+        video_path=analysis_video_path,
         source_video_id=tape["id"],
         bucket=config.gcs_bucket,
         location=config.location,
         cloud_project=config.project or "",
         force=force_upload,
+        metadata={
+            "upload_role": "whole_tape_analysis",
+            "source_video_path": str(video_path),
+            "prepared_video": prepared_video,
+        },
     )
     prompt = _analysis_prompt()
     response = generate_content(
@@ -378,7 +693,7 @@ def analyze_project_video(
                 "parts": [
                     {
                         "fileData": {
-                            "mimeType": _mime_type(video_path),
+                            "mimeType": _mime_type(analysis_video_path),
                             "fileUri": upload["gcs_uri"],
                         },
                         "videoMetadata": {"fps": resolved_fps},
@@ -399,9 +714,13 @@ def analyze_project_video(
     text = _response_text(response)
     raw_record = {
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "analysis_run_id": resolved_analysis_run_id,
         "source_video_id": tape["id"],
         "filename": tape.get("filename"),
+        "time_basis": "source_video",
         "gcs_uri": upload["gcs_uri"],
+        "analysis_video_path": str(analysis_video_path),
+        "prepared_video": prepared_video,
         "model": config.model,
         "location": config.location,
         "fps": resolved_fps,
@@ -421,14 +740,90 @@ def analyze_project_video(
     write_json(project / "gemini_analysis.raw.json", record)
     return {
         "project": str(project),
+        "analysis_run_id": resolved_analysis_run_id,
         "source_video_id": tape["id"],
         "model": config.model,
         "gcs_uri": upload["gcs_uri"],
+        "analysis_video_path": str(analysis_video_path),
+        "prepared_video": prepared_video,
         "fps": resolved_fps,
         "media_resolution": resolved_media_resolution,
         "estimated_cost_usd": estimate["estimated_cost_usd"],
         "usage": response.get("usageMetadata"),
         "analysis_keys": sorted(parsed.keys()),
+    }
+
+
+def analyze_project_videos(
+    project_dir: Path,
+    *,
+    source_video_id: str | None = None,
+    all_videos: bool = False,
+    uploaded_to_twelvelabs_only: bool = False,
+    continue_on_error: bool = False,
+    fps: float | None = None,
+    media_resolution: str | None = None,
+    max_output_tokens: int = 12000,
+    force_upload: bool = False,
+    use_proxy: bool = True,
+    force_proxy: bool = False,
+    max_upload_bytes: int | None = None,
+    proxy_height: int = 480,
+    proxy_fps: float = 12.0,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    tapes = read_jsonl(project / "tapes.jsonl")
+    if not tapes:
+        raise FileNotFoundError(f"missing project tapes file: {project / 'tapes.jsonl'}")
+    selected_tapes = _select_tapes(
+        project,
+        tapes,
+        source_video_id=source_video_id,
+        all_videos=all_videos,
+        uploaded_to_twelvelabs_only=uploaded_to_twelvelabs_only,
+    )
+    analysis_run_id = f"gem_video_batch_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
+    results = []
+    errors = []
+    for tape in selected_tapes:
+        try:
+            results.append(
+                analyze_project_video(
+                    project,
+                    source_video_id=str(tape.get("id") or ""),
+                    analysis_run_id=analysis_run_id,
+                    fps=fps,
+                    media_resolution=media_resolution,
+                    max_output_tokens=max_output_tokens,
+                    force_upload=force_upload,
+                    use_proxy=use_proxy,
+                    force_proxy=force_proxy,
+                    max_upload_bytes=max_upload_bytes,
+                    proxy_height=proxy_height,
+                    proxy_fps=proxy_fps,
+                )
+            )
+        except Exception as exc:
+            error = {
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "source_video_id": tape.get("id"),
+                "filename": tape.get("filename"),
+                "operation": "video_analysis_batch",
+                "analysis_run_id": analysis_run_id,
+                "error": str(exc),
+            }
+            append_jsonl(project / "gemini_analysis_errors.jsonl", error)
+            errors.append(error)
+            if not continue_on_error:
+                raise
+
+    return {
+        "project": str(project),
+        "analysis_run_id": analysis_run_id,
+        "videos_requested": len(selected_tapes),
+        "videos_completed": len(results),
+        "errors": errors,
+        "results": results,
     }
 
 
@@ -1071,6 +1466,41 @@ def _select_tape(tapes: list[dict[str, Any]], source_video_id: str | None) -> di
     raise ValueError(f"unknown source_video_id: {source_video_id}")
 
 
+def _select_tapes(
+    project: Path,
+    tapes: list[dict[str, Any]],
+    *,
+    source_video_id: str | None,
+    all_videos: bool,
+    uploaded_to_twelvelabs_only: bool,
+) -> list[dict[str, Any]]:
+    if source_video_id and all_videos:
+        raise ValueError("use either source_video_id or all_videos, not both")
+    selected = list(tapes) if all_videos else [_select_tape(tapes, source_video_id)]
+    if uploaded_to_twelvelabs_only:
+        uploaded_source_ids = _twelvelabs_uploaded_source_ids(project)
+        selected = [tape for tape in selected if tape.get("id") in uploaded_source_ids]
+        if not selected:
+            raise ValueError("no selected videos have TwelveLabs upload records")
+    return selected
+
+
+def _twelvelabs_uploaded_source_ids(project: Path) -> set[str]:
+    rows = read_jsonl(project / "twelvelabs_assets.jsonl") + read_jsonl(project / "twelvelabs_tasks.jsonl")
+    return {str(row.get("source_video_id")) for row in rows if row.get("source_video_id")}
+
+
+def _sum_estimate_units(estimates: list[dict[str, Any]]) -> dict[str, float | int]:
+    totals: dict[str, float | int] = {}
+    for estimate in estimates:
+        for key, value in (estimate.get("units") or {}).items():
+            if isinstance(value, int):
+                totals[key] = int(totals.get(key, 0)) + value
+            elif isinstance(value, float):
+                totals[key] = float(totals.get(key, 0.0)) + value
+    return totals
+
+
 def _enforce_budget(project: Path, config: GeminiConfig, estimate: dict[str, Any]) -> None:
     cost = estimate.get("estimated_cost_usd")
     if cost is None:
@@ -1168,6 +1598,18 @@ def _gcloud_success(cmd: list[str]) -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
+
+
+def _gemini_max_upload_bytes(value: int | None = None) -> int:
+    if value is not None:
+        return int(value)
+    env_value = os.environ.get("GEMINI_MAX_UPLOAD_BYTES")
+    if env_value:
+        return int(float(env_value))
+    env_gb = os.environ.get("GEMINI_MAX_UPLOAD_GB")
+    if env_gb:
+        return int(float(env_gb) * 1_000_000_000)
+    return DEFAULT_GEMINI_MAX_UPLOAD_BYTES
 
 
 def _truthy(value: str | None, *, default: bool = False) -> bool:

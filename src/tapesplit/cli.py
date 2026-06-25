@@ -31,8 +31,11 @@ from tapesplit.geocoding import check_google_maps_config, geocode_candidate
 from tapesplit.gemini_adapter import (
     analyze_project_video_chunks,
     analyze_project_video,
+    analyze_project_videos,
     check_gemini_config,
     estimate_project_video,
+    estimate_project_videos,
+    prepare_project_video_proxies,
     smoke_test as gemini_smoke_test,
 )
 from tapesplit.gemini_import import import_gemini_analysis
@@ -191,6 +194,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gemini_estimate.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_estimate.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
+    gemini_estimate.add_argument("--all", action="store_true", help="Estimate all project videos.")
+    gemini_estimate.add_argument(
+        "--uploaded-to-twelvelabs-only",
+        action="store_true",
+        help="With --all, only include videos with TwelveLabs upload records.",
+    )
     gemini_estimate.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
     gemini_estimate.add_argument(
         "--media-resolution",
@@ -214,12 +223,33 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Chunk overlap for chunked estimates. Default: 0.",
     )
+    gemini_prepare = gemini_subparsers.add_parser(
+        "prepare-video",
+        help="Create Gemini-ready whole-video analysis proxies under the upload size limit.",
+    )
+    gemini_prepare.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_prepare.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
+    gemini_prepare.add_argument(
+        "--max-upload-gb",
+        type=float,
+        default=1.45,
+        help="Maximum proxy/upload size in decimal GB. Default: 1.45.",
+    )
+    gemini_prepare.add_argument("--height", type=int, default=480, help="Proxy video height. Default: 480.")
+    gemini_prepare.add_argument("--proxy-fps", type=float, default=12.0, help="Proxy video FPS. Default: 12.")
+    gemini_prepare.add_argument("--force", action="store_true", help="Recreate existing proxies.")
     gemini_analyze = gemini_subparsers.add_parser(
         "analyze-video",
         help="Analyze a project video with Vertex Gemini and write gemini_analyses.jsonl.",
     )
     gemini_analyze.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_analyze.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
+    gemini_analyze.add_argument("--all", action="store_true", help="Analyze all project videos.")
+    gemini_analyze.add_argument(
+        "--uploaded-to-twelvelabs-only",
+        action="store_true",
+        help="With --all, only analyze videos with TwelveLabs upload records.",
+    )
     gemini_analyze.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
     gemini_analyze.add_argument(
         "--media-resolution",
@@ -228,6 +258,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     gemini_analyze.add_argument("--max-output-tokens", type=int, default=12000)
     gemini_analyze.add_argument("--force-upload", action="store_true")
+    gemini_analyze.add_argument(
+        "--no-proxy",
+        action="store_true",
+        help="Upload the original video directly instead of creating a whole-tape proxy.",
+    )
+    gemini_analyze.add_argument("--force-proxy", action="store_true", help="Recreate the whole-tape proxy before upload.")
+    gemini_analyze.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Continue a batch run after a video fails and log errors.",
+    )
+    gemini_analyze.add_argument(
+        "--max-upload-gb",
+        type=float,
+        default=1.45,
+        help="Maximum proxy/upload size in decimal GB. Default: 1.45.",
+    )
+    gemini_analyze.add_argument("--proxy-height", type=int, default=480, help="Proxy video height. Default: 480.")
+    gemini_analyze.add_argument("--proxy-fps", type=float, default=12.0, help="Proxy video FPS. Default: 12.")
     gemini_analyze_chunks = gemini_subparsers.add_parser(
         "analyze-video-chunks",
         help="Analyze a project video with Gemini in source-offset-preserving chunks.",
@@ -800,6 +849,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 0
             if args.gemini_command == "estimate-video":
+                if args.all or args.uploaded_to_twelvelabs_only:
+                    print(
+                        json.dumps(
+                            estimate_project_videos(
+                                args.project,
+                                source_video_id=args.source_video_id,
+                                all_videos=args.all,
+                                uploaded_to_twelvelabs_only=args.uploaded_to_twelvelabs_only,
+                                fps=args.fps,
+                                media_resolution=args.media_resolution,
+                                output_tokens=args.output_tokens,
+                                chunk_seconds=args.chunk_seconds,
+                                chunk_overlap_seconds=args.chunk_overlap_seconds,
+                            ),
+                            indent=2,
+                            sort_keys=True,
+                        )
+                    )
+                    return 0
                 print(
                     json.dumps(
                         estimate_project_video(
@@ -816,7 +884,47 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
                 return 0
+            if args.gemini_command == "prepare-video":
+                print(
+                    json.dumps(
+                        prepare_project_video_proxies(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            force=args.force,
+                            max_upload_bytes=int(args.max_upload_gb * 1_000_000_000),
+                            target_height=args.height,
+                            target_fps=args.proxy_fps,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
             if args.gemini_command == "analyze-video":
+                if args.all or args.uploaded_to_twelvelabs_only:
+                    print(
+                        json.dumps(
+                            analyze_project_videos(
+                                args.project,
+                                source_video_id=args.source_video_id,
+                                all_videos=args.all,
+                                uploaded_to_twelvelabs_only=args.uploaded_to_twelvelabs_only,
+                                continue_on_error=args.continue_on_error,
+                                fps=args.fps,
+                                media_resolution=args.media_resolution,
+                                max_output_tokens=args.max_output_tokens,
+                                force_upload=args.force_upload,
+                                use_proxy=not args.no_proxy,
+                                force_proxy=args.force_proxy,
+                                max_upload_bytes=int(args.max_upload_gb * 1_000_000_000),
+                                proxy_height=args.proxy_height,
+                                proxy_fps=args.proxy_fps,
+                            ),
+                            indent=2,
+                            sort_keys=True,
+                        )
+                    )
+                    return 0
                 print(
                     json.dumps(
                         analyze_project_video(
@@ -826,6 +934,11 @@ def main(argv: list[str] | None = None) -> int:
                             media_resolution=args.media_resolution,
                             max_output_tokens=args.max_output_tokens,
                             force_upload=args.force_upload,
+                            use_proxy=not args.no_proxy,
+                            force_proxy=args.force_proxy,
+                            max_upload_bytes=int(args.max_upload_gb * 1_000_000_000),
+                            proxy_height=args.proxy_height,
+                            proxy_fps=args.proxy_fps,
                         ),
                         indent=2,
                         sort_keys=True,

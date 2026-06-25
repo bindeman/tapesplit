@@ -1,8 +1,12 @@
+import json
+
 from tapesplit.gemini_adapter import (
     estimate_chunked_video_analysis,
+    estimate_project_videos,
     estimate_video_token_units,
     parse_json_object,
     plan_video_chunks,
+    _proxy_encoding_profile,
     usage_units_from_response,
 )
 
@@ -52,6 +56,64 @@ def test_estimate_chunked_video_analysis_counts_prompt_per_chunk():
     assert estimate["units"]["output_tokens"] == 300
 
 
+def test_estimate_project_videos_all_aggregates_units(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_DEFAULT_FPS", "1")
+    monkeypatch.setenv("GEMINI_MEDIA_RESOLUTION", "low")
+    project = tmp_path / "project.tapesplit"
+    project.mkdir()
+    rows = [
+        {"id": "video_000001", "filename": "one.mp4", "probe": {"duration_s": 10}},
+        {"id": "video_000002", "filename": "two.mp4", "probe": {"duration_s": 20}},
+    ]
+    (project / "tapes.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    estimate = estimate_project_videos(project, all_videos=True, output_tokens=100)
+
+    assert estimate["videos"] == 2
+    assert estimate["total_duration_s"] == 30
+    assert estimate["units"] == {
+        "input_text_tokens": 2400,
+        "input_video_tokens": 1980,
+        "input_audio_tokens": 960,
+        "output_tokens": 200,
+    }
+    assert [row["source_video_id"] for row in estimate["results"]] == ["video_000001", "video_000002"]
+
+
+def test_estimate_project_videos_filters_to_twelvelabs_uploads(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_DEFAULT_FPS", "1")
+    monkeypatch.setenv("GEMINI_MEDIA_RESOLUTION", "low")
+    project = tmp_path / "project.tapesplit"
+    project.mkdir()
+    rows = [
+        {"id": "video_000001", "filename": "one.mp4", "probe": {"duration_s": 10}},
+        {"id": "video_000002", "filename": "two.mp4", "probe": {"duration_s": 20}},
+    ]
+    (project / "tapes.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    (project / "twelvelabs_assets.jsonl").write_text(
+        json.dumps({"source_video_id": "video_000002", "asset": {"asset_id": "asset_2"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    estimate = estimate_project_videos(
+        project,
+        all_videos=True,
+        uploaded_to_twelvelabs_only=True,
+        output_tokens=100,
+    )
+
+    assert estimate["videos"] == 1
+    assert estimate["results"][0]["source_video_id"] == "video_000002"
+
+
 def test_estimate_video_token_units_high_fps_scales_visual_tokens():
     low_1fps = estimate_video_token_units(
         duration_s=10,
@@ -68,6 +130,21 @@ def test_estimate_video_token_units_high_fps_scales_visual_tokens():
 
     assert low_5fps["input_video_tokens"] == low_1fps["input_video_tokens"] * 5
     assert low_5fps["input_audio_tokens"] == low_1fps["input_audio_tokens"]
+
+
+def test_proxy_encoding_profile_targets_upload_budget():
+    profile = _proxy_encoding_profile(
+        duration_s=7200,
+        max_upload_bytes=1_450_000_000,
+        target_height=480,
+        target_fps=12,
+        audio_bitrate_kbps=96,
+    )
+
+    assert profile["height"] == 480
+    assert profile["fps"] == 12
+    assert profile["audio_bitrate_kbps"] == 96
+    assert profile["video_bitrate_kbps"] > 1000
 
 
 def test_usage_units_from_response_counts_modalities_and_thinking_tokens():
