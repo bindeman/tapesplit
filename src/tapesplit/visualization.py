@@ -57,7 +57,7 @@ def export_visualization_data(
     video_offsets = _video_offsets(tapes)
     place_contexts = _place_context_groups(places, events_by_id)
     place_context_edges = _place_context_edges(context_edges, places_by_id, edge_metrics_by_edge)
-    review_queue = _review_queue(
+    review_queues = _review_queues(
         events=events,
         people=people,
         places=places,
@@ -71,6 +71,8 @@ def export_visualization_data(
         assets_by_subject=assets_by_subject,
         video_offsets=video_offsets,
     )
+    review_queue = review_queues["review_queue"]
+    review_backlog = review_queues["review_backlog"]
 
     data = {
         "schema_version": 1,
@@ -130,6 +132,7 @@ def export_visualization_data(
             "face_identity_candidates": face_identity_candidates,
         },
         "review_queue": review_queue,
+        "review_backlog": review_backlog,
         "assets": {
             "visual": visual_assets,
             "faces": face_observations,
@@ -149,6 +152,8 @@ def export_visualization_data(
             "context_edges": len(context_edges),
             "place_contexts": len(place_contexts),
             "review_items": len(review_queue),
+            "review_backlog_items": len(review_backlog),
+            "review_total_items": len(review_queue) + len(review_backlog),
             "visual_assets": len(visual_assets),
             "face_observations": len(face_observations),
             "face_clusters": len(face_clusters),
@@ -352,6 +357,10 @@ def _place_context_edges(
                 "target": object_id,
                 "source_label": _place_display_label(subject),
                 "target_label": _place_display_label(object_),
+                "source_kind": subject.get("kind"),
+                "target_kind": object_.get("kind"),
+                "source_place_type": subject.get("place_type"),
+                "target_place_type": object_.get("place_type"),
                 "source_context": _place_context_identity(subject),
                 "target_context": _place_context_identity(object_),
                 "predicate": str(edge.get("predicate") or ""),
@@ -490,7 +499,7 @@ def _relationship_candidate(
     }
 
 
-def _review_queue(
+def _review_queues(
     *,
     events: list[dict[str, Any]],
     people: list[dict[str, Any]],
@@ -566,6 +575,10 @@ def _review_queue(
                     "source_place_id": edge.get("source"),
                     "target_place_id": edge.get("target"),
                     "predicate": edge.get("predicate"),
+                    "source_kind": edge.get("source_kind"),
+                    "target_kind": edge.get("target_kind"),
+                    "source_place_type": edge.get("source_place_type"),
+                    "target_place_type": edge.get("target_place_type"),
                     "not_exportable_as_gps": edge.get("not_exportable_as_gps"),
                 },
                 "actions": ["confirm_place_context", "reject_place_context", "confirm_geocode_later"],
@@ -621,6 +634,7 @@ def _review_queue(
                 "candidate": {
                     "label": place.get("label"),
                     "display_label": _place_display_label(place),
+                    "kind": place.get("kind"),
                     "place_type": place.get("place_type"),
                     "context": _place_context_identity(place),
                     "evidence_basis": _place_evidence_basis(place),
@@ -646,7 +660,12 @@ def _review_queue(
                 "review_status": person.get("review_status") or "needs_review",
                 "related_event_ids": event_ids,
                 "events": _event_entries(event_ids, events_by_id),
-                "candidate": {"label": person.get("label"), "aliases": person.get("aliases") or []},
+                "candidate": {
+                    "label": person.get("label"),
+                    "aliases": person.get("aliases") or [],
+                    "kind": person.get("kind"),
+                    "event_count": len(event_ids),
+                },
                 "actions": ["confirm_person", "rename_person", "merge_person", "mark_role_only"],
             }
         )
@@ -706,10 +725,113 @@ def _review_queue(
             }
         )
 
-    ordered = sorted(items, key=_review_item_sort_key)
-    for index, item in enumerate(ordered, start=1):
+    return _partition_review_items(items)
+
+
+def _partition_review_items(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    primary: list[dict[str, Any]] = []
+    backlog: list[dict[str, Any]] = []
+    for item in sorted(items, key=_review_item_sort_key):
+        tier, reason = _review_item_tier(item)
+        item["review_tier"] = tier
+        item["review_reason"] = reason
+        if tier == "primary":
+            primary.append(item)
+        else:
+            backlog.append(item)
+
+    for index, item in enumerate(primary, start=1):
         item["id"] = f"review_item_{index:06d}"
-    return ordered
+    for index, item in enumerate(backlog, start=1):
+        item["id"] = f"review_backlog_item_{index:06d}"
+    return {"review_queue": primary, "review_backlog": backlog}
+
+
+def _review_item_tier(item: dict[str, Any]) -> tuple[str, str]:
+    task_type = str(item.get("task_type") or "")
+    candidate = item.get("candidate") if isinstance(item.get("candidate"), dict) else {}
+
+    if task_type == "resolve_face_cluster":
+        return _face_review_tier(candidate)
+    if task_type == "confirm_relationship":
+        return "primary", "Relationship candidates change the people graph and should be explicitly confirmed."
+    if task_type == "confirm_place_context":
+        return _place_context_review_tier(item, candidate)
+    if task_type == "resolve_place":
+        return _place_review_tier(candidate)
+    if task_type == "resolve_person":
+        return _person_review_tier(candidate)
+    if task_type == "review_event":
+        return _event_review_tier(item, candidate)
+    if task_type == "resolve_date":
+        return _date_review_tier(candidate)
+    return "backlog", "Useful cleanup, but not required for the first-pass story."
+
+
+def _face_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
+    face_count = int(_number_or_none(candidate.get("face_count")) or 0)
+    identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
+    top_candidate = identity_candidates[0] if identity_candidates and isinstance(identity_candidates[0], dict) else {}
+    quality = str(top_candidate.get("face_quality_status") or "").casefold()
+    if face_count >= 2 and quality != "low_quality":
+        return "primary", "Usable multi-face cluster; resolving it improves people timelines."
+    if (_number_or_none(top_candidate.get("direct_name_strength")) or 0.0) >= 0.9 and quality not in {"low_quality", "unusable"}:
+        return "primary", "Strong direct-name face match."
+    return "backlog", "Low-quality or singleton face crop; keep as evidence but do not interrupt first-pass review."
+
+
+def _place_context_review_tier(item: dict[str, Any], candidate: dict[str, Any]) -> tuple[str, str]:
+    predicate = str(candidate.get("predicate") or "")
+    confidence = _number_or_none(item.get("confidence")) or 0.0
+    source_kind = str(candidate.get("source_kind") or "")
+    target_kind = str(candidate.get("target_kind") or "")
+    if predicate == "inside_place_candidate" and target_kind == "named_place_candidate" and confidence >= 0.7:
+        return "primary", "Named containing place could materially improve location grouping."
+    if predicate == "within_region_candidate" and source_kind == "named_place_candidate" and confidence >= 0.72:
+        return "primary", "Named place-to-region link is export-relevant context."
+    return "backlog", "Loose place context remains selectable, but continuity can default it without blocking review."
+
+
+def _place_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
+    kind = str(candidate.get("kind") or "")
+    place_type = str(candidate.get("place_type") or "")
+    evidence_basis = candidate.get("evidence_basis") if isinstance(candidate.get("evidence_basis"), dict) else {}
+    source_label = str(evidence_basis.get("source_label") or "")
+    role_counts = evidence_basis.get("role_counts") if isinstance(evidence_basis.get("role_counts"), dict) else {}
+    if kind == "named_place_candidate" and (source_label == "from direct mention" or place_type == "region"):
+        return "primary", "Directly mentioned named place can anchor the broader tape context."
+    if "generic_scene_type" in role_counts:
+        return "backlog", "Generic scene type is useful for search/grouping, but not exact location metadata."
+    return "backlog", "Place clue is preserved as editable context, not a primary decision."
+
+
+def _person_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
+    kind = str(candidate.get("kind") or "")
+    aliases = [str(alias) for alias in candidate.get("aliases") or [] if alias]
+    if kind == "role_candidate":
+        return "backlog", "Role-only mention should stay editable but usually needs more evidence before interrupting review."
+    if len(_unique_items(aliases)) >= 2:
+        return "primary", "Alias/nickname merge affects the person graph across multiple clips."
+    return "backlog", "Single-name person candidate can remain passive until tied to stronger face or relationship evidence."
+
+
+def _event_review_tier(item: dict[str, Any], candidate: dict[str, Any]) -> tuple[str, str]:
+    relatedness = str(candidate.get("relatedness") or "").casefold()
+    confidence = _number_or_none(item.get("confidence")) or 0.0
+    if relatedness and relatedness not in {"likely_family", "family", "personal"}:
+        return "primary", "Relatedness is uncertain and may affect whether this event belongs in the family story."
+    if confidence < 0.75:
+        return "primary", "Low-confidence event label should be checked before export."
+    return "backlog", "High-confidence likely-family event; default it and let the timeline editor handle optional cleanup."
+
+
+def _date_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
+    if candidate.get("excluded_as_event_date"):
+        return "backlog", "Historical or loose date clue; useful context but not an event-date blocker."
+    precision = str(candidate.get("precision") or "")
+    if precision in {"day", "month"} and candidate.get("date_value"):
+        return "primary", "Specific date candidate can affect album/export metadata."
+    return "backlog", "Loose date clue should remain editable without blocking first-pass review."
 
 
 def _media_record(tape: dict[str, Any], *, offset_s: float = 0.0) -> dict[str, Any]:

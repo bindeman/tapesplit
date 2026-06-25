@@ -240,23 +240,26 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     )
     assert place_context_edge["source_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
-    assert payload["review_queue"][0]["task_type"] == "resolve_face_cluster"
-    assert {item["task_type"] for item in payload["review_queue"]} == {
+    assert {item["task_type"] for item in payload["review_queue"]} == {"confirm_relationship"}
+    assert {item["source_id"] for item in payload["review_queue"]} == {"relationship_candidate_000001"}
+    assert {item["task_type"] for item in payload["review_backlog"]} == {
         "resolve_face_cluster",
         "confirm_place_context",
-        "confirm_relationship",
     }
-    assert {item["source_id"] for item in payload["review_queue"]} == {
+    assert {item["source_id"] for item in payload["review_backlog"]} == {
         "face_cluster_000001",
         "context_edge_000002",
-        "relationship_candidate_000001",
     }
-    assert payload["review_queue"][0]["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
+    face_review = next(item for item in payload["review_backlog"] if item["source_id"] == "face_cluster_000001")
+    assert face_review["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
+    assert face_review["review_tier"] == "backlog"
     relationship_review = next(item for item in payload["review_queue"] if item["source_id"] == "relationship_candidate_000001")
     assert relationship_review["related_event_ids"] == ["canonical_event_000001"]
     assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
     assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"
-    assert payload["summary"]["review_items"] == 3
+    assert payload["summary"]["review_items"] == 1
+    assert payload["summary"]["review_backlog_items"] == 2
+    assert payload["summary"]["review_total_items"] == 3
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

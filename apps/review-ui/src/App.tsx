@@ -95,6 +95,7 @@ export function App() {
   }, []);
 
   const reviewItems = bundle?.data.review_queue ?? [];
+  const reviewBacklog = bundle?.data.review_backlog ?? [];
   const pendingActions = bundle?.pendingActions ?? [];
   const taskCounts = useMemo(() => countBy(reviewItems, (item) => item.task_type), [reviewItems]);
 
@@ -199,7 +200,7 @@ export function App() {
           })}
         </nav>
 
-        <ProjectStats summary={bundle.data.summary} />
+        <ProjectStats summary={bundle.data.summary} backlogCount={reviewBacklog.length} />
 
         <div className="queue-tools">
           <label className="search-box">
@@ -283,13 +284,14 @@ export function App() {
   );
 }
 
-function ProjectStats({ summary }: { summary: Record<string, number> }) {
+function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
   const metrics = [
     ["Events", summary.events],
     ["People", summary.people],
     ["Places", summary.places],
     ["Faces", summary.face_clusters],
     ["Queue", summary.review_items],
+    ["Backlog", summary.review_backlog_items ?? backlogCount],
   ];
   return (
     <div className="stats-grid">
@@ -1342,7 +1344,10 @@ function viewTitle(view: ViewMode, selected: ReviewItem | null) {
 
 function viewSubtitle(view: ViewMode, bundle: ProjectBundle) {
   const summary = bundle.data.summary;
-  if (view === "review") return `${summary.review_items ?? 0} open review items · ${bundle.pendingActions.length} pending`;
+  if (view === "review") {
+    const backlog = summary.review_backlog_items ?? bundle.data.review_backlog?.length ?? 0;
+    return `${summary.review_items ?? 0} primary review items · ${backlog} in backlog · ${bundle.pendingActions.length} pending`;
+  }
   if (view === "timeline") return `${summary.events ?? 0} visible events across ${summary.source_videos ?? 0} videos`;
   if (view === "places") return `${summary.place_contexts ?? 0} contexts · ${summary.places ?? 0} places`;
   return `${summary.people ?? 0} people · ${summary.face_clusters ?? 0} face clusters`;

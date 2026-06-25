@@ -40,6 +40,7 @@ export interface VisualizationData {
     face_identity_candidates: FaceIdentityCandidate[];
   };
   review_queue: ReviewItem[];
+  review_backlog?: ReviewItem[];
   assets: {
     visual: VisualAsset[];
     faces: FaceObservation[];
@@ -242,6 +243,10 @@ export interface PlaceContextEdge {
   target: string;
   source_label: string;
   target_label: string;
+  source_kind?: string;
+  target_kind?: string;
+  source_place_type?: string;
+  target_place_type?: string;
   predicate: string;
   label: string;
   confidence?: number;
@@ -259,6 +264,8 @@ export interface ReviewItem {
   priority: number;
   confidence?: number;
   review_status: string;
+  review_tier?: "primary" | "backlog";
+  review_reason?: string;
   related_event_ids?: string[];
   events: EventEntry[];
   thumbnail_path?: string;
