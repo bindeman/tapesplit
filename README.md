@@ -58,15 +58,10 @@ Current local review pipeline:
 .venv/bin/tapesplit gemini prepare-video /path/to/project.tapesplit
 .venv/bin/tapesplit gemini estimate-video /path/to/project.tapesplit --all --output-tokens 12000
 .venv/bin/tapesplit gemini analyze-video /path/to/project.tapesplit --all --continue-on-error
+.venv/bin/tapesplit gemini compare-analyses /path/to/project.tapesplit
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit  # optional high-fidelity follow-up
-.venv/bin/tapesplit gemini import-analysis /path/to/project.tapesplit
-.venv/bin/tapesplit stitch-events /path/to/project.tapesplit
-.venv/bin/tapesplit build-groups /path/to/project.tapesplit
-.venv/bin/tapesplit build-relationships /path/to/project.tapesplit
-.venv/bin/tapesplit build-context-graph /path/to/project.tapesplit
-.venv/bin/tapesplit search build /path/to/project.tapesplit
+.venv/bin/tapesplit rebuild /path/to/project.tapesplit --import-gemini
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
-.venv/bin/tapesplit export-report /path/to/project.tapesplit
 .venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene
 .venv/bin/tapesplit cluster-faces /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit

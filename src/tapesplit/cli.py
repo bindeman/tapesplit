@@ -38,12 +38,14 @@ from tapesplit.gemini_adapter import (
     prepare_project_video_proxies,
     smoke_test as gemini_smoke_test,
 )
+from tapesplit.gemini_compare import compare_gemini_analysis_modes, summarize_gemini_analyses
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
 from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
 from tapesplit.place_roles import build_place_roles_for_project
+from tapesplit.pipeline import rebuild_project_outputs
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.review_actions import apply_review_actions
@@ -325,6 +327,18 @@ def _build_parser() -> argparse.ArgumentParser:
     gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_import.add_argument("--run-id", help="Import a specific Gemini analysis_run_id.")
     gemini_import.add_argument("--all", action="store_true", help="Import all Gemini analysis runs.")
+    gemini_summary = gemini_subparsers.add_parser(
+        "summarize-analyses",
+        help="Summarize Gemini analysis coverage, entities, and follow-up signals.",
+    )
+    gemini_summary.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_summary.add_argument("--source-video-id", help="Limit summary to one source video id.")
+    gemini_compare = gemini_subparsers.add_parser(
+        "compare-analyses",
+        help="Compare chunked Gemini analysis against whole-tape Gemini analysis.",
+    )
+    gemini_compare.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_compare.add_argument("--source-video-id", help="Limit comparison to one source video id.")
 
     costs_parser = subparsers.add_parser(
         "costs",
@@ -604,6 +618,53 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Build local context graph edges and edge metrics.",
     )
     build_context_graph_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+
+    rebuild_parser = subparsers.add_parser(
+        "rebuild",
+        help="Rebuild derived events, groups, graph, search, report, and visualization artifacts.",
+    )
+    rebuild_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    rebuild_parser.add_argument(
+        "--import-gemini",
+        action="store_true",
+        help="Import Gemini analyses before rebuilding derived artifacts.",
+    )
+    rebuild_parser.add_argument("--gemini-run-id", help="Import this Gemini analysis_run_id.")
+    rebuild_parser.add_argument(
+        "--import-all-gemini",
+        action="store_true",
+        help="Import all Gemini analysis runs instead of the latest run.",
+    )
+    rebuild_parser.add_argument(
+        "--max-gap-seconds",
+        type=float,
+        default=120.0,
+        help="Maximum gap for merging related boundary-split events. Default: 120.",
+    )
+    rebuild_parser.add_argument(
+        "--include-legacy-events",
+        action="store_true",
+        help="Include non-Gemini event candidates even when Gemini events exist.",
+    )
+    rebuild_parser.add_argument(
+        "--relationship-context-seconds",
+        type=float,
+        default=8.0,
+        help="Transcript context window around kinship terms. Default: 8.",
+    )
+    rebuild_parser.add_argument(
+        "--embedding-backend",
+        choices=["local-sparse", "sentence-transformers", "auto"],
+        default="local-sparse",
+        help="Semantic embedding backend. Default: local-sparse.",
+    )
+    rebuild_parser.add_argument(
+        "--embedding-model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help="SentenceTransformers model when --embedding-backend sentence-transformers/auto is used.",
+    )
+    rebuild_parser.add_argument("--no-report", action="store_true", help="Skip review.html export.")
+    rebuild_parser.add_argument("--no-visualization", action="store_true", help="Skip visualization.json export.")
 
     search_parser = subparsers.add_parser(
         "search",
@@ -976,6 +1037,24 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
                 return 0
+            if args.gemini_command == "summarize-analyses":
+                print(
+                    json.dumps(
+                        summarize_gemini_analyses(args.project, source_video_id=args.source_video_id),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.gemini_command == "compare-analyses":
+                print(
+                    json.dumps(
+                        compare_gemini_analysis_modes(args.project, source_video_id=args.source_video_id),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
         if args.command == "costs":
             if args.costs_command == "llm":
                 print(json.dumps(summarize_llm_usage(args.project), indent=2, sort_keys=True))
@@ -1200,6 +1279,27 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "build-context-graph":
             print(json.dumps(build_context_graph(args.project), indent=2, sort_keys=True))
+            return 0
+        if args.command == "rebuild":
+            print(
+                json.dumps(
+                    rebuild_project_outputs(
+                        args.project,
+                        import_gemini=args.import_gemini,
+                        gemini_run_id=args.gemini_run_id,
+                        import_all_gemini=args.import_all_gemini,
+                        max_gap_seconds=args.max_gap_seconds,
+                        include_legacy_events=args.include_legacy_events,
+                        relationship_context_seconds=args.relationship_context_seconds,
+                        embedding_backend=args.embedding_backend,
+                        embedding_model=args.embedding_model,
+                        export_report=not args.no_report,
+                        export_visualization=not args.no_visualization,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
         if args.command == "search":
             if args.search_command == "build":

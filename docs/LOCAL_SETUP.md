@@ -231,18 +231,21 @@ the static report:
 .venv/bin/tapesplit gemini analyze-video /path/to/family-videos.tapesplit \
   --all \
   --continue-on-error
-.venv/bin/tapesplit gemini import-analysis /path/to/family-videos.tapesplit
-.venv/bin/tapesplit stitch-events /path/to/family-videos.tapesplit
-.venv/bin/tapesplit build-groups /path/to/family-videos.tapesplit
-.venv/bin/tapesplit search build /path/to/family-videos.tapesplit
-.venv/bin/tapesplit export-report /path/to/family-videos.tapesplit
-.venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
+.venv/bin/tapesplit gemini compare-analyses /path/to/family-videos.tapesplit
+.venv/bin/tapesplit rebuild /path/to/family-videos.tapesplit --import-gemini
 ```
 
 If you only want to retry videos already uploaded to TwelveLabs, add
 `--uploaded-to-twelvelabs-only` to the `estimate-video` and `analyze-video`
 commands. Existing chunked results are not overwritten; whole-tape analyses are
 appended to `gemini_analyses.jsonl` and can be imported alongside prior runs.
+
+`gemini summarize-analyses` gives a no-spend coverage view by run/video/mode.
+`gemini compare-analyses` compares chunked runs against whole-tape runs once
+both exist, including whole-only people, places, dates, and follow-up signals.
+`rebuild --import-gemini` imports the selected Gemini run and regenerates
+canonical events, groups, place roles, relationships, context graph edges,
+search, report, and visualization output in one local step.
 
 `stitch-events` creates `canonical_events.jsonl`. It keeps whole-tape and
 chunk-derived event candidates tied back to their raw provenance through
