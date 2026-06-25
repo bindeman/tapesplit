@@ -63,7 +63,94 @@ def _exclusion_ranges(project: Path) -> list[ExclusionRange]:
                     source_id=str(event.get("id") or ""),
                 )
             )
+    ranges.extend(_source_level_exclusion_ranges(project, events))
+    ranges.extend(_gemini_analysis_exclusion_ranges(project))
+    ranges.extend(_local_non_content_exclusion_ranges(project))
     return _merge_ranges(ranges)
+
+
+def _source_level_exclusion_ranges(project: Path, events: list[dict[str, Any]]) -> list[ExclusionRange]:
+    durations = {
+        str(row.get("id")): _number_or_none((row.get("probe") or {}).get("duration_s"))
+        for row in read_jsonl(project / "tapes.jsonl")
+        if row.get("id")
+    }
+    excluded_sources: set[str] = set()
+    visible_sources: set[str] = set()
+    for event in events:
+        target = excluded_sources if _event_is_excluded(event) else visible_sources
+        for interval in _row_intervals(event):
+            target.add(str(interval["source_video_id"]))
+    ranges = []
+    for source_video_id in sorted(excluded_sources - visible_sources):
+        duration_s = durations.get(source_video_id)
+        if duration_s is None or duration_s <= 0:
+            continue
+        ranges.append(
+            ExclusionRange(
+                source_video_id=source_video_id,
+                start_s=0.0,
+                end_s=duration_s,
+                reason="source_only_has_excluded_events",
+                source_id="source_level_visibility",
+            )
+        )
+    return ranges
+
+
+def _gemini_analysis_exclusion_ranges(project: Path) -> list[ExclusionRange]:
+    ranges = []
+    for row in read_jsonl(project / "gemini_analyses.jsonl"):
+        source_video_id = str(row.get("source_video_id") or "")
+        if not source_video_id:
+            continue
+        source_offset_s = _number_or_none(row.get("chunk_start_s")) or 0.0
+        analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
+        for field in ["unrelated_ranges", "non_content_ranges"]:
+            for item in analysis.get(field) or []:
+                if not isinstance(item, dict):
+                    continue
+                start_s = _number_or_none(item.get("start_s"))
+                if start_s is None:
+                    continue
+                end_s = _number_or_none(item.get("end_s"))
+                if end_s is None:
+                    end_s = start_s
+                interval = _interval_from_values(
+                    source_video_id,
+                    start_s + source_offset_s,
+                    end_s + source_offset_s,
+                )
+                if not interval:
+                    continue
+                ranges.append(
+                    ExclusionRange(
+                        source_video_id=source_video_id,
+                        start_s=interval["start_s"],
+                        end_s=interval["end_s"],
+                        reason=str(item.get("reason") or item.get("label") or field),
+                        source_id=str(row.get("analysis_run_id") or row.get("response_id") or "gemini_analysis"),
+                    )
+                )
+    return ranges
+
+
+def _local_non_content_exclusion_ranges(project: Path) -> list[ExclusionRange]:
+    ranges = []
+    for row in read_jsonl(project / "non_content_ranges.jsonl"):
+        interval = _interval_from_values(row.get("source_video_id"), row.get("start_s"), row.get("end_s"))
+        if not interval:
+            continue
+        ranges.append(
+            ExclusionRange(
+                source_video_id=interval["source_video_id"],
+                start_s=interval["start_s"],
+                end_s=interval["end_s"],
+                reason=str(row.get("label") or row.get("reason") or "non_content"),
+                source_id=str(row.get("id") or "non_content_range"),
+            )
+        )
+    return ranges
 
 
 def _row_is_marked_excluded(row: dict[str, Any]) -> bool:

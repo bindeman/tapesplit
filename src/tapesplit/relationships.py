@@ -145,6 +145,8 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
         if not matches:
             continue
         event = _event_for_segment(events, segment)
+        if event is None:
+            continue
         context_text = _context_text(transcripts, segment, context_seconds=context_seconds)
         object_entities = _object_entities_for_context(
             text=context_text,
@@ -396,15 +398,46 @@ def _event_for_segment(events: list[dict[str, Any]], segment: dict[str, Any]) ->
     if start_s is None:
         return None
     for event in events:
+        for source_range in _event_source_ranges(event):
+            if source_video_id and source_range.get("source_video_id") != source_video_id:
+                continue
+            range_start = _number_or_none(source_range.get("start_s"))
+            range_end = _number_or_none(source_range.get("end_s"))
+            if range_start is None or range_end is None:
+                continue
+            if range_start - 1.0 <= start_s <= range_end + 1.0:
+                return event
+        if _event_source_ranges(event):
+            continue
         event_start = _number_or_none(event.get("start_s"))
         event_end = _number_or_none(event.get("end_s"))
         if event_start is None or event_end is None:
             continue
         if event_start - 1.0 <= start_s <= event_end + 1.0:
-            if not source_video_id:
+            event_source_ids = _event_source_video_ids(event)
+            if not source_video_id or not event_source_ids or source_video_id in event_source_ids:
                 return event
-            return event
     return None
+
+
+def _event_source_ranges(event: dict[str, Any]) -> list[dict[str, Any]]:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    ranges = event.get("source_ranges") or metadata.get("source_ranges") or []
+    return [row for row in ranges if isinstance(row, dict)]
+
+
+def _event_source_video_ids(event: dict[str, Any]) -> set[str]:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    values = []
+    for raw in [event.get("source_video_id"), event.get("source_video_ids"), metadata.get("source_video_ids")]:
+        if isinstance(raw, list):
+            values.extend(str(item) for item in raw if item)
+        elif raw:
+            values.append(str(raw))
+    for source_range in _event_source_ranges(event):
+        if source_range.get("source_video_id"):
+            values.append(str(source_range["source_video_id"]))
+    return set(values)
 
 
 def _context_text(transcripts: list[dict[str, Any]], segment: dict[str, Any], *, context_seconds: float) -> str:

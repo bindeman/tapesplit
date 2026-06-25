@@ -243,5 +243,100 @@ def test_build_relationship_candidates_reads_transcript_evidence_rows(tmp_path: 
     assert candidates[0]["metadata"]["transcript_segment_ids"] == ["tr_obs_ev_000001"]
 
 
+def test_build_relationship_candidates_uses_source_local_ranges(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Birthday",
+                "start_s": 1000,
+                "end_s": 1100,
+                "metadata": {
+                    "people": ["Philip"],
+                    "source_ranges": [
+                        {"source_video_id": "video_000002", "start_s": 10, "end_s": 40}
+                    ],
+                    "source_video_ids": ["video_000002"],
+                },
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            {
+                "id": "people_group_000001",
+                "label": "Philip",
+                "aliases": ["Philip"],
+                "metadata": {"normalized_key": "philip"},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "transcript_segments.jsonl",
+        [
+            {
+                "id": "tr_000001",
+                "source_video_id": "video_000002",
+                "start_s": 20,
+                "end_s": 22,
+                "text": "Philip, wave to grandma.",
+                "language": "en",
+            }
+        ],
+    )
+
+    result = build_relationship_candidates(tmp_path)
+
+    assert result["relationship_candidates"] == 1
+    candidates = read_jsonl(tmp_path / "relationship_candidates.jsonl")
+    assert candidates[0]["scope"]["canonical_event_ids"] == ["canonical_event_000001"]
+
+
+def test_build_relationship_candidates_skips_unanchored_transcript_dialogue(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Family birthday",
+                "start_s": 100,
+                "end_s": 120,
+                "metadata": {"people": ["Philip"]},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            {
+                "id": "people_group_000001",
+                "label": "Philip",
+                "aliases": ["Philip"],
+                "metadata": {"normalized_key": "philip"},
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "transcript_segments.jsonl",
+        [
+            {
+                "id": "tr_000001",
+                "source_video_id": "video_000001",
+                "start_s": 600,
+                "end_s": 604,
+                "text": "Alice, you promised me and your father.",
+                "language": "en",
+            }
+        ],
+    )
+
+    result = build_relationship_candidates(tmp_path)
+
+    assert result["relationship_candidates"] == 0
+    assert read_jsonl(tmp_path / "relationship_candidates.jsonl") == []
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")

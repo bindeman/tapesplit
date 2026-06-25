@@ -79,6 +79,88 @@ def test_search_omits_records_inside_excluded_event_ranges(tmp_path: Path):
     assert ("transcript", "tr_000002") in result_ids
 
 
+def test_search_omits_records_inside_gemini_unrelated_ranges(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "transcript_segments.jsonl",
+        [
+            {
+                "id": "tr_000001",
+                "source_video_id": "video_000001",
+                "start_s": 610,
+                "end_s": 612,
+                "text": "Alice, you promised me and your father.",
+            },
+            {
+                "id": "tr_000002",
+                "source_video_id": "video_000001",
+                "start_s": 900,
+                "end_s": 905,
+                "text": "Filip opens birthday gifts.",
+            },
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "gemini_analyses.jsonl",
+        [
+            {
+                "analysis_run_id": "gem_run",
+                "source_video_id": "video_000001",
+                "chunk_start_s": 600,
+                "time_basis": "chunk",
+                "analysis": {
+                    "unrelated_ranges": [
+                        {"start_s": 0, "end_s": 100, "reason": "movie_or_tv"}
+                    ]
+                },
+            }
+        ],
+    )
+
+    result = build_search_index(tmp_path)
+
+    assert result["by_type"] == {"transcript": 1}
+    assert query_search_index(tmp_path, "Alice father", limit=5)["results"] == []
+    birthday = query_search_index(tmp_path, "birthday gifts", limit=5)
+    assert birthday["results"][0]["source_id"] == "tr_000002"
+
+
+def test_search_omits_entire_source_when_only_events_are_excluded(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "tapes.jsonl",
+        [{"id": "video_000001", "probe": {"duration_s": 1000}}],
+    )
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "source_video_id": "video_000001",
+                "start_s": 0,
+                "end_s": 100,
+                "relatedness": "likely_unrelated",
+                "title": "TV Broadcast",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "transcript_segments.jsonl",
+        [
+            {
+                "id": "tr_000001",
+                "source_video_id": "video_000001",
+                "start_s": 600,
+                "end_s": 604,
+                "text": "Alice, you promised me and your father.",
+            }
+        ],
+    )
+
+    result = build_search_index(tmp_path)
+
+    assert result["documents"] == 0
+    assert query_search_index(tmp_path, "Alice father", limit=5)["results"] == []
+
+
 def test_report_counts_visible_claims_and_evidence_only(tmp_path: Path):
     _write_jsonl(
         tmp_path / "canonical_events.jsonl",
