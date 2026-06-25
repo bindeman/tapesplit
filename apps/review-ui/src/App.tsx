@@ -6,6 +6,7 @@ import {
   Clock3,
   GitMerge,
   ImageIcon,
+  Info,
   Inbox,
   ListFilter,
   MapPin,
@@ -29,6 +30,7 @@ import type {
   MediaRecord,
   PersonRecord,
   PlaceContext,
+  PlaceLocationOption,
   PlaceRecord,
   ProjectBundle,
   ReviewAction,
@@ -476,7 +478,7 @@ function PlaceChip({
       <div className="place-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" /> : <MapPin size={18} />}</div>
       <div>
         <strong>{label}</strong>
-        <small>{place ? `${place.place_type ?? "place"} · ${place.review_status}` : "place context"}</small>
+        <small>{place ? `${place.place_type ?? "place"} · ${place.review_status}${place.evidence_basis?.source_label ? ` · ${place.evidence_basis.source_label}` : ""}` : "place context"}</small>
       </div>
     </div>
   );
@@ -606,11 +608,72 @@ function FaceClusterActions({ item, onQueue }: { item: ReviewItem; onQueue: (act
 }
 
 function PlaceActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction) => Promise<void> }) {
-  const candidate = item.candidate as { label?: string; display_label?: string; context?: { label?: string } };
-  const [label, setLabel] = useState(candidate.label ?? "");
-  const [scope, setScope] = useState(candidate.context?.label ?? "");
+  const candidate = item.candidate as {
+    label?: string;
+    display_label?: string;
+    context?: { label?: string };
+    evidence_basis?: PlaceRecord["evidence_basis"];
+    location_options?: PlaceLocationOption[];
+  };
+  const options = normalizedPlaceOptions(candidate);
+  const [selectedOptionId, setSelectedOptionId] = useState(options[0]?.id ?? "other");
+  const selectedOption = options.find((option) => option.id === selectedOptionId);
+  const [label, setLabel] = useState(selectedOption?.label ?? candidate.label ?? "");
+  const [scope, setScope] = useState(selectedOption?.scope_label ?? candidate.context?.label ?? "");
+
+  useEffect(() => {
+    const nextOption = options[0];
+    setSelectedOptionId(nextOption?.id ?? "other");
+    setLabel(nextOption?.label ?? candidate.label ?? "");
+    setScope(nextOption?.scope_label ?? candidate.context?.label ?? "");
+  }, [item.id]);
+
+  function selectOption(option: PlaceLocationOption | { id: "other" }) {
+    setSelectedOptionId(option.id);
+    if ("label" in option) {
+      setLabel(option.label);
+      setScope(option.scope_label ?? "");
+    }
+  }
+
   return (
     <div className="action-block">
+      <div className="candidate-list">
+        {options.map((option) => (
+          <label key={option.id} className="candidate-option">
+            <input
+              type="radio"
+              name={`place-option-${item.id}`}
+              checked={selectedOptionId === option.id}
+              onChange={() => selectOption(option)}
+            />
+            <span>
+              <strong>{option.display_label || option.label}</strong>
+              <small>
+                {option.source_label ?? "from context"} · {formatConfidence(option.confidence)}
+                {option.selected ? " · selected" : ""}
+              </small>
+              {option.basis?.length ? <small title={option.basis.join(" · ")}>{option.basis.join(" · ")}</small> : null}
+            </span>
+            <span className="candidate-info-wrap" title={[option.source_label, ...(option.basis ?? [])].filter(Boolean).join(" · ")}>
+              <Info className="candidate-info" size={15} aria-label="Evidence source" />
+            </span>
+          </label>
+        ))}
+        <label className="candidate-option">
+          <input
+            type="radio"
+            name={`place-option-${item.id}`}
+            checked={selectedOptionId === "other"}
+            onChange={() => selectOption({ id: "other" })}
+          />
+          <span>
+            <strong>Other</strong>
+            <small>Enter a corrected label or scope below.</small>
+          </span>
+        </label>
+      </div>
+      {candidate.evidence_basis?.summary ? <p className="basis-copy">{candidate.evidence_basis.summary}</p> : null}
       <div className="field-grid">
         <label>
           <span>Label</span>
@@ -625,12 +688,28 @@ function PlaceActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: R
         <CommandButton
           icon={Check}
           label="Confirm Place"
-          onClick={() => onQueue({ ...baseAction(item, "confirm_place"), label, scope_label: scope })}
+          onClick={() =>
+            onQueue({
+              ...baseAction(item, "confirm_place"),
+              label,
+              scope_label: scope,
+              selected_location_option_id: selectedOptionId,
+              selected_location_option: selectedOption,
+            })
+          }
         />
         <CommandButton
           icon={Pencil}
           label="Rename"
-          onClick={() => onQueue({ ...baseAction(item, "rename_place"), label, scope_label: scope })}
+          onClick={() =>
+            onQueue({
+              ...baseAction(item, "rename_place"),
+              label,
+              scope_label: scope,
+              selected_location_option_id: selectedOptionId,
+              selected_location_option: selectedOption,
+            })
+          }
         />
         <CommandButton icon={X} label="Not Location" tone="danger" onClick={() => onQueue(baseAction(item, "mark_not_location"))} />
       </ActionRow>
@@ -1118,6 +1197,28 @@ function identityCandidates(item: ReviewItem) {
     }>;
   };
   return candidate.identity_candidates ?? [];
+}
+
+function normalizedPlaceOptions(candidate: {
+  label?: string;
+  display_label?: string;
+  context?: { label?: string };
+  location_options?: PlaceLocationOption[];
+}): PlaceLocationOption[] {
+  if (candidate.location_options?.length) {
+    return candidate.location_options;
+  }
+  const label = candidate.label ?? candidate.display_label ?? "";
+  return [
+    {
+      id: "selected",
+      label,
+      display_label: candidate.display_label ?? label,
+      scope_label: candidate.context?.label ?? "",
+      source_label: "from context",
+      selected: true,
+    },
+  ];
 }
 
 function itemHasPendingAction(item: ReviewItem, actions: ReviewAction[]) {

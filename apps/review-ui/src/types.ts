@@ -141,6 +141,30 @@ export interface PlaceRecord {
     label: string;
     basis: string;
   };
+  evidence_basis?: {
+    source_label?: string;
+    raw_source_label?: string;
+    role_counts?: Record<string, number>;
+    basis?: string[];
+    evidence_texts?: string[];
+    event_place_role_ids?: string[];
+    summary?: string;
+  };
+  location_options?: PlaceLocationOption[];
+}
+
+export interface PlaceLocationOption {
+  id: string;
+  label: string;
+  display_label: string;
+  scope_label?: string;
+  place_type?: string;
+  source_label?: string;
+  confidence?: number;
+  selected?: boolean;
+  basis?: string[];
+  target_place_group_id?: string;
+  relation?: string;
 }
 
 export interface PlaceContext {

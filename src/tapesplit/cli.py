@@ -40,6 +40,7 @@ from tapesplit.grouping import build_project_groups
 from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
+from tapesplit.place_roles import build_place_roles_for_project
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.review_actions import apply_review_actions
@@ -521,6 +522,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     build_groups_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
     build_groups_parser.add_argument(
+        "--use-event-candidates",
+        action="store_true",
+        help="Use raw event candidates instead of canonical_events.jsonl.",
+    )
+
+    build_place_roles_parser = subparsers.add_parser(
+        "build-place-roles",
+        help="Classify raw event place mentions into filming, context, travel-plan, and ambiguous roles.",
+    )
+    build_place_roles_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_place_roles_parser.add_argument(
         "--use-event-candidates",
         action="store_true",
         help="Use raw event candidates instead of canonical_events.jsonl.",
@@ -1040,6 +1052,18 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     build_project_groups(
+                        args.project,
+                        prefer_canonical=not args.use_event_candidates,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "build-place-roles":
+            print(
+                json.dumps(
+                    build_place_roles_for_project(
                         args.project,
                         prefer_canonical=not args.use_event_candidates,
                     ),

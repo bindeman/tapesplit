@@ -159,6 +159,7 @@ def _collect_eval_items(project: Path, *, max_items: int) -> list[dict[str, Any]
     rows: list[dict[str, Any]] = []
     rows.extend(_event_items(project, visibility, evidence_by_id))
     rows.extend(_album_items(project, visibility, evidence_by_id))
+    rows.extend(_place_role_items(project, visibility, evidence_by_id))
     rows.extend(_place_items(project, visibility, evidence_by_id))
     rows.extend(_people_items(project, visibility, evidence_by_id))
     rows.extend(_date_items(project, visibility, evidence_by_id))
@@ -280,6 +281,44 @@ def _place_items(project: Path, visibility: Any, evidence_by_id: dict[str, dict[
                 ],
                 tags=["place", str(row.get("place_type") or "unknown")],
                 reachout_suggested=row.get("review_status") == "needs_review",
+            )
+        )
+    return items
+
+
+def _place_role_items(project: Path, visibility: Any, evidence_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    items = []
+    for row in read_jsonl(project / "event_place_roles.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        role = str(row.get("role") or "")
+        if role not in {"ambiguous_place_reference", "mentioned_destination", "travel_plan"}:
+            continue
+        items.append(
+            _eval_item(
+                task_type="place_role_claim",
+                source_record_type="event_place_role",
+                row=row,
+                evidence_by_id=evidence_by_id,
+                prompt="Is this place role right, especially whether it should or should not count as the filming location?",
+                predicted_label=f"{row.get('label')} -> {role}",
+                predicted_summary="; ".join(str(text) for text in row.get("evidence_texts") or row.get("notes") or []),
+                predicted_fields={
+                    "label": row.get("label"),
+                    "role": role,
+                    "role_family": row.get("role_family"),
+                    "include_in_place_groups": row.get("include_in_place_groups"),
+                    "source_label": row.get("source_label"),
+                    "canonical_event_id": row.get("canonical_event_id"),
+                    "basis": row.get("basis") or [],
+                },
+                reviewer_guidance=[
+                    "Use correct if the place was only mentioned or uncertain and should not become an album/GPS location.",
+                    "Use incorrect if the place really is where the footage was filmed.",
+                    "Use needs_followup when family context is needed to tell mention from location.",
+                ],
+                tags=["place_role", role],
+                reachout_suggested=role == "ambiguous_place_reference",
             )
         )
     return items
@@ -998,6 +1037,7 @@ def _event_ids_from_eval_item(item: dict[str, Any]) -> list[str]:
     values = []
     fields = item.get("predicted_fields") if isinstance(item.get("predicted_fields"), dict) else {}
     values.extend(_list_values(fields.get("canonical_event_ids")))
+    values.extend(_list_values(fields.get("canonical_event_id")))
     scope = fields.get("scope") if isinstance(fields.get("scope"), dict) else {}
     values.extend(_list_values(scope.get("canonical_event_ids")))
     return _unique_items(values)

@@ -36,6 +36,7 @@ def export_visualization_data(
     context_edges = _visible_rows(read_jsonl(project / "context_edges.jsonl"), visibility, evidence_by_id)
     edge_metrics = _visible_rows(read_jsonl(project / "edge_metrics.jsonl"), visibility, evidence_by_id)
     relationships = _visible_rows(read_jsonl(project / "relationship_candidates.jsonl"), visibility, evidence_by_id)
+    place_roles = read_jsonl(project / "event_place_roles.jsonl")
     visual_assets = read_jsonl(project / "visual_assets.jsonl")
     face_observations = read_jsonl(project / "face_observations.jsonl")
     face_clusters = read_jsonl(project / "face_clusters.jsonl")
@@ -133,6 +134,7 @@ def export_visualization_data(
             "faces": face_observations,
             "face_clusters": face_clusters,
             "face_identity_candidates": face_identity_candidates,
+            "place_roles": place_roles,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -149,6 +151,7 @@ def export_visualization_data(
             "face_observations": len(face_observations),
             "face_clusters": len(face_clusters),
             "face_identity_candidates": len(face_identity_candidates),
+            "event_place_roles": len(place_roles),
         },
     }
     write_json(output, data)
@@ -251,6 +254,8 @@ def _place_track(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]])
         "parent_place_labels": place.get("parent_place_labels") or [],
         "nearby_place_labels": place.get("nearby_place_labels") or [],
         "coordinates": _place_coordinates(place),
+        "evidence_basis": _place_evidence_basis(place),
+        "location_options": _place_location_options(place),
         "appearances": entries,
         "appearance_count": len(entries),
         "review_status": place.get("review_status") or "unreviewed",
@@ -603,7 +608,7 @@ def _review_queue(
                 "source_record_type": "place_group",
                 "source_id": str(place.get("id") or ""),
                 "title": f"Resolve place: {_place_display_label(place)}",
-                "prompt": "Confirm what this place label means before it is used as exact location metadata.",
+                "prompt": "This appears to be a place/context clue. Confirm the best label or choose Other before it is used as exact location metadata.",
                 "priority": 68,
                 "confidence": place.get("confidence"),
                 "review_status": place.get("review_status") or "needs_review",
@@ -615,6 +620,8 @@ def _review_queue(
                     "display_label": _place_display_label(place),
                     "place_type": place.get("place_type"),
                     "context": _place_context_identity(place),
+                    "evidence_basis": _place_evidence_basis(place),
+                    "location_options": _place_location_options(place),
                 },
                 "actions": ["confirm_place", "rename_place", "split_place", "mark_not_location"],
             }
@@ -940,6 +947,110 @@ def _place_display_label(place: dict[str, Any]) -> str:
     if nearby_labels and not _label_contains_any(label, nearby_labels):
         return f"{label} (near {nearby_labels[0]})"
     return label
+
+
+def _place_evidence_basis(place: dict[str, Any]) -> dict[str, Any]:
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    source_label = str(metadata.get("inference_source_label") or "").strip()
+    role_counts = metadata.get("location_role_counts") if isinstance(metadata.get("location_role_counts"), dict) else {}
+    basis = _unique_items(
+        [
+            *[str(label) for label in metadata.get("inference_source_labels") or [] if label],
+            *[str(role) for role in role_counts if role],
+        ]
+    )
+    return {
+        "source_label": _source_label_for_display(source_label),
+        "raw_source_label": source_label,
+        "role_counts": role_counts,
+        "basis": basis,
+        "evidence_texts": [str(item) for item in metadata.get("source_evidence_texts") or [] if item][:4],
+        "event_place_role_ids": [str(item) for item in metadata.get("event_place_role_ids") or [] if item],
+        "summary": _place_basis_summary(place, source_label, role_counts),
+    }
+
+
+def _place_basis_summary(place: dict[str, Any], source_label: str, role_counts: dict[str, Any]) -> str:
+    label = str(place.get("label") or "this place")
+    if "generic_scene_type" in role_counts:
+        return f"{label} appears to be a scene/place type from visual context."
+    if "administrative_context" in role_counts:
+        return f"{label} appears to be broader location context."
+    if source_label:
+        return f"{label} appears to be inferred {_source_label_for_display(source_label)}."
+    return f"{label} appears to be a place candidate."
+
+
+def _place_location_options(place: dict[str, Any]) -> list[dict[str, Any]]:
+    options = []
+    selected = {
+        "id": "selected",
+        "label": str(place.get("label") or ""),
+        "display_label": _place_display_label(place),
+        "scope_label": place.get("scope_label") or "",
+        "place_type": place.get("place_type") or "",
+        "source_label": _source_label_for_display(_place_source_label(place)),
+        "confidence": place.get("confidence"),
+        "selected": True,
+        "basis": _place_option_basis(place),
+    }
+    options.append(selected)
+
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    for group_key, label_prefix in [
+        ("parent_place_candidates", "from context"),
+        ("nearby_place_candidates", "nearby context"),
+    ]:
+        for candidate in metadata.get(group_key) or []:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_label = str(candidate.get("label") or "").strip()
+            if not candidate_label:
+                continue
+            display_label = f"{place.get('label')} ({candidate_label} context)"
+            option = {
+                "id": f"{group_key}:{candidate.get('place_group_id') or candidate_label}:{candidate.get('relation') or ''}",
+                "label": str(place.get("label") or ""),
+                "display_label": display_label,
+                "scope_label": f"{candidate_label} context",
+                "place_type": place.get("place_type") or "",
+                "source_label": label_prefix,
+                "confidence": candidate.get("confidence"),
+                "selected": False,
+                "basis": [str(item) for item in candidate.get("basis") or [] if item],
+                "target_place_group_id": candidate.get("place_group_id"),
+                "relation": candidate.get("relation"),
+            }
+            if not any(existing["display_label"] == option["display_label"] for existing in options):
+                options.append(option)
+
+    return options[:6]
+
+
+def _place_source_label(place: dict[str, Any]) -> str:
+    metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
+    return str(metadata.get("inference_source_label") or "")
+
+
+def _source_label_for_display(value: str) -> str:
+    labels = {
+        "administrative context": "from broader location context",
+        "direct location mention": "from direct mention",
+        "visual/model place clue": "from visual/model context",
+        "visual scene type": "from visual context",
+    }
+    return labels.get(str(value or ""), str(value or "from context"))
+
+
+def _place_option_basis(place: dict[str, Any]) -> list[str]:
+    basis = []
+    evidence_basis = _place_evidence_basis(place)
+    if evidence_basis.get("source_label"):
+        basis.append(str(evidence_basis["source_label"]))
+    for note in place.get("notes") or []:
+        if note:
+            basis.append(str(note))
+    return _unique_items(basis)
 
 
 def _place_context_identity(place: dict[str, Any]) -> dict[str, str]:

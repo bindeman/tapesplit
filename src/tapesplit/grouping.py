@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from tapesplit.event_stitching import load_source_events
+from tapesplit.place_roles import events_with_role_filtered_places, infer_event_place_roles
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -285,10 +286,12 @@ DATE_MONTHS = {
 
 def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
-    events = _load_groupable_events(project, prefer_canonical=prefer_canonical)
-    context_events = [event for event in events if _is_contextual_event(event)]
+    source_events = _load_groupable_events(project, prefer_canonical=prefer_canonical)
     evidence = read_jsonl(project / "evidence.jsonl") + read_jsonl(project / "gemini_evidence.jsonl")
     evidence_by_id = {row.get("id"): row for row in evidence if row.get("id")}
+    place_roles = infer_event_place_roles(source_events, evidence_by_id)
+    events = events_with_role_filtered_places(source_events, place_roles)
+    context_events = [event for event in events if _is_contextual_event(event)]
     person_alias_keys = _person_alias_keys(project)
 
     people_groups = _build_people_groups(context_events, evidence_by_id, person_alias_keys)
@@ -299,6 +302,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     albums = _build_albums(events, event_groups, evidence_by_id)
 
     outputs = {
+        "event_place_roles": project / "event_place_roles.jsonl",
         "people_groups": project / "people_groups.jsonl",
         "place_groups": project / "place_groups.jsonl",
         "date_groups": project / "date_groups.jsonl",
@@ -306,6 +310,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "event_groups": project / "event_groups.jsonl",
         "albums": project / "albums.jsonl",
     }
+    _write_jsonl(outputs["event_place_roles"], place_roles)
     _write_jsonl(outputs["people_groups"], people_groups)
     _write_jsonl(outputs["place_groups"], place_groups)
     _write_jsonl(outputs["date_groups"], date_groups)
@@ -315,8 +320,9 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
 
     return {
         "project": str(project),
-        "source_events": len(events),
+        "source_events": len(source_events),
         "context_events": len(context_events),
+        "event_place_roles": len(place_roles),
         "people_groups": len(people_groups),
         "place_groups": len(place_groups),
         "date_groups": len(date_groups),
@@ -427,6 +433,9 @@ def _build_place_groups(
                     "normalized_names": [],
                     "events": [],
                     "mentions": [],
+                    "place_roles": [],
+                    "source_labels": [],
+                    "source_evidence_texts": [],
                 },
             )
             if _place_kind_rank(kind) > _place_kind_rank(bucket["kind"]):
@@ -435,6 +444,15 @@ def _build_place_groups(
                 bucket["labels"].append(place)
             if normalized not in bucket["normalized_names"]:
                 bucket["normalized_names"].append(normalized)
+            role_summary = _place_role_summary_for_event_label(event, place)
+            if role_summary:
+                bucket["place_roles"].append(role_summary)
+                source_label = str(role_summary.get("source_label") or "")
+                if source_label and source_label not in bucket["source_labels"]:
+                    bucket["source_labels"].append(source_label)
+                for text in role_summary.get("evidence_texts") or []:
+                    if text and text not in bucket["source_evidence_texts"]:
+                        bucket["source_evidence_texts"].append(text)
             bucket["events"].append(event)
             bucket["mentions"].append(
                 {
@@ -443,6 +461,9 @@ def _build_place_groups(
                     "event_title": event.get("title"),
                     "start_s": event.get("start_s"),
                     "end_s": event.get("end_s"),
+                    "event_place_role_id": role_summary.get("event_place_role_id") if role_summary else None,
+                    "role": role_summary.get("role") if role_summary else None,
+                    "source_label": role_summary.get("source_label") if role_summary else None,
                 }
             )
 
@@ -454,6 +475,8 @@ def _build_place_groups(
         evidence_ids = _event_evidence_ids(events_for_group)
         kind = bucket["kind"]
         review_status = "needs_review" if kind != "named_place_candidate" or len(labels) > 1 else "unreviewed"
+        role_counts = dict(Counter(str(role.get("role") or "unknown") for role in bucket["place_roles"]))
+        source_labels = _unique_items(bucket["source_labels"])
         groups.append(
             {
                 "id": f"place_group_{index:06d}",
@@ -477,10 +500,17 @@ def _build_place_groups(
                 "parent_place_labels": [],
                 "nearby_place_labels": [],
                 "supporting_mentions": bucket["mentions"],
-                "notes": _place_notes(kind, label),
+                "notes": _unique_items([*_place_notes(kind, label), *_place_role_notes(bucket["place_roles"])]),
                 "metadata": {
                     "resolution_key": key,
                     "broad_place_contexts": sorted(_broad_place_contexts_for_labels(labels)),
+                    "location_role_counts": role_counts,
+                    "inference_source_labels": source_labels,
+                    "inference_source_label": _preferred_source_label(source_labels),
+                    "source_evidence_texts": bucket["source_evidence_texts"][:6],
+                    "event_place_role_ids": _unique_items(
+                        role.get("event_place_role_id") for role in bucket["place_roles"] if role.get("event_place_role_id")
+                    ),
                     "scope": _place_scope_metadata(events_for_group, evidence_by_id, event_contexts),
                     "parent_place_candidates": [],
                     "nearby_place_candidates": [],
@@ -1744,6 +1774,42 @@ def _place_notes(kind: str, label: str) -> list[str]:
     if kind == "mentioned_place_candidate":
         return ["May be mentioned in narration or decor context rather than filming location."]
     return ["Candidate place only; geocoding/export requires confirmation."]
+
+
+def _place_role_summary_for_event_label(event: dict[str, Any], label: str) -> dict[str, Any]:
+    normalized = _normalize_key(label)
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    roles = metadata.get("place_roles") if isinstance(metadata.get("place_roles"), list) else []
+    for role in roles:
+        if not isinstance(role, dict):
+            continue
+        if str(role.get("normalized_label") or "") == normalized:
+            return role
+    return {}
+
+
+def _place_role_notes(roles: list[dict[str, Any]]) -> list[str]:
+    notes = []
+    role_names = {str(role.get("role") or "") for role in roles}
+    if "generic_scene_type" in role_names:
+        notes.append("Appears to be a scene/place type inferred from visual context.")
+    if "administrative_context" in role_names:
+        notes.append("Appears to be broader location context, not an exact address.")
+    if any(role in role_names for role in {"explicit_location_anchor", "visible_place"}):
+        notes.append("Appears to be a filming-location clue; review before GPS export.")
+    return notes
+
+
+def _preferred_source_label(source_labels: list[str]) -> str:
+    if not source_labels:
+        return ""
+    priorities = {
+        "direct location mention": 0,
+        "administrative context": 1,
+        "visual/model place clue": 2,
+        "visual scene type": 3,
+    }
+    return sorted(source_labels, key=lambda label: (priorities.get(label, 10), label.casefold()))[0]
 
 
 def _date_notes(parsed: dict[str, Any]) -> list[str]:

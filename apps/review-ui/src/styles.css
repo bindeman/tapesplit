@@ -540,7 +540,7 @@ small {
 .candidate-option {
   min-height: 52px;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
@@ -559,6 +559,22 @@ small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.candidate-info-wrap,
+.candidate-info {
+  color: #66736b;
+}
+
+.candidate-info-wrap {
+  display: inline-flex;
+}
+
+.basis-copy {
+  margin: 0;
+  color: #4f5c55;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .field-grid {
