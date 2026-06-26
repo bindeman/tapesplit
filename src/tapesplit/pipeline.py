@@ -5,6 +5,7 @@ from typing import Any
 
 from tapesplit.context_graph import build_context_graph
 from tapesplit.event_alignment import build_event_alignments
+from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
@@ -65,6 +66,7 @@ def rebuild_project_outputs(
             "result": build_event_alignments(project, context_seconds=alignment_context_seconds),
         }
     )
+    steps.append({"step": "build_event_reconciliations", "result": build_event_reconciliations(project)})
     steps.append(
         {
             "step": "build_relationships",

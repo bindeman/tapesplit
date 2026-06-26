@@ -80,7 +80,21 @@ Planned commands:
   Build or rebuild local alignment artifacts.
 
 - `tapesplit agent reconcile PROJECT`
-  Use aligned evidence packets to choose final event/place/date/person candidates.
+  Use aligned evidence packets to choose display titles, selected place context, rejected place claims, and corrected source ranges.
+
+## Reconciliation Layer
+
+`event_reconciliations.jsonl` is the non-destructive correction layer on top of `canonical_events.jsonl`.
+
+It does not rewrite the original model event. Instead, it records:
+
+- original title and reconciled title
+- accepted versus rejected place labels
+- selected source ranges, including corrected ranges when evidence drifted
+- local transcript anchors used for the decision
+- whether the row was accepted, corrected, or still needs evidence
+
+This lets the app show the best current guess by default while preserving the model hypothesis and evidence trail. A later `apply` command can materialize reviewed decisions into export metadata or album titles.
 
 ## Prompting Strategy
 

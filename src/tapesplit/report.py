@@ -50,6 +50,11 @@ def export_review_report(project_dir: Path) -> dict:
     event_alignments = [
         row for row in read_jsonl(project / "event_alignments.jsonl") if visibility.visible_row(row, evidence_by_id=evidence_by_id)
     ]
+    event_reconciliations = [
+        row
+        for row in read_jsonl(project / "event_reconciliations.jsonl")
+        if visibility.visible_row(row, evidence_by_id=evidence_by_id)
+    ]
     summaries = read_jsonl(project / "summaries.jsonl")
     non_content = read_jsonl(project / "non_content_ranges.jsonl")
     costs = summarize_project_costs(project)
@@ -72,6 +77,7 @@ def export_review_report(project_dir: Path) -> dict:
             context_edges=context_edges,
             edge_metrics=edge_metrics,
             event_alignments=event_alignments,
+            event_reconciliations=event_reconciliations,
             summaries=summaries,
             non_content=non_content,
             costs=costs,
@@ -100,6 +106,7 @@ def export_review_report(project_dir: Path) -> dict:
         "context_edges": len(context_edges),
         "edge_metrics": len(edge_metrics),
         "event_alignments": len(event_alignments),
+        "event_reconciliations": len(event_reconciliations),
     }
 
 
@@ -121,6 +128,7 @@ def _render_html(
     context_edges: list[dict[str, Any]],
     edge_metrics: list[dict[str, Any]],
     event_alignments: list[dict[str, Any]],
+    event_reconciliations: list[dict[str, Any]],
     summaries: list[dict[str, Any]],
     non_content: list[dict[str, Any]],
     costs: dict[str, Any],
@@ -209,6 +217,7 @@ def _render_html(
       <div class="metric"><span class="muted">Albums</span><strong>{len(albums)}</strong></div>
       <div class="metric"><span class="muted">Evidence Records</span><strong>{len(evidence)}</strong></div>
       <div class="metric"><span class="muted">Event Alignments</span><strong>{len(event_alignments)}</strong></div>
+      <div class="metric"><span class="muted">Event Reconciliations</span><strong>{len(event_reconciliations)}</strong></div>
       <div class="metric"><span class="muted">Non-Content Ranges</span><strong>{len(non_content)}</strong></div>
       <div class="metric"><span class="muted">Unknown Cost Records</span><strong>{costs.get("unknown_cost_records", 0)}</strong></div>
     </div>
@@ -251,6 +260,8 @@ def _render_html(
     <div class="table-wrap">{_table(edge_metrics[:200], ["edge_id", "metric_set", "shared_event_count", "total_overlap_seconds", "evidence_count", "computed_weight", "review_status"])}</div>
     <h3>Event Alignments</h3>
     <div class="table-wrap">{_table(event_alignments, ["canonical_event_id", "event_title", "timing_status", "support_score", "warnings", "signals", "suggested_review_status"])}</div>
+    <h3>Event Reconciliations</h3>
+    <div class="table-wrap">{_table(event_reconciliations, ["canonical_event_id", "original_title", "reconciled_title", "reconciliation_status", "confidence", "selected_place_labels", "rejected_place_labels", "warnings", "review_status"])}</div>
   </section>
 
   <section>

@@ -257,6 +257,10 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
         if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
             continue
         docs.append(_alignment_document(row))
+    for row in read_jsonl(project / "event_reconciliations.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        docs.append(_reconciliation_document(row))
 
     if include_groups:
         for filename, record_type, title_key in [
@@ -422,11 +426,60 @@ def _alignment_document(row: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _reconciliation_document(row: dict[str, Any]) -> dict[str, Any]:
+    place_decisions = row.get("place_decisions") if isinstance(row.get("place_decisions"), list) else []
+    selected_ranges = row.get("selected_source_ranges") if isinstance(row.get("selected_source_ranges"), list) else []
+    relocated_ranges = row.get("relocated_evidence_ranges") if isinstance(row.get("relocated_evidence_ranges"), list) else []
+    text_parts = [
+        str(row.get("reconciled_title") or ""),
+        str(row.get("original_title") or ""),
+        str(row.get("reconciled_summary") or ""),
+        str(row.get("reconciliation_status") or ""),
+        str(row.get("title_status") or ""),
+        " ".join(str(item) for item in row.get("selected_place_labels") or []),
+        " ".join(str(item) for item in row.get("rejected_place_labels") or []),
+        " ".join(str(item) for item in row.get("warnings") or []),
+        " ".join(str(item) for item in row.get("signals") or []),
+        " ".join(
+            f"{item.get('label')} {item.get('decision')} {item.get('role')} {item.get('reason')}"
+            for item in place_decisions
+            if isinstance(item, dict)
+        ),
+        " ".join(
+            " ".join(str(transcript_id) for transcript_id in item.get("transcript_ids") or [])
+            for item in relocated_ranges[:4]
+            if isinstance(item, dict)
+        ),
+    ]
+    return _document(
+        "event_reconciliation",
+        row.get("id"),
+        source_video_id=_first_item(row.get("source_video_ids")),
+        start_s=(selected_ranges[0].get("start_s") if selected_ranges and isinstance(selected_ranges[0], dict) else None),
+        end_s=(selected_ranges[-1].get("end_s") if selected_ranges and isinstance(selected_ranges[-1], dict) else None),
+        title=f"Reconciled: {row.get('reconciled_title') or row.get('canonical_event_id')}",
+        text=" ".join(text_parts),
+        metadata={
+            "canonical_event_id": row.get("canonical_event_id"),
+            "reconciliation_status": row.get("reconciliation_status"),
+            "title_status": row.get("title_status"),
+            "confidence": row.get("confidence"),
+            "review_status": row.get("review_status"),
+        },
+    )
+
+
 def _first_source_id_from_row(row: dict[str, Any], scope: dict[str, Any]) -> str:
     if isinstance(row.get("source_video_ids"), list) and row["source_video_ids"]:
         return str(row["source_video_ids"][0])
     if isinstance(scope.get("source_video_ids"), list) and scope["source_video_ids"]:
         return str(scope["source_video_ids"][0])
+    return ""
+
+
+def _first_item(values: Any) -> str:
+    if isinstance(values, list) and values:
+        return str(values[0])
     return ""
 
 

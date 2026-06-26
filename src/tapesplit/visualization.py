@@ -36,6 +36,7 @@ def export_visualization_data(
     context_edges = _visible_rows(read_jsonl(project / "context_edges.jsonl"), visibility, evidence_by_id)
     edge_metrics = _visible_rows(read_jsonl(project / "edge_metrics.jsonl"), visibility, evidence_by_id)
     event_alignments = _visible_rows(read_jsonl(project / "event_alignments.jsonl"), visibility, evidence_by_id)
+    event_reconciliations = _visible_rows(read_jsonl(project / "event_reconciliations.jsonl"), visibility, evidence_by_id)
     relationships = _visible_rows(read_jsonl(project / "relationship_candidates.jsonl"), visibility, evidence_by_id)
     place_roles = read_jsonl(project / "event_place_roles.jsonl")
     event_continuity_contexts = read_jsonl(project / "event_continuity_contexts.jsonl")
@@ -48,6 +49,11 @@ def export_visualization_data(
     event_alignments_by_event = {
         str(row.get("canonical_event_id")): row
         for row in event_alignments
+        if row.get("canonical_event_id")
+    }
+    event_reconciliations_by_event = {
+        str(row.get("canonical_event_id")): row
+        for row in event_reconciliations
         if row.get("canonical_event_id")
     }
     people_by_id = {str(person.get("id")): person for person in people if person.get("id")}
@@ -94,6 +100,7 @@ def export_visualization_data(
                     dates_by_event=dates_by_event,
                     assets_by_subject=assets_by_subject,
                     event_alignments_by_event=event_alignments_by_event,
+                    event_reconciliations_by_event=event_reconciliations_by_event,
                 )
                 for event in sorted(events, key=lambda row: _number_or_large(row.get("start_s")))
             ],
@@ -148,6 +155,7 @@ def export_visualization_data(
             "place_roles": place_roles,
             "event_continuity_contexts": event_continuity_contexts,
             "event_alignments": event_alignments,
+            "event_reconciliations": event_reconciliations,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -170,6 +178,7 @@ def export_visualization_data(
             "event_place_roles": len(place_roles),
             "event_continuity_contexts": len(event_continuity_contexts),
             "event_alignments": len(event_alignments),
+            "event_reconciliations": len(event_reconciliations),
         },
     }
     write_json(output, data)
@@ -192,14 +201,17 @@ def _event_timeline_entry(
     dates_by_event: dict[str, list[dict[str, Any]]],
     assets_by_subject: dict[str, list[dict[str, Any]]],
     event_alignments_by_event: dict[str, dict[str, Any]],
+    event_reconciliations_by_event: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     event_id = str(event.get("id") or "")
     metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
     assets = assets_by_subject.get(f"event:{event_id}", [])
+    reconciliation = _event_reconciliation_summary(event_reconciliations_by_event.get(event_id))
     return {
         "id": event_id,
         "type": "event",
-        "title": str(event.get("title") or "Untitled event"),
+        "title": str((reconciliation or {}).get("reconciled_title") or event.get("title") or "Untitled event"),
+        "original_title": str(event.get("title") or "Untitled event"),
         "summary": str(event.get("summary") or ""),
         "start_s": event.get("start_s"),
         "end_s": event.get("end_s"),
@@ -215,6 +227,7 @@ def _event_timeline_entry(
         "keyframe_path": _first_path(assets, "keyframe_path"),
         "evidence_ids": [str(item) for item in event.get("evidence_ids") or []],
         "alignment": _event_alignment_summary(event_alignments_by_event.get(event_id)),
+        "reconciliation": reconciliation,
     }
 
 
@@ -255,6 +268,26 @@ def _count_values(values: Any) -> dict[str, int]:
         key = str(value or "unknown")
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _event_reconciliation_summary(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    return {
+        "id": str(row.get("id") or ""),
+        "reconciled_title": row.get("reconciled_title"),
+        "original_title": row.get("original_title"),
+        "title_status": row.get("title_status"),
+        "reconciliation_status": row.get("reconciliation_status"),
+        "confidence": row.get("confidence"),
+        "review_status": row.get("review_status"),
+        "selected_place_labels": row.get("selected_place_labels") or [],
+        "rejected_place_labels": row.get("rejected_place_labels") or [],
+        "selected_source_ranges": (row.get("selected_source_ranges") or [])[:3],
+        "relocated_evidence_ranges": (row.get("relocated_evidence_ranges") or [])[:3],
+        "warnings": row.get("warnings") or [],
+        "signals": row.get("signals") or [],
+    }
 
 
 def _scene_timeline_entry(

@@ -19,6 +19,7 @@ from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.evaluation import build_eval_packet, score_eval_packet
 from tapesplit.event_alignment import build_event_alignments
+from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.face_clustering import (
     DEFAULT_FACE_CLUSTER_DISTANCE,
     cluster_faces_for_project,
@@ -650,6 +651,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=45.0,
         help="Transcript context window around event ranges. Default: 45.",
     )
+    agent_reconcile = agent_subparsers.add_parser(
+        "reconcile",
+        help="Reconcile event titles and metadata from aligned local evidence.",
+    )
+    agent_reconcile.add_argument("project", type=Path, help="TapeSplit project directory.")
 
     rebuild_parser = subparsers.add_parser(
         "rebuild",
@@ -748,6 +754,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "edge_metric",
             "event",
             "event_alignment",
+            "event_reconciliation",
             "event_continuity_context",
             "event_group",
             "evidence",
@@ -1339,6 +1346,9 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+            if args.agent_command == "reconcile":
+                print(json.dumps(build_event_reconciliations(args.project), indent=2, sort_keys=True))
                 return 0
         if args.command == "rebuild":
             print(
