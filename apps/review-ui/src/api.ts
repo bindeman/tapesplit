@@ -1,4 +1,4 @@
-import type { ProjectBundle, ReviewAction } from "./types";
+import type { ProjectBundle, ReviewAction, SearchResponse } from "./types";
 
 export async function loadProject(): Promise<ProjectBundle> {
   const response = await fetch("/api/project");
@@ -23,6 +23,12 @@ export async function removeReviewAction(id?: string): Promise<ProjectBundle> {
 
 export async function applyReviewActions(): Promise<ProjectBundle> {
   const response = await fetch("/api/apply", { method: "POST" });
+  return readResponse(response);
+}
+
+export async function searchProject(query: string, limit = 12): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(`/api/search?${params.toString()}`);
   return readResponse(response);
 }
 

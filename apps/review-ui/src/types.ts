@@ -432,3 +432,25 @@ export interface ReviewAction {
   payload?: Record<string, unknown>;
   [key: string]: unknown;
 }
+
+export interface SearchResponse {
+  project: string;
+  query: string;
+  results: SearchResult[];
+}
+
+export interface SearchResult {
+  source_id: string;
+  record_type: string;
+  title: string;
+  snippet?: string;
+  source_video_id?: string;
+  start_s?: number;
+  end_s?: number;
+  time_label?: string;
+  score?: number;
+  text_score?: number;
+  semantic_score?: number;
+  embedding_score?: number;
+  metadata?: Record<string, unknown>;
+}

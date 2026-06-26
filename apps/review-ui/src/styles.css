@@ -114,23 +114,31 @@ small {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 12px;
   border-bottom: 1px solid #e1e6dd;
 }
 
 .mode-tabs button {
+  min-width: 0;
   height: 36px;
   display: inline-flex;
   gap: 6px;
   align-items: center;
   justify-content: center;
+  padding: 0 6px;
   border: 1px solid #d7ded4;
   border-radius: 6px;
   background: #fff;
   color: #46514d;
   font-size: 13px;
+}
+
+.mode-tabs button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mode-tabs button.active {
@@ -1109,6 +1117,64 @@ small {
   color: #79420f;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.search-view {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 28px;
+}
+
+.search-command {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #dce2d9;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.search-command input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #18201e;
+}
+
+.search-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.search-result-row {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dce2d9;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.search-result-main {
+  min-width: 0;
+}
+
+.search-result-main p {
+  margin: 7px 0 10px;
+  color: #46514d;
+  line-height: 1.38;
+}
+
+.search-results .empty-state {
+  min-height: 280px;
 }
 
 .entity-view {

@@ -39,6 +39,10 @@ function reviewApiPlugin(): Plugin {
             await sendVideo(req, res);
             return;
           }
+          if (req.method === "GET" && req.url.startsWith("/api/search")) {
+            await sendSearch(req, res);
+            return;
+          }
           if (req.method === "POST" && req.url.startsWith("/api/actions")) {
             const body = await readJson(req);
             const actions = Array.isArray(body) ? body : [body];
@@ -80,6 +84,21 @@ async function loadProject() {
     pendingActions: readJsonlIfExists(pendingActionsPath),
     data,
   };
+}
+
+async function sendSearch(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url || "", "http://localhost");
+  const query = (url.searchParams.get("q") || "").trim();
+  const rawLimit = Number(url.searchParams.get("limit") || 12);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 12;
+  if (!query) {
+    await sendJson(res, { project: projectDir, query: "", results: [] });
+    return;
+  }
+  if (!existsSync(join(projectDir, "search.sqlite"))) {
+    await run(tapesplitBin, ["search", "build", projectDir], repoRoot);
+  }
+  await sendJson(res, await runJson(tapesplitBin, ["search", "query", projectDir, query, "--limit", String(limit)], repoRoot));
 }
 
 async function sendAsset(req: IncomingMessage, res: ServerResponse) {
@@ -203,6 +222,32 @@ function run(command: string, args: string[], cwd: string) {
         resolveRun();
       } else {
         rejectRun(new Error(`${basename(command)} ${args.join(" ")} failed (${code}): ${stderr.trim()}`));
+      }
+    });
+  });
+}
+
+function runJson(command: string, args: string[], cwd: string) {
+  return new Promise<unknown>((resolveRun, rejectRun) => {
+    const child = spawn(command, args, { cwd, stdio: "pipe" });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", rejectRun);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        rejectRun(new Error(`${basename(command)} ${args.join(" ")} failed (${code}): ${stderr.trim()}`));
+        return;
+      }
+      try {
+        resolveRun(JSON.parse(stdout));
+      } catch (error) {
+        rejectRun(new Error(`Failed to parse JSON output from ${basename(command)}: ${error instanceof Error ? error.message : String(error)}`));
       }
     });
   });

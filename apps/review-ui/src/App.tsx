@@ -22,7 +22,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { applyReviewActions, assetUrl, loadProject, queueReviewAction, removeReviewAction, videoUrl } from "./api";
+import { applyReviewActions, assetUrl, loadProject, queueReviewAction, removeReviewAction, searchProject, videoUrl } from "./api";
 import type {
   AlbumRecord,
   EventEntry,
@@ -35,12 +35,13 @@ import type {
   ProjectBundle,
   ReviewAction,
   ReviewItem,
+  SearchResult,
   SourceRange,
   SuggestedReviewAction,
   TaskType,
 } from "./types";
 
-type ViewMode = "review" | "timeline" | "places" | "people";
+type ViewMode = "review" | "timeline" | "places" | "people" | "search";
 type ReviewScope = "primary" | "backlog" | "all";
 
 type PlayerMoment = {
@@ -66,6 +67,7 @@ const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
   { id: "timeline", label: "Timeline", icon: Clock3 },
   { id: "places", label: "Places", icon: MapPinned },
   { id: "people", label: "People", icon: Users },
+  { id: "search", label: "Search", icon: Search },
 ];
 
 export function App() {
@@ -74,6 +76,10 @@ export function App() {
   const [reviewScope, setReviewScope] = useState<ReviewScope>("primary");
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("Whitewater farmhouse");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeMoment, setActiveMoment] = useState<PlayerMoment | null>(null);
   const [status, setStatus] = useState("");
@@ -176,6 +182,25 @@ export function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runSearch(nextQuery = searchQuery) {
+    const trimmed = nextQuery.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setSearchError("");
+      return;
+    }
+    setSearchBusy(true);
+    setSearchError("");
+    try {
+      const response = await searchProject(trimmed, 16);
+      setSearchResults(response.results);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSearchBusy(false);
     }
   }
 
@@ -302,6 +327,18 @@ export function App() {
           />
         )}
         {view === "people" && <PeopleView people={bundle.data.people} media={bundle.data.media} onPlay={setActiveMoment} />}
+        {view === "search" && (
+          <SearchView
+            query={searchQuery}
+            results={searchResults}
+            busy={searchBusy}
+            error={searchError}
+            media={bundle.data.media}
+            onQueryChange={setSearchQuery}
+            onSearch={runSearch}
+            onPlay={setActiveMoment}
+          />
+        )}
       </main>
 
       <aside className="right-rail">
@@ -1349,6 +1386,92 @@ function RangeMomentButton({
   );
 }
 
+function SearchView({
+  query,
+  results,
+  busy,
+  error,
+  media,
+  onQueryChange,
+  onSearch,
+  onPlay,
+}: {
+  query: string;
+  results: SearchResult[];
+  busy: boolean;
+  error: string;
+  media: MediaRecord[];
+  onQueryChange: (value: string) => void;
+  onSearch: (query?: string) => Promise<void>;
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  return (
+    <section className="search-view">
+      <form
+        className="search-command"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSearch(query);
+        }}
+      >
+        <Search size={18} />
+        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search tape" />
+        <button className="command-button" disabled={busy || !query.trim()}>
+          <Search size={16} />
+          <span>{busy ? "Searching" : "Search"}</span>
+        </button>
+      </form>
+      {error ? (
+        <div className="status error">
+          <AlertTriangle size={14} />
+          {error}
+        </div>
+      ) : null}
+      <div className="search-results">
+        {results.map((result) => (
+          <SearchResultRow key={`${result.record_type}:${result.source_id}`} result={result} media={media} onPlay={onPlay} />
+        ))}
+        {!results.length && !busy ? <EmptyState icon={Search} title="No search results" /> : null}
+      </div>
+    </section>
+  );
+}
+
+function SearchResultRow({
+  result,
+  media,
+  onPlay,
+}: {
+  result: SearchResult;
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const sourceRange: SourceRange | null = result.source_video_id
+    ? {
+        source_video_id: result.source_video_id,
+        start_s: result.start_s,
+        end_s: result.end_s,
+      }
+    : null;
+  return (
+    <article className="search-result-row">
+      <div className="search-result-main">
+        <div className="row-heading">
+          <h2>{result.title}</h2>
+          {sourceRange ? <RangeMomentButton range={sourceRange} media={media} onPlay={onPlay} title={result.title} /> : null}
+        </div>
+        {result.snippet ? <p>{result.snippet}</p> : null}
+        <div className="token-row">
+          <Token>{predicateLabel(result.record_type)}</Token>
+          <Token>{formatScore(result.score)}</Token>
+          {result.time_label ? <Token>{result.time_label}</Token> : null}
+          {result.source_video_id ? <Token>{result.source_video_id}</Token> : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function PlacesView({
   contexts,
   places,
@@ -1735,7 +1858,8 @@ function viewTitle(view: ViewMode, selected: ReviewItem | null) {
   if (view === "review") return selected?.title ?? "Review";
   if (view === "timeline") return "Event Timeline";
   if (view === "places") return "Place Contexts";
-  return "People";
+  if (view === "people") return "People";
+  return "Search";
 }
 
 function viewSubtitle(view: ViewMode, bundle: ProjectBundle) {
@@ -1746,11 +1870,16 @@ function viewSubtitle(view: ViewMode, bundle: ProjectBundle) {
   }
   if (view === "timeline") return `${summary.events ?? 0} visible events across ${summary.source_videos ?? 0} videos`;
   if (view === "places") return `${summary.place_contexts ?? 0} contexts · ${summary.places ?? 0} places`;
-  return `${summary.people ?? 0} people · ${summary.face_clusters ?? 0} face clusters`;
+  if (view === "people") return `${summary.people ?? 0} people · ${summary.face_clusters ?? 0} face clusters`;
+  return `${summary.events ?? 0} events · ${summary.people ?? 0} people · ${summary.places ?? 0} places indexed`;
 }
 
 function formatConfidence(value?: number) {
   return typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a";
+}
+
+function formatScore(value?: number) {
+  return typeof value === "number" ? `score ${value.toFixed(2)}` : "score n/a";
 }
 
 function formatTime(value?: number) {
