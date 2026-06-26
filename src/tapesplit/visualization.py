@@ -277,6 +277,8 @@ def _event_reconciliation_summary(row: dict[str, Any] | None) -> dict[str, Any] 
         "id": str(row.get("id") or ""),
         "reconciled_title": row.get("reconciled_title"),
         "original_title": row.get("original_title"),
+        "reconciled_summary": row.get("reconciled_summary"),
+        "original_summary": row.get("original_summary"),
         "title_status": row.get("title_status"),
         "reconciliation_status": row.get("reconciliation_status"),
         "confidence": row.get("confidence"),

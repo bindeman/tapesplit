@@ -46,6 +46,8 @@ export interface VisualizationData {
     faces: FaceObservation[];
     face_clusters: FaceCluster[];
     face_identity_candidates: FaceIdentityCandidate[];
+    event_alignments?: EventAlignmentAsset[];
+    event_reconciliations?: EventReconciliationAsset[];
   };
 }
 
@@ -63,6 +65,7 @@ export interface EventRecord {
   id: string;
   type: "event";
   title: string;
+  original_title?: string;
   summary: string;
   start_s?: number;
   end_s?: number;
@@ -77,6 +80,76 @@ export interface EventRecord {
   thumbnail_path?: string;
   keyframe_path?: string;
   evidence_ids: string[];
+  alignment?: EventAlignmentSummary | null;
+  reconciliation?: EventReconciliationSummary | null;
+}
+
+export interface SourceRange {
+  source_video_id: string;
+  start_s?: number;
+  end_s?: number;
+  confidence?: number;
+  basis?: string;
+  transcript_ids?: string[];
+}
+
+export interface TranscriptContextAnchor {
+  label?: string;
+  role?: string;
+  confidence?: number;
+  distance_to_event_s?: number;
+  text?: string;
+}
+
+export interface EventAlignmentSummary {
+  id: string;
+  timing_status?: string;
+  support_score?: number;
+  warnings?: string[];
+  signals?: string[];
+  suggested_review_status?: string;
+  transcript_support_count?: number;
+  alternate_anchor_count?: number;
+  evidence_claim_statuses?: Record<string, number>;
+  transcript_context_anchors?: TranscriptContextAnchor[];
+  suggested_source_ranges?: SourceRange[];
+}
+
+export interface EventReconciliationSummary {
+  id: string;
+  reconciled_title?: string;
+  original_title?: string;
+  reconciled_summary?: string;
+  original_summary?: string;
+  title_status?: string;
+  reconciliation_status?: string;
+  confidence?: number;
+  review_status?: string;
+  selected_place_labels?: string[];
+  rejected_place_labels?: string[];
+  selected_source_ranges?: SourceRange[];
+  relocated_evidence_ranges?: SourceRange[];
+  warnings?: string[];
+  signals?: string[];
+}
+
+export interface EventAlignmentAsset extends EventAlignmentSummary {
+  canonical_event_id?: string;
+  event_title?: string;
+  source_video_ids?: string[];
+  source_ranges?: SourceRange[];
+}
+
+export interface EventReconciliationAsset extends EventReconciliationSummary {
+  canonical_event_id?: string;
+  alignment_id?: string;
+  original_summary?: string;
+  reconciled_summary?: string;
+  source_video_ids?: string[];
+  source_ranges?: SourceRange[];
+  date_candidates?: string[];
+  people?: string[];
+  place_decisions?: Array<Record<string, unknown>>;
 }
 
 export interface SceneRecord {

@@ -35,6 +35,7 @@ import type {
   ProjectBundle,
   ReviewAction,
   ReviewItem,
+  SourceRange,
   TaskType,
 } from "./types";
 
@@ -281,7 +282,15 @@ export function App() {
           />
         )}
         {view === "review" && !selectedItem && <EmptyState icon={Inbox} title="No review items" />}
-        {view === "timeline" && <TimelineView events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />}
+        {view === "timeline" && (
+          <TimelineView
+            events={bundle.data.timeline.events}
+            media={bundle.data.media}
+            pendingActions={pendingActions}
+            onPlay={setActiveMoment}
+            onQueue={queueAction}
+          />
+        )}
         {view === "places" && (
           <PlacesView
             contexts={bundle.data.place_contexts}
@@ -1052,33 +1061,253 @@ function ContextPanel({
 function TimelineView({
   events,
   media,
+  pendingActions,
   onPlay,
+  onQueue,
 }: {
   events: EventRecord[];
   media: MediaRecord[];
+  pendingActions: ReviewAction[];
   onPlay: (moment: PlayerMoment) => void;
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
 }) {
   return (
     <section className="timeline-view">
-      {events.map((event) => (
-        <article key={event.id} className="timeline-row">
-          <div className="timeline-thumb">{event.thumbnail_path ? <img src={assetUrl(event.thumbnail_path)} alt="" /> : <ImageIcon size={22} />}</div>
-          <div className="timeline-copy">
-            <div className="row-heading">
-              <h2>{event.title}</h2>
-              <MomentButton event={event} media={media} onPlay={onPlay} />
+      {events.map((event) => {
+        const pending = eventHasPendingAction(event, pendingActions);
+        const displaySummary = event.reconciliation?.reconciled_summary || event.summary;
+        return (
+          <article key={event.id} className={`timeline-row ${event.reconciliation ? "has-reconciliation" : ""}`}>
+            <div className="timeline-thumb">
+              {event.thumbnail_path ? <img src={assetUrl(event.thumbnail_path)} alt="" /> : <ImageIcon size={22} />}
             </div>
-            <p>{event.summary}</p>
-            <div className="token-row">
-              <Token>{event.event_type ?? "event"}</Token>
-              <Token>{event.review_status}</Token>
-              {event.people.slice(0, 4).map((person) => <Token key={person.id}>{person.label}</Token>)}
-              {event.places.slice(0, 3).map((place) => <Token key={place.id}>{place.label}</Token>)}
+            <div className="timeline-copy">
+              <div className="row-heading">
+                <div className="event-title-stack">
+                  <h2>{event.title}</h2>
+                  {event.original_title && normalizeLabel(event.original_title) !== normalizeLabel(event.title) ? (
+                    <small>original model title: {event.original_title}</small>
+                  ) : null}
+                </div>
+                <div className="row-actions">
+                  {pending && <span className="pending-pill">Queued</span>}
+                  <MomentButton event={event} media={media} onPlay={onPlay} />
+                </div>
+              </div>
+              <p>{displaySummary}</p>
+              <div className="token-row">
+                <Token>{event.event_type ?? "event"}</Token>
+                <Token>{event.review_status}</Token>
+                {event.reconciliation?.reconciliation_status ? <Token>{reconciliationLabel(event.reconciliation.reconciliation_status)}</Token> : null}
+                {event.people.slice(0, 4).map((person) => (
+                  <Token key={person.id}>{person.label}</Token>
+                ))}
+                {event.places.slice(0, 3).map((place) => (
+                  <Token key={place.id}>{place.label}</Token>
+                ))}
+              </div>
+              <EventIntelligencePanel event={event} media={media} pending={pending} onPlay={onPlay} onQueue={onQueue} />
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </section>
+  );
+}
+
+function EventIntelligencePanel({
+  event,
+  media,
+  pending,
+  onPlay,
+  onQueue,
+}: {
+  event: EventRecord;
+  media: MediaRecord[];
+  pending: boolean;
+  onPlay: (moment: PlayerMoment) => void;
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
+  const reconciliation = event.reconciliation;
+  const alignment = event.alignment;
+  if (!reconciliation && !alignment) {
+    return null;
+  }
+
+  const originalTitle = reconciliation?.original_title || event.original_title || "";
+  const titleChanged = Boolean(originalTitle && normalizeLabel(originalTitle) !== normalizeLabel(event.title));
+  const selectedPlaces = uniqueStrings(reconciliation?.selected_place_labels ?? []);
+  const rejectedPlaces = uniqueStrings(reconciliation?.rejected_place_labels ?? []);
+  const anchors = alignment?.transcript_context_anchors ?? [];
+  const statusTitle = [...(reconciliation?.signals ?? []), ...(alignment?.signals ?? [])].join(" · ");
+
+  return (
+    <div className="event-intelligence">
+      <div className="event-intelligence-head">
+        <div className="intelligence-badges">
+          {reconciliation?.reconciliation_status ? (
+            <span className={`status-badge ${reconciliation.reconciliation_status}`}>
+              {reconciliation.reconciliation_status === "corrected" ? "Appears to be corrected" : reconciliationLabel(reconciliation.reconciliation_status)}
+            </span>
+          ) : null}
+          {alignment?.timing_status ? <span className="status-badge neutral">{predicateLabel(alignment.timing_status)}</span> : null}
+          {typeof reconciliation?.confidence === "number" ? <span className="status-badge neutral">{formatConfidence(reconciliation.confidence)}</span> : null}
+        </div>
+        {statusTitle ? (
+          <span className="evidence-source" title={statusTitle}>
+            <Info size={14} />
+            context
+          </span>
+        ) : null}
+      </div>
+
+      {titleChanged ? (
+        <div className="title-rewrite">
+          <span>Model title</span>
+          <strong>{originalTitle}</strong>
+        </div>
+      ) : null}
+
+      {selectedPlaces.length || rejectedPlaces.length ? (
+        <div className="place-decision-grid">
+          {selectedPlaces.length ? (
+            <div className="place-decision selected">
+              <MapPin size={14} />
+              <span>Selected filming context</span>
+              <strong>{selectedPlaces.join(", ")}</strong>
+            </div>
+          ) : null}
+          {rejectedPlaces.length ? (
+            <div className="place-decision rejected">
+              <XCircle size={14} />
+              <span>Mentioned or off-window</span>
+              <strong>{rejectedPlaces.join(", ")}</strong>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {anchors.length ? (
+        <div className="context-anchor-grid">
+          {anchors.slice(0, 4).map((anchor, index) => (
+            <div key={`${anchor.label ?? "anchor"}-${index}`} className="context-anchor" title={anchor.text || ""}>
+              <strong>{anchor.label || "Context anchor"}</strong>
+              <small>
+                {predicateLabel(anchor.role)} · {formatConfidence(anchor.confidence)}
+                {typeof anchor.distance_to_event_s === "number" ? ` · ${formatSignedSeconds(anchor.distance_to_event_s)}` : ""}
+              </small>
+              {anchor.text ? <span>{anchor.text}</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="range-groups">
+        <SourceRangeGroup
+          label="Event window"
+          ranges={reconciliation?.selected_source_ranges ?? []}
+          media={media}
+          onPlay={onPlay}
+          title={event.title}
+        />
+        <SourceRangeGroup
+          label="Relocated evidence"
+          ranges={reconciliation?.relocated_evidence_ranges ?? alignment?.suggested_source_ranges ?? []}
+          media={media}
+          onPlay={onPlay}
+          title={`${event.title} evidence`}
+        />
+      </div>
+
+      {reconciliation?.warnings?.length || alignment?.warnings?.length ? (
+        <div className="warning-strip">
+          <AlertTriangle size={14} />
+          <span>{[...(reconciliation?.warnings ?? []), ...(alignment?.warnings ?? [])].slice(0, 2).join(" ")}</span>
+        </div>
+      ) : null}
+
+      <ActionRow>
+        <CommandButton
+          icon={Check}
+          label="Accept Guess"
+          disabled={pending}
+          onClick={() => onQueue(confirmEventAction(event, event.title, event.reconciliation?.reconciled_summary))}
+        />
+        {titleChanged ? (
+          <CommandButton
+            icon={Pencil}
+            label="Keep Original"
+            disabled={pending}
+            onClick={() => onQueue(confirmEventAction(event, originalTitle, event.summary))}
+          />
+        ) : null}
+        <CommandButton
+          icon={X}
+          label="Unrelated"
+          tone="danger"
+          disabled={pending}
+          onClick={() => onQueue({ action: "mark_unrelated", target_id: event.id, target_type: "event" })}
+        />
+      </ActionRow>
+    </div>
+  );
+}
+
+function SourceRangeGroup({
+  label,
+  ranges,
+  media,
+  onPlay,
+  title,
+}: {
+  label: string;
+  ranges: SourceRange[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+  title: string;
+}) {
+  if (!ranges.length) {
+    return null;
+  }
+  return (
+    <div className="range-group">
+      <span>{label}</span>
+      <div>
+        {ranges.slice(0, 3).map((range, index) => (
+          <RangeMomentButton key={`${range.source_video_id}-${range.start_s ?? 0}-${index}`} range={range} media={media} onPlay={onPlay} title={title} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RangeMomentButton({
+  range,
+  media,
+  onPlay,
+  title,
+}: {
+  range: SourceRange;
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+  title: string;
+}) {
+  const moment = momentFromSourceRange(range, media, title);
+  if (!moment) {
+    return null;
+  }
+  const rangeLabel =
+    typeof moment.endS === "number" && moment.endS !== moment.startS
+      ? `${formatTime(moment.startS)}-${formatTime(moment.endS)}`
+      : formatTime(moment.startS);
+  const source = [moment.videoLabel, range.basis ? predicateLabel(range.basis) : "", formatConfidence(range.confidence)]
+    .filter((value) => value && value !== "n/a")
+    .join(" · ");
+  return (
+    <button className="moment-button range-button" onClick={() => onPlay(moment)} title={source}>
+      <Clock3 size={13} />
+      <span>{rangeLabel}</span>
+    </button>
   );
 }
 
@@ -1275,6 +1504,24 @@ function itemHasPendingAction(item: ReviewItem, actions: ReviewAction[]) {
   return actions.some((action) => targetIds.has(String(action.target_id)));
 }
 
+function eventHasPendingAction(event: EventRecord, actions: ReviewAction[]) {
+  return actions.some((action) => String(action.target_id) === event.id);
+}
+
+function confirmEventAction(event: EventRecord, title: string, summary?: string): ReviewAction {
+  return {
+    action: "confirm_event",
+    target_id: event.id,
+    target_type: "event",
+    payload: {
+      title,
+      summary,
+      event_type: event.event_type,
+      relatedness: event.relatedness,
+    },
+  };
+}
+
 function playEvent(event: EventEntry | EventRecord, media: MediaRecord[], onPlay: (moment: PlayerMoment) => void) {
   const moment = momentFromEvent(event, media);
   if (moment) {
@@ -1298,6 +1545,33 @@ function momentFromEvent(event: EventEntry | EventRecord, media: MediaRecord[]):
     endS: end,
     title: event.title,
   };
+}
+
+function momentFromSourceRange(range: SourceRange, media: MediaRecord[], title: string): PlayerMoment | null {
+  const videoId = range.source_video_id;
+  if (!videoId) {
+    return null;
+  }
+  const tape = media.find((row) => row.id === videoId);
+  const start = normalizeSourceSeconds(range.start_s ?? 0, tape);
+  const rawEnd = typeof range.end_s === "number" ? normalizeSourceSeconds(range.end_s, tape) : undefined;
+  const end = typeof rawEnd === "number" ? Math.max(start, rawEnd) : undefined;
+  return {
+    videoId,
+    videoLabel: tape?.filename || videoId,
+    startS: start,
+    endS: end,
+    title,
+  };
+}
+
+function normalizeSourceSeconds(value: number, media?: MediaRecord) {
+  const offset = media?.offset_s ?? 0;
+  const duration = media?.duration_s ?? 0;
+  if (offset > 0 && duration > 0 && value > duration + 5) {
+    return Math.max(0, value - offset);
+  }
+  return Math.max(0, value);
 }
 
 function findPerson(people: PersonRecord[], id?: string, label?: string) {
@@ -1367,6 +1641,14 @@ function predicateLabel(value?: string) {
   return String(value || "related").replace(/_/g, " ");
 }
 
+function reconciliationLabel(value?: string) {
+  const label = predicateLabel(value);
+  if (value === "needs_evidence") {
+    return "needs evidence";
+  }
+  return label;
+}
+
 function countBy<T>(rows: T[], getKey: (row: T) => string) {
   return rows.reduce<Record<string, number>>((acc, row) => {
     const key = getKey(row);
@@ -1406,6 +1688,14 @@ function formatTime(value?: number) {
   const minutes = Math.floor(value / 60);
   const seconds = Math.floor(value % 60);
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatSignedSeconds(value: number) {
+  const rounded = Math.round(value);
+  if (rounded === 0) {
+    return "at event";
+  }
+  return `${rounded > 0 ? "+" : ""}${rounded}s`;
 }
 
 function shortPath(path: string) {
