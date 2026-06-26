@@ -36,6 +36,7 @@ import type {
   ReviewAction,
   ReviewItem,
   SourceRange,
+  SuggestedReviewAction,
   TaskType,
 } from "./types";
 
@@ -417,18 +418,12 @@ function ReviewDetail({
   );
 }
 
-function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction) => Promise<void> }) {
+function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
   const suggestion = item.suggested_action;
   if (!suggestion) {
     return null;
   }
-  const action: ReviewAction = {
-    action: suggestion.action,
-    target_id: suggestion.target_id,
-    target_type: suggestion.target_type,
-    payload: suggestion.payload ?? {},
-    notes: suggestion.rationale ?? "",
-  };
+  const actions = reviewActionsFromSuggestion(suggestion);
   return (
     <div className="suggested-resolution">
       <div>
@@ -436,7 +431,7 @@ function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (ac
         <strong>{suggestion.label}</strong>
         {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
       </div>
-      <CommandButton icon={CheckCircle2} label="Accept Guess" onClick={() => onQueue(action)} />
+      <CommandButton icon={CheckCircle2} label="Accept Guess" onClick={() => onQueue(actions.length === 1 ? actions[0] : actions)} />
     </div>
   );
 }
@@ -555,12 +550,7 @@ function ReviewActionControls({ item, onQueue }: { item: ReviewItem; onQueue: (a
     );
   }
   if (item.task_type === "confirm_relationship") {
-    return (
-      <ActionRow>
-        <CommandButton icon={Check} label="Confirm" onClick={() => onQueue(baseAction(item, "confirm_relationship"))} />
-        <CommandButton icon={X} label="Reject" tone="danger" onClick={() => onQueue(baseAction(item, "reject_relationship"))} />
-      </ActionRow>
-    );
+    return <RelationshipActions item={item} onQueue={onQueue} />;
   }
   if (item.task_type === "review_event") {
     return <EventActions item={item} onQueue={onQueue} />;
@@ -785,6 +775,54 @@ function PersonActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: 
         <CommandButton icon={Check} label="Confirm" onClick={() => onQueue({ ...baseAction(item, "confirm_person"), label })} />
         <CommandButton icon={Pencil} label="Rename" onClick={() => onQueue({ ...baseAction(item, "rename_person"), label })} />
         <CommandButton icon={GitMerge} label="Role Only" onClick={() => onQueue(baseAction(item, "mark_role_only"))} />
+      </ActionRow>
+    </div>
+  );
+}
+
+function RelationshipActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+  const candidate = item.candidate as {
+    predicate?: string;
+    subject_entity_id?: string;
+    subject_label?: string;
+    object_entity_id?: string;
+    object_label?: string;
+    relationship_ids?: string[];
+    relationship_count?: number;
+  };
+  const relationshipIds = relationshipIdsFromItem(item);
+  const payload = {
+    predicate: candidate.predicate,
+    subject_entity_id: candidate.subject_entity_id,
+    subject_label: candidate.subject_label,
+    object_entity_id: candidate.object_entity_id,
+    object_label: candidate.object_label,
+    relationship_ids: relationshipIds,
+  };
+  const confirmActions = relationshipIds.map((id) => ({
+    action: "confirm_relationship",
+    target_id: id,
+    target_type: "relationship_candidate",
+    payload,
+  }));
+  const rejectActions = relationshipIds.map((id) => ({
+    action: "reject_relationship",
+    target_id: id,
+    target_type: "relationship_candidate",
+    payload: { relationship_ids: relationshipIds },
+  }));
+  const count = candidate.relationship_count ?? relationshipIds.length;
+  return (
+    <div className="action-block">
+      {count > 1 ? <p className="basis-copy">This decision applies to {count} supporting relationship observations.</p> : null}
+      <ActionRow>
+        <CommandButton icon={Check} label={count > 1 ? "Confirm All" : "Confirm"} onClick={() => onQueue(confirmActions.length === 1 ? confirmActions[0] : confirmActions)} />
+        <CommandButton
+          icon={X}
+          label={count > 1 ? "Reject All" : "Reject"}
+          tone="danger"
+          onClick={() => onQueue(rejectActions.length === 1 ? rejectActions[0] : rejectActions)}
+        />
       </ActionRow>
     </div>
   );
@@ -1454,6 +1492,35 @@ function baseAction(item: ReviewItem, action: string): ReviewAction {
   };
 }
 
+function reviewActionsFromSuggestion(suggestion: SuggestedReviewAction): ReviewAction[] {
+  const payload = suggestion.payload ?? {};
+  const relationshipIds = Array.isArray(payload.relationship_ids) ? payload.relationship_ids.map(String).filter(Boolean) : [];
+  if (suggestion.action === "confirm_relationship" && relationshipIds.length > 1) {
+    return relationshipIds.map((relationshipId) => ({
+      action: suggestion.action,
+      target_id: relationshipId,
+      target_type: suggestion.target_type,
+      payload,
+      notes: suggestion.rationale ?? "",
+    }));
+  }
+  return [
+    {
+      action: suggestion.action,
+      target_id: suggestion.target_id,
+      target_type: suggestion.target_type,
+      payload,
+      notes: suggestion.rationale ?? "",
+    },
+  ];
+}
+
+function relationshipIdsFromItem(item: ReviewItem) {
+  const candidate = item.candidate as { relationship_ids?: unknown };
+  const ids = Array.isArray(candidate.relationship_ids) ? candidate.relationship_ids.map(String).filter(Boolean) : [];
+  return ids.length ? ids : [item.source_id];
+}
+
 function identityCandidates(item: ReviewItem) {
   const candidate = item.candidate as {
     identity_candidates?: Array<{
@@ -1500,6 +1567,9 @@ function itemHasPendingAction(item: ReviewItem, actions: ReviewAction[]) {
   const targetIds = new Set([item.source_id]);
   if (item.task_type === "resolve_face_cluster") {
     identityCandidates(item).forEach((candidate) => targetIds.add(candidate.face_identity_candidate_id));
+  }
+  if (item.task_type === "confirm_relationship") {
+    relationshipIdsFromItem(item).forEach((relationshipId) => targetIds.add(relationshipId));
   }
   return actions.some((action) => targetIds.has(String(action.target_id)));
 }

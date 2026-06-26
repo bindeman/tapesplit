@@ -214,6 +214,17 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
                 "confidence": 0.72,
                 "review_status": "needs_review",
                 "scope": {"source_video_ids": ["video_000001"], "start_s": 10, "end_s": 18},
+            },
+            {
+                "id": "relationship_candidate_000002",
+                "subject_entity_id": "role_entity_grandmother_of_people_group_000001",
+                "subject_label": "Unresolved grandmother",
+                "predicate": "grandparent_candidate",
+                "object_entity_id": "people_group_000001",
+                "object_label": "Filip",
+                "confidence": 0.7,
+                "review_status": "needs_review",
+                "scope": {"source_video_ids": ["video_000001"], "start_s": 30, "end_s": 34},
             }
         ],
     )
@@ -257,6 +268,14 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert face_review["suggested_action"]["target_id"] == "face_identity_candidate_000001"
     relationship_review = next(item for item in payload["review_queue"] if item["source_id"] == "relationship_candidate_000001")
     assert relationship_review["suggested_action"]["action"] == "confirm_relationship"
+    assert relationship_review["candidate"]["relationship_ids"] == [
+        "relationship_candidate_000001",
+        "relationship_candidate_000002",
+    ]
+    assert relationship_review["suggested_action"]["payload"]["relationship_ids"] == [
+        "relationship_candidate_000001",
+        "relationship_candidate_000002",
+    ]
     assert relationship_review["related_event_ids"] == ["canonical_event_000001"]
     assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
     assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"

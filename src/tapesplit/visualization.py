@@ -673,17 +673,30 @@ def _review_queues(
             }
         )
 
-    for relationship in relationship_candidates:
-        if not _needs_review(relationship):
-            continue
-        scope = relationship.get("scope") if isinstance(relationship.get("scope"), dict) else {}
-        event_ids = _scope_event_ids(scope, events=events, video_offsets=video_offsets)
+    for relationship_group in _relationship_review_groups(relationship_candidates):
+        relationship = max(
+            relationship_group,
+            key=lambda row: _number_or_none(row.get("confidence")) or 0.0,
+        )
+        relationship_ids = [str(row.get("id") or "") for row in relationship_group if row.get("id")]
+        event_ids = _unique_items(
+            [
+                event_id
+                for row in relationship_group
+                for event_id in _scope_event_ids(
+                    row.get("scope") if isinstance(row.get("scope"), dict) else {},
+                    events=events,
+                    video_offsets=video_offsets,
+                )
+            ]
+        )
+        title_suffix = f" ({len(relationship_group)} observations)" if len(relationship_group) > 1 else ""
         items.append(
             {
                 "task_type": "confirm_relationship",
                 "source_record_type": "relationship_candidate",
                 "source_id": str(relationship.get("id") or ""),
-                "title": f"Confirm relationship: {relationship.get('subject_label')} -> {relationship.get('object_label')}",
+                "title": f"Confirm relationship: {relationship.get('subject_label')} -> {relationship.get('object_label')}{title_suffix}",
                 "prompt": "Is this relationship supported by the tape evidence, or should it remain unconfirmed?",
                 "priority": 74,
                 "confidence": relationship.get("confidence"),
@@ -697,7 +710,28 @@ def _review_queues(
                     "subject_label": relationship.get("subject_label"),
                     "object_entity_id": relationship.get("object_entity_id"),
                     "object_label": relationship.get("object_label"),
-                    "supporting_signals": relationship.get("supporting_signals") or [],
+                    "supporting_signals": _unique_items(
+                        [
+                            str(signal)
+                            for row in relationship_group
+                            for signal in row.get("supporting_signals") or []
+                            if signal
+                        ]
+                    ),
+                    "relationship_ids": relationship_ids,
+                    "relationship_count": len(relationship_ids),
+                    "relationship_candidates": [
+                        {
+                            "id": str(row.get("id") or ""),
+                            "confidence": row.get("confidence"),
+                            "event_ids": _scope_event_ids(
+                                row.get("scope") if isinstance(row.get("scope"), dict) else {},
+                                events=events,
+                                video_offsets=video_offsets,
+                            ),
+                        }
+                        for row in relationship_group
+                    ],
                 },
                 "actions": ["confirm_relationship", "reject_relationship", "edit_relationship"],
             }
@@ -960,6 +994,7 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
         subject = str(candidate.get("subject_label") or "Unknown person")
         object_ = str(candidate.get("object_label") or "unknown person")
         predicate = str(candidate.get("predicate") or "relationship_candidate")
+        relationship_ids = [str(item) for item in candidate.get("relationship_ids") or [] if item]
         return _suggestion(
             action="confirm_relationship",
             target_id=str(item.get("source_id") or ""),
@@ -973,6 +1008,7 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
                 "subject_label": candidate.get("subject_label"),
                 "object_entity_id": candidate.get("object_entity_id"),
                 "object_label": candidate.get("object_label"),
+                "relationship_ids": relationship_ids,
             },
         )
 
@@ -1599,6 +1635,43 @@ def _needs_review(row: dict[str, Any]) -> bool:
 
 def _review_closed(row: dict[str, Any]) -> bool:
     return str(row.get("review_status") or "").casefold() in {"confirmed", "rejected", "excluded"}
+
+
+def _relationship_review_groups(relationships: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    buckets: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for relationship in relationships:
+        if not _needs_review(relationship):
+            continue
+        key = (
+            _relationship_party_key(relationship, "subject"),
+            _normalize_context_text(relationship.get("predicate")),
+            _relationship_party_key(relationship, "object"),
+        )
+        buckets.setdefault(key, []).append(relationship)
+    return sorted(
+        (
+            sorted(
+                group,
+                key=lambda row: (
+                    -(_number_or_none(row.get("confidence")) or 0.0),
+                    str(row.get("id") or ""),
+                ),
+            )
+            for group in buckets.values()
+        ),
+        key=lambda group: (
+            -(_number_or_none(group[0].get("confidence")) or 0.0),
+            str(group[0].get("subject_label") or "").casefold(),
+            str(group[0].get("object_label") or "").casefold(),
+        ),
+    )
+
+
+def _relationship_party_key(relationship: dict[str, Any], role: str) -> str:
+    entity_id = str(relationship.get(f"{role}_entity_id") or "").strip()
+    if entity_id:
+        return f"id:{entity_id}"
+    return f"label:{_normalize_context_text(relationship.get(f'{role}_label'))}"
 
 
 def _place_context_edges_for_review(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
