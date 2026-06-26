@@ -601,6 +601,7 @@ def _review_queues(
     video_offsets: dict[str, float],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    role_identity_options_by_person = _role_identity_options_by_person(people, relationship_candidates, events_by_id)
 
     for cluster_id, candidates in _face_identity_candidates_by_cluster(face_identity_candidates).items():
         cluster = face_clusters_by_id.get(cluster_id) or {}
@@ -772,6 +773,7 @@ def _review_queues(
         if not _needs_review(person):
             continue
         event_ids = [str(item) for item in person.get("canonical_event_ids") or []]
+        role_identity_options = role_identity_options_by_person.get(str(person.get("id") or ""), [])
         items.append(
             {
                 "task_type": "resolve_person",
@@ -789,6 +791,7 @@ def _review_queues(
                     "aliases": person.get("aliases") or [],
                     "kind": person.get("kind"),
                     "event_count": len(event_ids),
+                    "role_identity_options": role_identity_options,
                 },
                 "actions": ["confirm_person", "rename_person", "merge_person", "mark_role_only"],
             }
@@ -935,7 +938,10 @@ def _place_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
 def _person_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
     kind = str(candidate.get("kind") or "")
     aliases = [str(alias) for alias in candidate.get("aliases") or [] if alias]
+    role_identity_options = candidate.get("role_identity_options") if isinstance(candidate.get("role_identity_options"), list) else []
     if kind == "role_candidate":
+        if role_identity_options:
+            return "primary", "Role mention can be merged into a named person using relationship and event context."
         return "backlog", "Role-only mention should stay editable but usually needs more evidence before interrupting review."
     if len(_unique_items(aliases)) >= 2:
         return "primary", "Alias/nickname merge affects the person graph across multiple clips."
@@ -1059,6 +1065,22 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
         label = str(candidate.get("label") or "").strip()
         aliases = [str(alias) for alias in candidate.get("aliases") or [] if alias]
         if str(candidate.get("kind") or "") == "role_candidate":
+            role_identity_options = candidate.get("role_identity_options") if isinstance(candidate.get("role_identity_options"), list) else []
+            top_option = role_identity_options[0] if role_identity_options and isinstance(role_identity_options[0], dict) else {}
+            merge_with = str(top_option.get("person_group_id") or "")
+            if merge_with:
+                return _suggestion(
+                    action="merge_person",
+                    target_id=str(item.get("source_id") or ""),
+                    target_type=str(item.get("source_record_type") or "people_group"),
+                    label=f"Merge {label or 'this role'} into {top_option.get('label')}",
+                    rationale="A named relationship candidate and the role's event context point to the same person; keep reviewable before changing durable identity data.",
+                    confidence=_number_or_none(top_option.get("confidence")) or confidence,
+                    payload={
+                        "merge_with_person_group_id": merge_with,
+                        "role_identity_option": top_option,
+                    },
+                )
             return _suggestion(
                 action="mark_role_only",
                 target_id=str(item.get("source_id") or ""),
@@ -1672,6 +1694,112 @@ def _relationship_party_key(relationship: dict[str, Any], role: str) -> str:
     if entity_id:
         return f"id:{entity_id}"
     return f"label:{_normalize_context_text(relationship.get(f'{role}_label'))}"
+
+
+def _role_identity_options_by_person(
+    people: list[dict[str, Any]],
+    relationships: list[dict[str, Any]],
+    events_by_id: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    people_by_id = {str(person.get("id") or ""): person for person in people if person.get("id")}
+    person_id_by_alias = _person_id_by_alias(people)
+    named_relationships: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for relationship in relationships:
+        predicate = str(relationship.get("predicate") or "")
+        subject_id = str(relationship.get("subject_entity_id") or "")
+        object_id = str(relationship.get("object_entity_id") or "")
+        subject = people_by_id.get(subject_id)
+        if not subject or str(subject.get("kind") or "") == "role_candidate" or not object_id:
+            continue
+        named_relationships[(predicate, object_id)].append(relationship)
+
+    options_by_person: dict[str, list[dict[str, Any]]] = {}
+    for person in people:
+        person_id = str(person.get("id") or "")
+        predicate = _role_person_predicate(person)
+        if not person_id or not predicate:
+            continue
+        options = []
+        for object_id in _role_event_object_person_ids(person, events_by_id, person_id_by_alias, exclude_id=person_id):
+            for relationship in named_relationships.get((predicate, object_id), []):
+                subject_id = str(relationship.get("subject_entity_id") or "")
+                subject = people_by_id.get(subject_id)
+                if not subject:
+                    continue
+                confidence = min(0.95, (_number_or_none(relationship.get("confidence")) or 0.7) + 0.04)
+                options.append(
+                    {
+                        "person_group_id": subject_id,
+                        "label": subject.get("label"),
+                        "confidence": round(confidence, 3),
+                        "predicate": predicate,
+                        "object_person_group_id": object_id,
+                        "object_label": (people_by_id.get(object_id) or {}).get("label") or relationship.get("object_label"),
+                        "relationship_candidate_id": relationship.get("id"),
+                        "basis": [
+                            f"{relationship.get('subject_label')} is a {predicate.replace('_candidate', '').replace('_', ' ')} of {relationship.get('object_label')}",
+                            f"{person.get('label')} appears as a role in event(s) with {(people_by_id.get(object_id) or {}).get('label') or object_id}",
+                        ],
+                    }
+                )
+        if options:
+            options_by_person[person_id] = _dedupe_role_identity_options(options)
+    return options_by_person
+
+
+def _person_id_by_alias(people: list[dict[str, Any]]) -> dict[str, str]:
+    lookup = {}
+    for person in people:
+        person_id = str(person.get("id") or "")
+        labels = [person.get("label"), *(person.get("aliases") or [])]
+        for label in labels:
+            key = _normalize_context_text(label)
+            if key and person_id:
+                lookup[key] = person_id
+            for part in str(label or "").replace("/", " ").replace("(", " ").replace(")", " ").split():
+                part_key = _normalize_context_text(part)
+                if part_key and person_id:
+                    lookup.setdefault(part_key, person_id)
+    return lookup
+
+
+def _role_person_predicate(person: dict[str, Any]) -> str:
+    if str(person.get("kind") or "") != "role_candidate":
+        return ""
+    role_text = " ".join([str(person.get("label") or ""), *[str(alias) for alias in person.get("aliases") or []]]).casefold()
+    if any(term in role_text for term in ["mom", "mother", "mama", "мама", "маму", "маме"]):
+        return "mother_candidate"
+    if any(term in role_text for term in ["dad", "father", "papa", "папа", "папу", "папе"]):
+        return "father_candidate"
+    return ""
+
+
+def _role_event_object_person_ids(
+    person: dict[str, Any],
+    events_by_id: dict[str, dict[str, Any]],
+    person_id_by_alias: dict[str, str],
+    *,
+    exclude_id: str,
+) -> list[str]:
+    object_ids = []
+    for event_id in person.get("canonical_event_ids") or []:
+        event = events_by_id.get(str(event_id)) or {}
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        for label in metadata.get("people") or []:
+            object_id = person_id_by_alias.get(_normalize_context_text(label))
+            if object_id and object_id != exclude_id:
+                object_ids.append(object_id)
+    return _unique_items(object_ids)
+
+
+def _dedupe_role_identity_options(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for option in options:
+        key = str(option.get("person_group_id") or "")
+        current = buckets.get(key)
+        if current is None or (_number_or_none(option.get("confidence")) or 0.0) > (_number_or_none(current.get("confidence")) or 0.0):
+            buckets[key] = option
+    return sorted(buckets.values(), key=lambda row: -(_number_or_none(row.get("confidence")) or 0.0))
 
 
 def _place_context_edges_for_review(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:

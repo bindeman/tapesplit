@@ -105,12 +105,20 @@ ROLE_ONLY_PEOPLE = {
     "friends",
     "girl",
     "girls",
+    "dad",
+    "daddy",
     "kid",
     "kids",
     "man",
     "men",
+    "mom",
+    "mommy",
+    "mother",
     "person",
     "people",
+    "father",
+    "mama",
+    "papa",
     "teacher",
     "teachers",
     "woman",
@@ -194,6 +202,8 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
                 bucket["start_s"] = _min_number(bucket["start_s"], segment.get("start_s"))
                 bucket["end_s"] = _max_number(bucket["end_s"], segment.get("end_s"))
 
+    _add_event_summary_relationships(relationship_buckets, events=events, person_entities=person_entities)
+
     candidates = [_candidate_from_bucket(index, bucket) for index, bucket in enumerate(relationship_buckets.values(), start=1)]
     review_tasks = [_review_task_from_candidate(index, candidate) for index, candidate in enumerate(candidates, start=1)]
 
@@ -217,7 +227,10 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
 def _candidate_from_bucket(index: int, bucket: dict[str, Any]) -> dict[str, Any]:
     event = bucket.get("event") if isinstance(bucket.get("event"), dict) else None
     context_source = bucket.get("context_source")
-    base_confidence = 0.72 if context_source == "name_mention" else 0.58
+    base_confidence = {
+        "name_mention": 0.72,
+        "event_summary_direct_phrase": 0.86,
+    }.get(str(context_source), 0.58)
     confidence = min(0.9, base_confidence + min(len(bucket["evidence_ids"]) - 1, 3) * 0.04)
     event_ids = [event["id"]] if event and event.get("id") else []
     signals = [f"kinship term '{term}' in transcript" for term in sorted(bucket["terms"])]
@@ -225,9 +238,11 @@ def _candidate_from_bucket(index: int, bucket: dict[str, Any]) -> dict[str, Any]
         signals.append(f"name or alias for {bucket['object_label']} appears nearby")
     elif context_source == "event_subject":
         signals.append(f"event context points to {bucket['object_label']}")
+    elif context_source == "event_summary_direct_phrase":
+        signals.append(f"event summary directly links {bucket['subject_label']} to {bucket['object_label']}")
     return {
         "id": f"relationship_candidate_{index:06d}",
-        "subject_entity_id": _role_entity_id(bucket["subject_label"], bucket["object_entity_id"]),
+        "subject_entity_id": bucket.get("subject_entity_id") or _role_entity_id(bucket["subject_label"], bucket["object_entity_id"]),
         "subject_label": bucket["subject_label"],
         "predicate": bucket["predicate"],
         "object_entity_id": bucket["object_entity_id"],
@@ -270,10 +285,130 @@ def _review_task_from_candidate(index: int, candidate: dict[str, Any]) -> dict[s
     }
 
 
+def _add_event_summary_relationships(
+    relationship_buckets: dict[tuple[str, str, str, str], dict[str, Any]],
+    *,
+    events: list[dict[str, Any]],
+    person_entities: list[dict[str, Any]],
+) -> None:
+    for event in events:
+        text = " ".join(str(event.get(key) or "") for key in ["title", "summary"]).strip()
+        if not text:
+            continue
+        event_people = _event_person_entities(event, person_entities)
+        if len(event_people) < 2:
+            continue
+        for subject in event_people:
+            for object_entity in event_people:
+                if subject["id"] == object_entity["id"]:
+                    continue
+                for predicate, terms in _summary_relationship_terms().items():
+                    matched_term = _summary_relationship_match(text, subject, object_entity, terms)
+                    if not matched_term:
+                        continue
+                    source_video_ids = _event_source_video_ids(event)
+                    start_s, end_s = _event_local_range(event)
+                    key = (
+                        predicate,
+                        subject["id"],
+                        object_entity["id"],
+                        str(event.get("id") or ""),
+                    )
+                    bucket = relationship_buckets.setdefault(
+                        key,
+                        {
+                            "predicate": predicate,
+                            "subject_entity_id": subject["id"],
+                            "subject_label": subject["label"],
+                            "object_entity_id": object_entity["id"],
+                            "object_label": object_entity["label"],
+                            "event": event,
+                            "source_video_ids": set(source_video_ids),
+                            "evidence_ids": [],
+                            "transcript_segment_ids": [],
+                            "terms": set(),
+                            "source_texts": [],
+                            "start_s": start_s,
+                            "end_s": end_s,
+                            "context_source": "event_summary_direct_phrase",
+                        },
+                    )
+                    bucket["source_video_ids"].update(source_video_ids)
+                    for evidence_id in event.get("evidence_ids") or []:
+                        if evidence_id and evidence_id not in bucket["evidence_ids"]:
+                            bucket["evidence_ids"].append(evidence_id)
+                    bucket["terms"].add(matched_term)
+                    if text not in bucket["source_texts"]:
+                        bucket["source_texts"].append(text)
+                    bucket["start_s"] = _min_number(bucket["start_s"], start_s)
+                    bucket["end_s"] = _max_number(bucket["end_s"], end_s)
+
+
+def _event_person_entities(event: dict[str, Any], person_entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    people = metadata.get("people") if isinstance(metadata.get("people"), list) else []
+    entities = []
+    for person in people:
+        for entity in person_entities:
+            if _labels_match(person, entity):
+                entities.append(entity)
+    return _unique_entities(entities)
+
+
+def _summary_relationship_terms() -> dict[str, list[str]]:
+    return {
+        "mother_candidate": ["mother", "mom", "mama"],
+        "father_candidate": ["father", "dad", "papa"],
+    }
+
+
+def _summary_relationship_match(
+    text: str,
+    subject: dict[str, Any],
+    object_entity: dict[str, Any],
+    terms: list[str],
+) -> str:
+    for subject_alias in sorted(subject.get("aliases") or [], key=len, reverse=True):
+        if len(subject_alias) < 2:
+            continue
+        for object_alias in sorted(object_entity.get("aliases") or [], key=len, reverse=True):
+            if len(object_alias) < 2:
+                continue
+            for term in terms:
+                if _direct_relationship_phrase(text, subject_alias, object_alias, term):
+                    return term
+    return ""
+
+
+def _direct_relationship_phrase(text: str, subject_alias: str, object_alias: str, term: str) -> bool:
+    subject = re.escape(subject_alias)
+    obj = re.escape(object_alias)
+    relation = re.escape(term)
+    patterns = [
+        rf"(?<![\w]){subject}(?![\w]).{{0,48}}(?<![\w]){obj}(?![\w])(?:['’]s)?\s+{relation}(?![\w])",
+        rf"(?<![\w]){obj}(?![\w])(?:['’]s)?\s+{relation}(?![\w]).{{0,48}}(?<![\w]){subject}(?![\w])",
+        rf"(?<![\w]){subject}(?![\w]).{{0,48}}{relation}\s+of\s+(?<![\w]){obj}(?![\w])",
+        rf"{relation}\s+of\s+(?<![\w]){obj}(?![\w]).{{0,48}}(?<![\w]){subject}(?![\w])",
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL) for pattern in patterns)
+
+
+def _event_local_range(event: dict[str, Any]) -> tuple[float | None, float | None]:
+    source_ranges = _event_source_ranges(event)
+    if source_ranges:
+        return (
+            _number_or_none(source_ranges[0].get("start_s")),
+            _number_or_none(source_ranges[0].get("end_s")),
+        )
+    return _number_or_none(event.get("start_s")), _number_or_none(event.get("end_s"))
+
+
 def _load_person_entities(project: Path, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entities = []
     seen: set[str] = set()
     for group in read_jsonl(project / "people_groups.jsonl"):
+        if str(group.get("kind") or "") == "role_candidate":
+            continue
         label = str(group.get("label") or "").strip()
         aliases = [str(alias) for alias in group.get("aliases", []) if str(alias).strip()]
         key = str((group.get("metadata") or {}).get("normalized_key") or _normalize_key(label))

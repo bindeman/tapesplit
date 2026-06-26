@@ -338,5 +338,53 @@ def test_build_relationship_candidates_skips_unanchored_transcript_dialogue(tmp_
     assert read_jsonl(tmp_path / "relationship_candidates.jsonl") == []
 
 
+def test_build_relationship_candidates_extracts_named_parent_from_event_summary(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [
+            {
+                "id": "canonical_event_000001",
+                "title": "Playground",
+                "summary": "The video shows Katya, Filip's mother, outside a kindergarten.",
+                "start_s": 100,
+                "end_s": 160,
+                "evidence_ids": ["gem_ev_000001"],
+                "metadata": {
+                    "people": ["Filip", "Katya"],
+                    "source_video_ids": ["video_000001"],
+                    "source_ranges": [{"source_video_id": "video_000001", "start_s": 10, "end_s": 70}],
+                },
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            {
+                "id": "people_group_000001",
+                "label": "Filip / Filipp",
+                "aliases": ["Filip", "Filipp"],
+                "metadata": {"normalized_key": "filip"},
+            },
+            {
+                "id": "people_group_000002",
+                "label": "Ekaterina / Katya",
+                "aliases": ["Ekaterina", "Katya"],
+                "metadata": {"normalized_key": "ekaterina"},
+            },
+        ],
+    )
+
+    result = build_relationship_candidates(tmp_path)
+
+    assert result["relationship_candidates"] == 1
+    candidates = read_jsonl(tmp_path / "relationship_candidates.jsonl")
+    assert candidates[0]["predicate"] == "mother_candidate"
+    assert candidates[0]["subject_entity_id"] == "people_group_000002"
+    assert candidates[0]["object_entity_id"] == "people_group_000001"
+    assert candidates[0]["metadata"]["context_source"] == "event_summary_direct_phrase"
+    assert candidates[0]["scope"]["start_s"] == 10
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")

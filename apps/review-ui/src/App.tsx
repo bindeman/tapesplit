@@ -804,15 +804,63 @@ function PlaceActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: R
 }
 
 function PersonActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction) => Promise<void> }) {
-  const candidate = item.candidate as { label?: string };
+  const candidate = item.candidate as {
+    label?: string;
+    role_identity_options?: Array<{
+      person_group_id: string;
+      label?: string;
+      confidence?: number;
+      object_label?: string;
+      relationship_candidate_id?: string;
+      basis?: string[];
+    }>;
+  };
+  const roleOptions = candidate.role_identity_options ?? [];
+  const [selectedRoleOptionId, setSelectedRoleOptionId] = useState(roleOptions[0]?.person_group_id ?? "");
   const [label, setLabel] = useState(candidate.label ?? item.title.replace("Resolve person: ", ""));
+  const selectedRoleOption = roleOptions.find((option) => option.person_group_id === selectedRoleOptionId);
   return (
     <div className="action-block">
+      {roleOptions.length ? (
+        <div className="candidate-list">
+          {roleOptions.map((option) => (
+            <label key={option.person_group_id} className="candidate-option">
+              <input
+                type="radio"
+                name={`role-identity-${item.id}`}
+                checked={selectedRoleOptionId === option.person_group_id}
+                onChange={() => setSelectedRoleOptionId(option.person_group_id)}
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <small>
+                  role identity · {formatConfidence(option.confidence)}
+                  {option.object_label ? ` · via ${option.object_label}` : ""}
+                </small>
+                {option.basis?.length ? <small title={option.basis.join(" · ")}>{option.basis.join(" · ")}</small> : null}
+              </span>
+            </label>
+          ))}
+        </div>
+      ) : null}
       <label className="single-field">
         <span>Name</span>
         <input value={label} onChange={(event) => setLabel(event.target.value)} />
       </label>
       <ActionRow>
+        {selectedRoleOption ? (
+          <CommandButton
+            icon={GitMerge}
+            label="Merge Role"
+            onClick={() =>
+              onQueue({
+                ...baseAction(item, "merge_person"),
+                merge_with_person_group_id: selectedRoleOption.person_group_id,
+                role_identity_option: selectedRoleOption,
+              })
+            }
+          />
+        ) : null}
         <CommandButton icon={Check} label="Confirm" onClick={() => onQueue({ ...baseAction(item, "confirm_person"), label })} />
         <CommandButton icon={Pencil} label="Rename" onClick={() => onQueue({ ...baseAction(item, "rename_person"), label })} />
         <CommandButton icon={GitMerge} label="Role Only" onClick={() => onQueue(baseAction(item, "mark_role_only"))} />
