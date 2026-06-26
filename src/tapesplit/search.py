@@ -253,6 +253,11 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             )
         )
 
+    for row in read_jsonl(project / "event_alignments.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        docs.append(_alignment_document(row))
+
     if include_groups:
         for filename, record_type, title_key in [
             ("albums.jsonl", "album", "title"),
@@ -357,6 +362,63 @@ def _group_document(row: dict[str, Any], *, record_type: str, title_key: str) ->
         title=row.get(title_key),
         text=" ".join(text_parts),
         metadata={"review_status": row.get("review_status")},
+    )
+
+
+def _alignment_document(row: dict[str, Any]) -> dict[str, Any]:
+    transcript_support = row.get("transcript_support") if isinstance(row.get("transcript_support"), list) else []
+    alternate_anchors = row.get("alternate_transcript_anchors") if isinstance(row.get("alternate_transcript_anchors"), list) else []
+    evidence_claims = row.get("evidence_claims") if isinstance(row.get("evidence_claims"), list) else []
+    context_anchors = row.get("transcript_context_anchors") if isinstance(row.get("transcript_context_anchors"), list) else []
+    suggested_ranges = row.get("suggested_source_ranges") if isinstance(row.get("suggested_source_ranges"), list) else []
+    entity_support = row.get("entity_support") if isinstance(row.get("entity_support"), dict) else {}
+    source_ranges = row.get("source_ranges") if isinstance(row.get("source_ranges"), list) else []
+    text_parts = [
+        str(row.get("event_title") or ""),
+        str(row.get("timing_status") or ""),
+        " ".join(str(item) for item in row.get("warnings") or []),
+        " ".join(str(item) for item in row.get("signals") or []),
+        " ".join(str(item.get("text") or "") for item in transcript_support[:5] if isinstance(item, dict)),
+        " ".join(str(item.get("text") or "") for item in alternate_anchors[:3] if isinstance(item, dict)),
+        " ".join(
+            f"{item.get('status')} {item.get('text')} {((item.get('best_match') or {}).get('text') if isinstance(item.get('best_match'), dict) else '')}"
+            for item in evidence_claims[:6]
+            if isinstance(item, dict)
+        ),
+        " ".join(
+            f"{item.get('label')} {item.get('role')} {item.get('text')}"
+            for item in context_anchors[:8]
+            if isinstance(item, dict)
+        ),
+        " ".join(
+            " ".join(str(transcript_id) for transcript_id in item.get("transcript_ids") or [])
+            for item in suggested_ranges[:4]
+            if isinstance(item, dict)
+        ),
+    ]
+    for rows in entity_support.values():
+        if not isinstance(rows, list):
+            continue
+        for item in rows:
+            if isinstance(item, dict):
+                text_parts.append(f"{item.get('value')} {item.get('status')}")
+    return _document(
+        "event_alignment",
+        row.get("id"),
+        source_video_id=(source_ranges[0].get("source_video_id") if source_ranges and isinstance(source_ranges[0], dict) else ""),
+        start_s=(source_ranges[0].get("start_s") if source_ranges and isinstance(source_ranges[0], dict) else None),
+        end_s=(source_ranges[-1].get("end_s") if source_ranges and isinstance(source_ranges[-1], dict) else None),
+        title=f"Alignment: {row.get('event_title') or row.get('canonical_event_id')}",
+        text=" ".join(text_parts),
+        metadata={
+            "canonical_event_id": row.get("canonical_event_id"),
+            "timing_status": row.get("timing_status"),
+            "support_score": row.get("support_score"),
+            "suggested_review_status": row.get("suggested_review_status"),
+            "evidence_claim_count": len(evidence_claims),
+            "transcript_context_anchor_count": len(context_anchors),
+            "suggested_source_range_count": len(suggested_ranges),
+        },
     )
 
 

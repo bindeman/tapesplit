@@ -35,6 +35,7 @@ def export_visualization_data(
     dates = _visible_rows(read_jsonl(project / "date_groups.jsonl"), visibility, evidence_by_id)
     context_edges = _visible_rows(read_jsonl(project / "context_edges.jsonl"), visibility, evidence_by_id)
     edge_metrics = _visible_rows(read_jsonl(project / "edge_metrics.jsonl"), visibility, evidence_by_id)
+    event_alignments = _visible_rows(read_jsonl(project / "event_alignments.jsonl"), visibility, evidence_by_id)
     relationships = _visible_rows(read_jsonl(project / "relationship_candidates.jsonl"), visibility, evidence_by_id)
     place_roles = read_jsonl(project / "event_place_roles.jsonl")
     event_continuity_contexts = read_jsonl(project / "event_continuity_contexts.jsonl")
@@ -44,6 +45,11 @@ def export_visualization_data(
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
+    event_alignments_by_event = {
+        str(row.get("canonical_event_id")): row
+        for row in event_alignments
+        if row.get("canonical_event_id")
+    }
     people_by_id = {str(person.get("id")): person for person in people if person.get("id")}
     people_by_event = _rows_by_event(people)
     places_by_event = _rows_by_event(places)
@@ -87,6 +93,7 @@ def export_visualization_data(
                     places_by_event=places_by_event,
                     dates_by_event=dates_by_event,
                     assets_by_subject=assets_by_subject,
+                    event_alignments_by_event=event_alignments_by_event,
                 )
                 for event in sorted(events, key=lambda row: _number_or_large(row.get("start_s")))
             ],
@@ -140,6 +147,7 @@ def export_visualization_data(
             "face_identity_candidates": face_identity_candidates,
             "place_roles": place_roles,
             "event_continuity_contexts": event_continuity_contexts,
+            "event_alignments": event_alignments,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -161,6 +169,7 @@ def export_visualization_data(
             "face_identity_candidates": len(face_identity_candidates),
             "event_place_roles": len(place_roles),
             "event_continuity_contexts": len(event_continuity_contexts),
+            "event_alignments": len(event_alignments),
         },
     }
     write_json(output, data)
@@ -182,6 +191,7 @@ def _event_timeline_entry(
     places_by_event: dict[str, list[dict[str, Any]]],
     dates_by_event: dict[str, list[dict[str, Any]]],
     assets_by_subject: dict[str, list[dict[str, Any]]],
+    event_alignments_by_event: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     event_id = str(event.get("id") or "")
     metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
@@ -204,7 +214,47 @@ def _event_timeline_entry(
         "thumbnail_path": _first_path(assets, "thumbnail_path"),
         "keyframe_path": _first_path(assets, "keyframe_path"),
         "evidence_ids": [str(item) for item in event.get("evidence_ids") or []],
+        "alignment": _event_alignment_summary(event_alignments_by_event.get(event_id)),
     }
+
+
+def _event_alignment_summary(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    evidence_claims = row.get("evidence_claims") if isinstance(row.get("evidence_claims"), list) else []
+    context_anchors = row.get("transcript_context_anchors") if isinstance(row.get("transcript_context_anchors"), list) else []
+    suggested_ranges = row.get("suggested_source_ranges") if isinstance(row.get("suggested_source_ranges"), list) else []
+    return {
+        "id": str(row.get("id") or ""),
+        "timing_status": row.get("timing_status"),
+        "support_score": row.get("support_score"),
+        "warnings": row.get("warnings") or [],
+        "signals": row.get("signals") or [],
+        "suggested_review_status": row.get("suggested_review_status"),
+        "transcript_support_count": len(row.get("transcript_support") or []),
+        "alternate_anchor_count": len(row.get("alternate_transcript_anchors") or []),
+        "evidence_claim_statuses": _count_values(item.get("status") for item in evidence_claims if isinstance(item, dict)),
+        "transcript_context_anchors": [
+            {
+                "label": item.get("label"),
+                "role": item.get("role"),
+                "confidence": item.get("confidence"),
+                "distance_to_event_s": item.get("distance_to_event_s"),
+                "text": item.get("text"),
+            }
+            for item in context_anchors[:6]
+            if isinstance(item, dict)
+        ],
+        "suggested_source_ranges": suggested_ranges[:3],
+    }
+
+
+def _count_values(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _scene_timeline_entry(

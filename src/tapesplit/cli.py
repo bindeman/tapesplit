@@ -18,6 +18,7 @@ from tapesplit.context_graph import build_context_graph
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.evaluation import build_eval_packet, score_eval_packet
+from tapesplit.event_alignment import build_event_alignments
 from tapesplit.face_clustering import (
     DEFAULT_FACE_CLUSTER_DISTANCE,
     cluster_faces_for_project,
@@ -633,6 +634,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     build_context_graph_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    agent_parser = subparsers.add_parser(
+        "agent",
+        help="Run local agent-style planning and alignment passes.",
+    )
+    agent_subparsers = agent_parser.add_subparsers(dest="agent_command", required=True)
+    agent_align = agent_subparsers.add_parser(
+        "align",
+        help="Align canonical events against transcript/evidence support.",
+    )
+    agent_align.add_argument("project", type=Path, help="TapeSplit project directory.")
+    agent_align.add_argument(
+        "--context-seconds",
+        type=float,
+        default=45.0,
+        help="Transcript context window around event ranges. Default: 45.",
+    )
+
     rebuild_parser = subparsers.add_parser(
         "rebuild",
         help="Rebuild derived events, groups, graph, search, report, and visualization artifacts.",
@@ -664,6 +682,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--include-legacy-events",
         action="store_true",
         help="Include non-Gemini event candidates even when Gemini events exist.",
+    )
+    rebuild_parser.add_argument(
+        "--alignment-context-seconds",
+        type=float,
+        default=45.0,
+        help="Transcript context window for event alignment. Default: 45.",
     )
     rebuild_parser.add_argument(
         "--relationship-context-seconds",
@@ -723,6 +747,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "date_group",
             "edge_metric",
             "event",
+            "event_alignment",
             "event_continuity_context",
             "event_group",
             "evidence",
@@ -1305,6 +1330,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "build-context-graph":
             print(json.dumps(build_context_graph(args.project), indent=2, sort_keys=True))
             return 0
+        if args.command == "agent":
+            if args.agent_command == "align":
+                print(
+                    json.dumps(
+                        build_event_alignments(args.project, context_seconds=args.context_seconds),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
         if args.command == "rebuild":
             print(
                 json.dumps(
@@ -1316,6 +1351,7 @@ def main(argv: list[str] | None = None) -> int:
                         include_duplicate_gemini_runs=args.include_duplicate_gemini_runs,
                         max_gap_seconds=args.max_gap_seconds,
                         include_legacy_events=args.include_legacy_events,
+                        alignment_context_seconds=args.alignment_context_seconds,
                         relationship_context_seconds=args.relationship_context_seconds,
                         embedding_backend=args.embedding_backend,
                         embedding_model=args.embedding_model,

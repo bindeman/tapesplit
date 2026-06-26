@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from tapesplit.context_graph import build_context_graph
+from tapesplit.event_alignment import build_event_alignments
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
@@ -23,6 +24,7 @@ def rebuild_project_outputs(
     include_duplicate_gemini_runs: bool = False,
     max_gap_seconds: float = 120.0,
     include_legacy_events: bool = False,
+    alignment_context_seconds: float = 45.0,
     relationship_context_seconds: float = 8.0,
     embedding_backend: str = "local-sparse",
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
@@ -57,6 +59,12 @@ def rebuild_project_outputs(
     )
     steps.append({"step": "build_groups", "result": build_project_groups(project, prefer_canonical=True)})
     steps.append({"step": "build_place_roles", "result": build_place_roles_for_project(project, prefer_canonical=True)})
+    steps.append(
+        {
+            "step": "build_event_alignments",
+            "result": build_event_alignments(project, context_seconds=alignment_context_seconds),
+        }
+    )
     steps.append(
         {
             "step": "build_relationships",
