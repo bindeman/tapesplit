@@ -41,7 +41,7 @@ import type {
   TaskType,
 } from "./types";
 
-type ViewMode = "review" | "timeline" | "places" | "people" | "search";
+type ViewMode = "review" | "timeline" | "albums" | "places" | "people" | "search";
 type ReviewScope = "primary" | "backlog" | "all";
 
 type PlayerMoment = {
@@ -65,6 +65,7 @@ const taskLabels: Record<string, string> = {
 const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
   { id: "review", label: "Review", icon: Inbox },
   { id: "timeline", label: "Timeline", icon: Clock3 },
+  { id: "albums", label: "Albums", icon: CalendarDays },
   { id: "places", label: "Places", icon: MapPinned },
   { id: "people", label: "People", icon: Users },
   { id: "search", label: "Search", icon: Search },
@@ -316,6 +317,9 @@ export function App() {
             onPlay={setActiveMoment}
             onQueue={queueAction}
           />
+        )}
+        {view === "albums" && (
+          <AlbumsView albums={bundle.data.tracks.albums} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
         )}
         {view === "places" && (
           <PlacesView
@@ -1472,6 +1476,91 @@ function SearchResultRow({
   );
 }
 
+function AlbumsView({
+  albums,
+  events,
+  media,
+  onPlay,
+}: {
+  albums: AlbumRecord[];
+  events: EventRecord[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const visibleAlbums = dedupeAlbumsForDisplay(albums.filter((album) => album.events?.length || album.thumbnail_path));
+  return (
+    <section className="albums-view">
+      {visibleAlbums.map((album) => (
+        <article key={album.id} className="album-row">
+          <div className="album-cover">
+            {album.thumbnail_path ? <img src={assetUrl(album.thumbnail_path)} alt="" /> : <AlbumCoverFallback album={album} eventsById={eventsById} />}
+          </div>
+          <div className="album-body">
+            <div className="row-heading">
+              <div className="event-title-stack">
+                <h2>{album.title}</h2>
+                <small>{[album.date_label, album.place_label].filter(Boolean).join(" · ") || album.album_type || "album"}</small>
+              </div>
+              <span>{album.events?.length ?? 0} events</span>
+            </div>
+            <div className="token-row">
+              <Token>{album.album_type ?? "album"}</Token>
+              <Token>{album.review_status ?? "unreviewed"}</Token>
+              {(album.people_labels ?? []).slice(0, 5).map((label) => (
+                <Token key={label}>{label}</Token>
+              ))}
+            </div>
+            <div className="album-events">
+              {(album.events ?? []).slice(0, 8).map((event) => {
+                const fullEvent = eventsById.get(event.event_id);
+                return (
+                  <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
+                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                    <span>{event.title}</span>
+                    <small>{formatTime(event.start_s)}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </article>
+      ))}
+      {!visibleAlbums.length ? <EmptyState icon={CalendarDays} title="No albums" /> : null}
+    </section>
+  );
+}
+
+function dedupeAlbumsForDisplay(albums: AlbumRecord[]) {
+  const buckets = new Map<string, AlbumRecord>();
+  for (const album of albums) {
+    const eventIds = (album.events ?? []).map((event) => event.event_id).sort();
+    const key = eventIds.length ? `${album.album_type ?? "album"}:${eventIds.join("|")}` : album.id;
+    const current = buckets.get(key);
+    if (!current || albumDisplayRank(album) > albumDisplayRank(current)) {
+      buckets.set(key, album);
+    }
+  }
+  return [...buckets.values()];
+}
+
+function albumDisplayRank(album: AlbumRecord) {
+  let rank = 0;
+  if (album.thumbnail_path) rank += 10;
+  if (album.review_status === "unreviewed") rank += 4;
+  if (album.date_label && !album.date_label.includes(",")) rank += 2;
+  rank += Math.min(album.events?.length ?? 0, 5) * 0.1;
+  return rank;
+}
+
+function AlbumCoverFallback({ album, eventsById }: { album: AlbumRecord; eventsById: Map<string, EventRecord> }) {
+  const event = (album.events ?? []).map((entry) => eventsById.get(entry.event_id)).find((entry) => entry?.thumbnail_path);
+  if (event?.thumbnail_path) {
+    return <img src={assetUrl(event.thumbnail_path)} alt="" />;
+  }
+  return <CalendarDays size={24} />;
+}
+
 function PlacesView({
   contexts,
   places,
@@ -1857,6 +1946,7 @@ function taskLabel(task: string) {
 function viewTitle(view: ViewMode, selected: ReviewItem | null) {
   if (view === "review") return selected?.title ?? "Review";
   if (view === "timeline") return "Event Timeline";
+  if (view === "albums") return "Albums";
   if (view === "places") return "Place Contexts";
   if (view === "people") return "People";
   return "Search";
@@ -1869,6 +1959,7 @@ function viewSubtitle(view: ViewMode, bundle: ProjectBundle) {
     return `${summary.review_items ?? 0} primary review items · ${backlog} in backlog · ${bundle.pendingActions.length} pending`;
   }
   if (view === "timeline") return `${summary.events ?? 0} visible events across ${summary.source_videos ?? 0} videos`;
+  if (view === "albums") return `${bundle.data.tracks.albums.length} album candidates`;
   if (view === "places") return `${summary.place_contexts ?? 0} contexts · ${summary.places ?? 0} places`;
   if (view === "people") return `${summary.people ?? 0} people · ${summary.face_clusters ?? 0} face clusters`;
   return `${summary.events ?? 0} events · ${summary.people ?? 0} people · ${summary.places ?? 0} places indexed`;
