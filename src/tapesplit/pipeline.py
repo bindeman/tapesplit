@@ -13,6 +13,7 @@ from tapesplit.place_roles import build_place_roles_for_project
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.report import export_review_report
 from tapesplit.search import DEFAULT_EMBEDDING_MODEL, build_search_index
+from tapesplit.story import export_story
 from tapesplit.visualization import export_visualization_data
 
 
@@ -30,6 +31,7 @@ def rebuild_project_outputs(
     embedding_backend: str = "local-sparse",
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     export_report: bool = True,
+    export_story_output: bool = True,
     export_visualization: bool = True,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
@@ -85,6 +87,8 @@ def rebuild_project_outputs(
             ),
         }
     )
+    if export_story_output:
+        steps.append({"step": "export_story", "result": export_story(project)})
     if export_report:
         steps.append({"step": "export_report", "result": export_review_report(project)})
     if export_visualization:

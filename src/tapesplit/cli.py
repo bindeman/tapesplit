@@ -62,6 +62,7 @@ from tapesplit.search import (
     query_search_index,
     similar_search_documents,
 )
+from tapesplit.story import export_story
 from tapesplit.transcription import (
     check_transcription_config,
     extract_project_audio,
@@ -830,6 +831,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     report_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    story_parser = subparsers.add_parser(
+        "export-story",
+        help="Export a grounded JSON/Markdown tape story from reviewed local artifacts.",
+    )
+    story_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    story_parser.add_argument("--json-out", type=Path, help="Output JSON path. Defaults to <project>/story.json.")
+    story_parser.add_argument("--md-out", type=Path, help="Output Markdown path. Defaults to <project>/tape_story.md.")
+
     viz_parser = subparsers.add_parser(
         "export-visualization",
         help="Export UI-ready timeline, place, people, relationship, and asset data.",
@@ -1451,6 +1460,15 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         if args.command == "export-report":
             print(json.dumps(export_review_report(args.project), indent=2, sort_keys=True))
+            return 0
+        if args.command == "export-story":
+            print(
+                json.dumps(
+                    export_story(args.project, out_json=args.json_out, out_md=args.md_out),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
         if args.command == "export-visualization":
             print(
