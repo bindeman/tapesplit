@@ -22,7 +22,16 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { applyReviewActions, assetUrl, loadProject, queueReviewAction, removeReviewAction, searchProject, videoUrl } from "./api";
+import {
+  applyReviewActions,
+  assetUrl,
+  loadProject,
+  queueReviewAction,
+  reapplyReviewCorrections,
+  removeReviewAction,
+  searchProject,
+  videoUrl,
+} from "./api";
 import type {
   AlbumRecord,
   EventEntry,
@@ -178,7 +187,21 @@ export function App() {
     try {
       const next = await applyReviewActions();
       setBundle(next);
-      setStatus("Corrections applied");
+      setStatus("Corrections applied and refreshed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reapplyCorrections() {
+    setBusy(true);
+    setError("");
+    try {
+      const next = await reapplyReviewCorrections();
+      setBundle(next);
+      setStatus("Corrections replayed");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -347,7 +370,7 @@ export function App() {
 
       <aside className="right-rail">
         <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
-        <PendingActionsPanel actions={pendingActions} busy={busy} onApply={applyActions} onRemove={removeAction} />
+        <PendingActionsPanel actions={pendingActions} busy={busy} onApply={applyActions} onReapply={reapplyCorrections} onRemove={removeAction} />
         <ContextPanel item={selectedItem} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
       </aside>
     </div>
@@ -1094,11 +1117,13 @@ function PendingActionsPanel({
   actions,
   busy,
   onApply,
+  onReapply,
   onRemove,
 }: {
   actions: ReviewAction[];
   busy: boolean;
   onApply: () => Promise<void>;
+  onReapply: () => Promise<void>;
   onRemove: (id?: string) => Promise<void>;
 }) {
   return (
@@ -1127,6 +1152,10 @@ function PendingActionsPanel({
         <button className="command-button secondary" disabled={!actions.length || busy} onClick={() => void onRemove()}>
           <Trash2 size={16} />
           <span>Clear</span>
+        </button>
+        <button className="command-button secondary" disabled={busy} onClick={() => void onReapply()} title="Replay corrections and refresh review data">
+          <RefreshCw size={16} />
+          <span>Reapply</span>
         </button>
       </div>
     </section>

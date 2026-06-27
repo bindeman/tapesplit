@@ -16,6 +16,8 @@ const appliedActionsPath = join(projectDir, "review-actions.applied.jsonl");
 const tapesplitBin = existsSync(join(repoRoot, ".venv/bin/tapesplit"))
   ? join(repoRoot, ".venv/bin/tapesplit")
   : "tapesplit";
+const searchEmbeddingBackend = process.env.TAPESPLIT_SEARCH_EMBEDDING_BACKEND || "local-sparse";
+const searchEmbeddingModel = process.env.TAPESPLIT_SEARCH_EMBEDDING_MODEL || "";
 
 function reviewApiPlugin(): Plugin {
   return {
@@ -59,6 +61,11 @@ function reviewApiPlugin(): Plugin {
           }
           if (req.method === "POST" && req.url.startsWith("/api/apply")) {
             await applyPendingActions();
+            await sendJson(res, await loadProject());
+            return;
+          }
+          if (req.method === "POST" && req.url.startsWith("/api/reapply")) {
+            await reapplyCorrections();
             await sendJson(res, await loadProject());
             return;
           }
@@ -200,13 +207,33 @@ async function removePendingAction(actionId: string | null) {
 async function applyPendingActions() {
   const pending = readJsonlIfExists(pendingActionsPath);
   if (!pending.length) {
+    await refreshDerivedOutputs();
     return;
   }
   await run(tapesplitBin, ["review", "apply", projectDir, pendingActionsPath], repoRoot);
-  await run(tapesplitBin, ["export-visualization", projectDir], repoRoot);
+  await refreshDerivedOutputs();
   await appendFile(appliedActionsPath, pending.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
   const archivePath = join(projectDir, `review-actions.applied.${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
   renameSync(pendingActionsPath, archivePath);
+}
+
+async function reapplyCorrections() {
+  await run(tapesplitBin, ["review", "reapply", projectDir], repoRoot);
+  await refreshDerivedOutputs();
+}
+
+async function refreshDerivedOutputs() {
+  await run(tapesplitBin, ["build-evidence", projectDir], repoRoot);
+  await run(tapesplitBin, ["search", "build", projectDir, ...searchBuildArgs()], repoRoot);
+  await run(tapesplitBin, ["export-visualization", projectDir], repoRoot);
+}
+
+function searchBuildArgs() {
+  const args = ["--embedding-backend", searchEmbeddingBackend];
+  if (searchEmbeddingModel) {
+    args.push("--embedding-model", searchEmbeddingModel);
+  }
+  return args;
 }
 
 function run(command: string, args: string[], cwd: string) {

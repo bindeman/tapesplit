@@ -26,6 +26,11 @@ export async function applyReviewActions(): Promise<ProjectBundle> {
   return readResponse(response);
 }
 
+export async function reapplyReviewCorrections(): Promise<ProjectBundle> {
+  const response = await fetch("/api/reapply", { method: "POST" });
+  return readResponse(response);
+}
+
 export async function searchProject(query: string, limit = 12): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const response = await fetch(`/api/search?${params.toString()}`);
