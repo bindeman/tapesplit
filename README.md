@@ -78,6 +78,7 @@ Current local review pipeline:
 .venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 .venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
+.venv/bin/tapesplit review reapply /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 ```
 

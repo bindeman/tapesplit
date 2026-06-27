@@ -364,6 +364,26 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             )
         )
 
+    for row in read_jsonl(project / "corrections.jsonl"):
+        docs.append(
+            _document(
+                "review_correction",
+                row.get("id"),
+                source_video_id=None,
+                start_s=None,
+                end_s=None,
+                title=f"Review correction: {row.get('action') or row.get('id')}",
+                text=_correction_search_text(row),
+                metadata={
+                    "action": row.get("action"),
+                    "target_type": row.get("target_type"),
+                    "target_id": row.get("target_id"),
+                    "reviewer": row.get("reviewer"),
+                    "reviewed_at": row.get("reviewed_at"),
+                },
+            )
+        )
+
     for row in evidence_rows:
         if row.get("kind") == "non_content_range":
             continue
@@ -444,6 +464,24 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
                 docs.append(_group_document(row, record_type=record_type, title_key=title_key))
 
     return [doc for doc in docs if doc["title"] or doc["text"]]
+
+
+def _correction_search_text(row: dict[str, Any]) -> str:
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    parts = [
+        str(row.get("action") or ""),
+        str(row.get("target_type") or ""),
+        str(row.get("target_id") or ""),
+        str(row.get("notes") or ""),
+    ]
+    for key, value in sorted(payload.items()):
+        if isinstance(value, list):
+            parts.append(" ".join(str(item) for item in value))
+        elif isinstance(value, dict):
+            parts.append(json.dumps(value, sort_keys=True))
+        elif value not in (None, ""):
+            parts.append(f"{key} {value}")
+    return " ".join(parts)
 
 
 def _document(

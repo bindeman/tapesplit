@@ -208,12 +208,19 @@ or JSONL correction file:
 
 ```bash
 .venv/bin/tapesplit review apply /path/to/family-videos.tapesplit review-actions.jsonl
+.venv/bin/tapesplit review list /path/to/family-videos.tapesplit
+.venv/bin/tapesplit review reapply /path/to/family-videos.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/family-videos.tapesplit
 ```
 
 This writes `corrections.jsonl` and updates only the targeted projection records.
 For example, confirming `home (Madison, Wisconsin context)` does not merge it
 with a later `home (Eugene, Oregon context)`.
+
+`rebuild` automatically replays `corrections.jsonl` after regenerated event,
+group, relationship, and context-graph artifacts. That keeps reviewer decisions
+durable when model outputs are rerun. Use `review reapply --strict` when you
+want missing correction targets to fail instead of being reported as skipped.
 
 ## Upload To TwelveLabs
 

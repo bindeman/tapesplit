@@ -71,6 +71,70 @@ def apply_review_actions(
     }
 
 
+def reapply_review_corrections(
+    project_dir: Path,
+    *,
+    strict: bool = False,
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    corrections = read_jsonl(project / "corrections.jsonl")
+    if not corrections:
+        return {
+            "project": str(project),
+            "corrections": 0,
+            "corrections_applied": 0,
+            "corrections_skipped": 0,
+            "by_action": {},
+            "touched_files": [],
+            "skipped": [],
+        }
+
+    state = _ProjectReviewState(project)
+    touched_files: set[str] = set()
+    applied: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+
+    for correction in corrections:
+        try:
+            effects = _apply_action(state, correction)
+        except ValueError as exc:
+            if strict or not _is_missing_target_error(exc):
+                raise
+            skipped.append(
+                {
+                    "id": correction.get("id"),
+                    "action": correction.get("action"),
+                    "target_id": correction.get("target_id"),
+                    "reason": str(exc),
+                }
+            )
+            continue
+        applied.append(correction)
+        touched_files.update(effect["file"] for effect in effects if effect.get("file"))
+
+    state.write(touched_files)
+    return {
+        "project": str(project),
+        "corrections": len(corrections),
+        "corrections_applied": len(applied),
+        "corrections_skipped": len(skipped),
+        "by_action": _count_by(applied, "action"),
+        "touched_files": sorted(touched_files),
+        "skipped": skipped,
+    }
+
+
+def list_review_corrections(project_dir: Path) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    corrections = read_jsonl(project / "corrections.jsonl")
+    return {
+        "project": str(project),
+        "corrections": len(corrections),
+        "by_action": _count_by(corrections, "action"),
+        "items": corrections,
+    }
+
+
 class _ProjectReviewState:
     def __init__(self, project: Path):
         self.project = project
@@ -522,6 +586,10 @@ def _require_target(state: _ProjectReviewState, filename: str, correction: dict[
     if not row:
         raise ValueError(f"{target_id} not found in {filename}")
     return row
+
+
+def _is_missing_target_error(exc: ValueError) -> bool:
+    return " not found in " in str(exc)
 
 
 def _target_filename(correction: dict[str, Any]) -> str:

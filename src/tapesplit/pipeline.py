@@ -14,7 +14,9 @@ from tapesplit.grouping import build_project_groups
 from tapesplit.place_roles import build_place_roles_for_project
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.report import export_review_report
+from tapesplit.review_actions import reapply_review_corrections
 from tapesplit.search import DEFAULT_EMBEDDING_MODEL, build_search_index
+from tapesplit.storage import read_jsonl
 from tapesplit.story import export_story
 from tapesplit.visualization import export_visualization_data
 
@@ -63,9 +65,11 @@ def rebuild_project_outputs(
             ),
         }
     )
+    _append_reapply_step(steps, project, "review_reapply_after_stitch_events")
     steps.append({"step": "classify_content", "result": build_content_classifications_for_project(project)})
     steps.append({"step": "build_evidence_after_classification", "result": build_evidence(project)})
     steps.append({"step": "build_groups", "result": build_project_groups(project, prefer_canonical=True)})
+    _append_reapply_step(steps, project, "review_reapply_after_groups")
     steps.append({"step": "build_place_roles", "result": build_place_roles_for_project(project, prefer_canonical=True)})
     steps.append(
         {
@@ -80,7 +84,9 @@ def rebuild_project_outputs(
             "result": build_relationship_candidates(project, context_seconds=relationship_context_seconds),
         }
     )
+    _append_reapply_step(steps, project, "review_reapply_after_relationships")
     steps.append({"step": "build_context_graph", "result": build_context_graph(project)})
+    _append_reapply_step(steps, project, "review_reapply_after_context_graph")
     steps.append(
         {
             "step": "search_build",
@@ -103,3 +109,9 @@ def rebuild_project_outputs(
         "project": str(project),
         "steps": steps,
     }
+
+
+def _append_reapply_step(steps: list[dict[str, Any]], project: Path, name: str) -> None:
+    if not read_jsonl(project / "corrections.jsonl"):
+        return
+    steps.append({"step": name, "result": reapply_review_corrections(project, strict=False)})

@@ -148,6 +148,32 @@ def build_evidence(project_dir: Path) -> dict:
             }
         )
 
+    for row in read_jsonl(project / "corrections.jsonl"):
+        action = str(row.get("action") or "").strip()
+        target_id = str(row.get("target_id") or "").strip()
+        if not action or not target_id:
+            continue
+        add(
+            {
+                "source_video_id": None,
+                "start_s": None,
+                "end_s": None,
+                "modality": "review",
+                "kind": "review_correction",
+                "text": _correction_text(row),
+                "confidence": 1.0,
+                "metadata": {
+                    "correction_id": row.get("id"),
+                    "action": action,
+                    "target_type": row.get("target_type"),
+                    "target_id": target_id,
+                    "reviewer": row.get("reviewer"),
+                    "reviewed_at": row.get("reviewed_at"),
+                    "payload": row.get("payload") or {},
+                },
+            }
+        )
+
     seen_transcripts: set[tuple[float, float, str]] = set()
     for search in read_jsonl(project / "twelvelabs_searches.jsonl"):
         query = search.get("query")
@@ -254,6 +280,39 @@ def _evidence_prompt_priority(row: dict[str, Any]) -> int:
     if kind == "date_candidate":
         return 4
     return 5
+
+
+def _correction_text(row: dict[str, Any]) -> str:
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    parts = [
+        f"Review correction {row.get('action')}",
+        f"target {row.get('target_id')}",
+    ]
+    for key in [
+        "label",
+        "title",
+        "summary",
+        "relatedness",
+        "scope_label",
+        "place_type",
+        "date_value",
+        "precision",
+        "predicate",
+        "subject_label",
+        "object_label",
+        "merge_with_person_group_id",
+        "destination_person_group_id",
+    ]:
+        value = payload.get(key)
+        if value not in (None, ""):
+            parts.append(f"{key}: {value}")
+    for key in ["aliases", "parent_place_labels", "nearby_place_labels"]:
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            parts.append(f"{key}: {' '.join(str(item) for item in value)}")
+    if row.get("notes"):
+        parts.append(f"notes: {row.get('notes')}")
+    return " ".join(parts)
 
 
 def _source_id_for_video(project: Path, video_id: str | None) -> str | None:

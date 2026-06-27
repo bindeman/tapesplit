@@ -54,7 +54,11 @@ from tapesplit.place_roles import build_place_roles_for_project
 from tapesplit.pipeline import rebuild_project_outputs
 from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
-from tapesplit.review_actions import apply_review_actions
+from tapesplit.review_actions import (
+    apply_review_actions,
+    list_review_corrections,
+    reapply_review_corrections,
+)
 from tapesplit.scenes import (
     DEFAULT_MIN_SCENE_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
@@ -1023,6 +1027,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     review_apply.add_argument("project", type=Path, help="TapeSplit project directory.")
     review_apply.add_argument("actions", type=Path, help="JSON/JSONL review action file.")
+    review_reapply = review_subparsers.add_parser(
+        "reapply",
+        help="Replay existing corrections.jsonl against regenerated project artifacts.",
+    )
+    review_reapply.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_reapply.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail when a correction target is missing instead of reporting it as skipped.",
+    )
+    review_list = review_subparsers.add_parser(
+        "list",
+        help="List durable review corrections for a project.",
+    )
+    review_list.add_argument("project", type=Path, help="TapeSplit project directory.")
 
     report_parser = subparsers.add_parser(
         "export-report",
@@ -1786,6 +1805,18 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+            if args.review_command == "reapply":
+                print(
+                    json.dumps(
+                        reapply_review_corrections(args.project, strict=args.strict),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.review_command == "list":
+                print(json.dumps(list_review_corrections(args.project), indent=2, sort_keys=True))
                 return 0
         if args.command == "export-report":
             print(json.dumps(export_review_report(args.project), indent=2, sort_keys=True))

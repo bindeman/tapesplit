@@ -131,12 +131,19 @@ Apply UI or reviewer decisions as durable corrections:
 
 ```bash
 .venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
+.venv/bin/tapesplit review list /path/to/project.tapesplit
+.venv/bin/tapesplit review reapply /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 ```
 
 This appends `corrections.jsonl` and updates the targeted projection files. Raw
 model/provider outputs remain evidence; the correction is the durable reviewed
 fact.
+
+`rebuild` also replays `corrections.jsonl` after generated artifact stages, so a
+confirmed person merge, scoped place, renamed event, or unrelated-content mark
+survives future model reruns. Missing targets are reported as skipped during
+automatic replay; pass `review reapply --strict` for audit/debug workflows.
 
 Example scoped home correction:
 

@@ -115,5 +115,33 @@ def test_build_search_index_and_query_transcripts_events_and_albums(tmp_path: Pa
     assert ("album", "album_000001") in similar_ids
 
 
+def test_search_indexes_review_corrections(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "corrections.jsonl",
+        [
+            {
+                "id": "correction_000001",
+                "action": "confirm_place",
+                "target_type": "place_group",
+                "target_id": "place_group_000001",
+                "reviewer": "test",
+                "reviewed_at": "2026-01-01T00:00:00+00:00",
+                "payload": {
+                    "label": "Madison home",
+                    "scope_label": "Madison home, 2001-2003",
+                    "parent_place_labels": ["Madison, Wisconsin"],
+                },
+            }
+        ],
+    )
+
+    result = build_search_index(tmp_path)
+    corrections = query_search_index(tmp_path, "madison home correction", limit=3)
+
+    assert result["by_type"]["review_correction"] == 1
+    assert corrections["results"][0]["record_type"] == "review_correction"
+    assert corrections["results"][0]["source_id"] == "correction_000001"
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")

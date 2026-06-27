@@ -33,6 +33,25 @@ def test_build_evidence_from_visual_text_observations(tmp_path: Path):
     assert result["by_modality"]["visual_text"] == 1
 
 
+def test_build_evidence_promotes_review_corrections(tmp_path: Path):
+    (tmp_path / "corrections.jsonl").write_text(
+        (
+            '{"id":"correction_000001","action":"rename_event","target_type":"event",'
+            '"target_id":"canonical_event_000001","reviewer":"test","reviewed_at":"2026-01-01T00:00:00+00:00",'
+            '"payload":{"title":"Corrected birthday party","relatedness":"likely_family"}}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_evidence(tmp_path)
+    evidence = (tmp_path / "evidence.jsonl").read_text(encoding="utf-8")
+
+    assert result["evidence_count"] == 1
+    assert result["by_kind"]["review_correction"] == 1
+    assert result["by_modality"]["review"] == 1
+    assert "Corrected birthday party" in evidence
+
+
 def test_evidence_for_prompt_prioritizes_content_over_metadata(tmp_path: Path):
     rows = []
     for index in range(130):
