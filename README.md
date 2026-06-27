@@ -70,8 +70,10 @@ Current local review pipeline:
 .venv/bin/tapesplit rebuild /path/to/project.tapesplit --import-gemini
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
 .venv/bin/tapesplit detect-text /path/to/project.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit caption-visuals /path/to/project.tapesplit --subject-type event --backend auto
 .venv/bin/tapesplit embed-visuals /path/to/project.tapesplit --subject-type event --backend auto
 .venv/bin/tapesplit build-visual-similarity /path/to/project.tapesplit
+.venv/bin/tapesplit classify-content /path/to/project.tapesplit
 .venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene --backend auto
 .venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit

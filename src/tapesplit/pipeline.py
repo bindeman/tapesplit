@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from tapesplit.context_graph import build_context_graph
+from tapesplit.content_classification import build_content_classifications_for_project
 from tapesplit.evidence import build_evidence
 from tapesplit.event_alignment import build_event_alignments
 from tapesplit.event_reconciliation import build_event_reconciliations
@@ -62,6 +63,8 @@ def rebuild_project_outputs(
             ),
         }
     )
+    steps.append({"step": "classify_content", "result": build_content_classifications_for_project(project)})
+    steps.append({"step": "build_evidence_after_classification", "result": build_evidence(project)})
     steps.append({"step": "build_groups", "result": build_project_groups(project, prefer_canonical=True)})
     steps.append({"step": "build_place_roles", "result": build_place_roles_for_project(project, prefer_canonical=True)})
     steps.append(

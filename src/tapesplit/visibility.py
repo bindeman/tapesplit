@@ -65,6 +65,7 @@ def _exclusion_ranges(project: Path) -> list[ExclusionRange]:
             )
     ranges.extend(_source_level_exclusion_ranges(project, events))
     ranges.extend(_gemini_analysis_exclusion_ranges(project))
+    ranges.extend(_content_classification_exclusion_ranges(project))
     ranges.extend(_local_non_content_exclusion_ranges(project))
     return _merge_ranges(ranges)
 
@@ -148,6 +149,28 @@ def _local_non_content_exclusion_ranges(project: Path) -> list[ExclusionRange]:
                 end_s=interval["end_s"],
                 reason=str(row.get("label") or row.get("reason") or "non_content"),
                 source_id=str(row.get("id") or "non_content_range"),
+            )
+        )
+    return ranges
+
+
+def _content_classification_exclusion_ranges(project: Path) -> list[ExclusionRange]:
+    ranges = []
+    for row in read_jsonl(project / "content_classifications.jsonl"):
+        label = str(row.get("label") or "").casefold()
+        confidence = _number_or_none(row.get("confidence")) or 0.0
+        if label not in EXCLUDED_RELATEDNESS or confidence < 0.88:
+            continue
+        interval = _interval_from_values(row.get("source_video_id"), row.get("start_s"), row.get("end_s"))
+        if not interval:
+            continue
+        ranges.append(
+            ExclusionRange(
+                source_video_id=interval["source_video_id"],
+                start_s=interval["start_s"],
+                end_s=interval["end_s"],
+                reason=f"content_classification:{label}",
+                source_id=str(row.get("id") or "content_classification"),
             )
         )
     return ranges

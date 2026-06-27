@@ -35,6 +35,9 @@ visual-ai = [
   "pillow>=10.1",
   "sentence-transformers",
 ]
+speaker-ai = [
+  "pyannote.audio",
+]
 
 [project.scripts]
 tapesplit = "tapesplit.cli:main"

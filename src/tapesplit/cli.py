@@ -15,6 +15,7 @@ from tapesplit.costs import (
 )
 from tapesplit.claims import extract_claims
 from tapesplit.context_graph import build_context_graph
+from tapesplit.content_classification import build_content_classifications_for_project
 from tapesplit.evidence import build_evidence
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.evaluation import build_eval_packet, score_eval_packet
@@ -65,6 +66,13 @@ from tapesplit.search import (
     query_search_index,
     similar_search_documents,
 )
+from tapesplit.speakers import (
+    DEFAULT_SPEAKER_DIARIZATION_BACKEND,
+    DEFAULT_SPEAKER_DIARIZATION_MODEL,
+    check_speaker_diarization_config,
+    diarize_project_speakers,
+    import_speaker_segments,
+)
 from tapesplit.story import export_story
 from tapesplit.transcription import (
     check_transcription_config,
@@ -84,6 +92,12 @@ from tapesplit.visual_assets import (
     DEFAULT_KEYFRAME_WIDTH,
     DEFAULT_THUMBNAIL_WIDTH,
     extract_visual_assets_for_project,
+)
+from tapesplit.visual_captions import (
+    DEFAULT_VISUAL_CAPTION_BACKEND,
+    DEFAULT_VISUAL_CAPTION_MODEL,
+    caption_visual_assets_for_project,
+    check_visual_caption_config,
 )
 from tapesplit.visual_embeddings import (
     DEFAULT_VISUAL_EMBEDDING_BACKEND,
@@ -516,6 +530,36 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     visual_embeddings_parser.add_argument("--force", action="store_true", help="Replace matching visual embeddings.")
 
+    visual_captions_parser = subparsers.add_parser(
+        "caption-visuals",
+        help="Generate local captions for extracted scene/event keyframes.",
+    )
+    visual_captions_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_captions_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    visual_captions_parser.add_argument(
+        "--subject-type",
+        choices=["all", "scene", "event"],
+        default="all",
+        help="Visual asset subject type to scan. Default: all.",
+    )
+    visual_captions_parser.add_argument(
+        "--backend",
+        choices=["auto", "transformers-blip", "ollama"],
+        default=DEFAULT_VISUAL_CAPTION_BACKEND,
+        help="Visual caption backend. Default: auto.",
+    )
+    visual_captions_parser.add_argument(
+        "--model",
+        default=DEFAULT_VISUAL_CAPTION_MODEL,
+        help=f"Caption model. Default: {DEFAULT_VISUAL_CAPTION_MODEL}.",
+    )
+    visual_captions_parser.add_argument(
+        "--prompt",
+        default="Describe the home-video frame, including setting, event, visible people, signs, and whether it looks like family footage.",
+        help="Prompt used by instruction-following caption backends such as Ollama.",
+    )
+    visual_captions_parser.add_argument("--force", action="store_true", help="Replace matching visual captions.")
+
     visual_similarity_parser = subparsers.add_parser(
         "build-visual-similarity",
         help="Build local visual-similarity candidate edges from visual embeddings.",
@@ -532,6 +576,18 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=5,
         help="Maximum visual neighbors to keep per asset. Default: 5.",
+    )
+
+    content_classification_parser = subparsers.add_parser(
+        "classify-content",
+        help="Classify event content as likely family, unrelated, non-content, or uncertain.",
+    )
+    content_classification_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    content_classification_parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.62,
+        help="Minimum signal score for likely-family or likely-unrelated labels. Default: 0.62.",
     )
 
     faces_parser = subparsers.add_parser(
@@ -645,6 +701,44 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Add this source-time offset to imported transcript times. Default: 0.",
     )
     transcribe_import.add_argument("--force", action="store_true", help="Replace existing transcript segments for this source.")
+
+    speaker_parser = subparsers.add_parser(
+        "speakers",
+        help="Run or import speaker diarization segments.",
+    )
+    speaker_subparsers = speaker_parser.add_subparsers(dest="speaker_command", required=True)
+    speaker_diarize = speaker_subparsers.add_parser("diarize", help="Run local speaker diarization.")
+    speaker_diarize.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_diarize.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    speaker_diarize.add_argument(
+        "--backend",
+        choices=["pyannote"],
+        default=DEFAULT_SPEAKER_DIARIZATION_BACKEND,
+        help="Speaker diarization backend. Default: pyannote.",
+    )
+    speaker_diarize.add_argument(
+        "--model",
+        default=DEFAULT_SPEAKER_DIARIZATION_MODEL,
+        help=f"Diarization model. Default: {DEFAULT_SPEAKER_DIARIZATION_MODEL}.",
+    )
+    speaker_diarize.add_argument("--force", action="store_true", help="Replace matching speaker segments.")
+    speaker_import = speaker_subparsers.add_parser("import", help="Import speaker segments from JSON or RTTM.")
+    speaker_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_import.add_argument("speaker_file", type=Path, help="JSON or RTTM speaker segment file.")
+    speaker_import.add_argument("--source-video-id", required=True, help="Source video id for imported speaker segments.")
+    speaker_import.add_argument(
+        "--format",
+        choices=["auto", "json", "rttm"],
+        default="auto",
+        help="Speaker file format. Default: auto.",
+    )
+    speaker_import.add_argument(
+        "--offset-seconds",
+        type=float,
+        default=0.0,
+        help="Add this source-time offset to imported speaker times. Default: 0.",
+    )
+    speaker_import.add_argument("--force", action="store_true", help="Replace existing speaker segments for this source.")
 
     geocode_parser = subparsers.add_parser(
         "geocode",
@@ -968,6 +1062,8 @@ def _doctor(as_json: bool) -> int:
     status.update(check_face_embedding_config())
     status.update(check_visual_text_config())
     status.update(check_visual_embedding_config())
+    status.update(check_visual_caption_config())
+    status.update(check_speaker_diarization_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -1011,6 +1107,11 @@ def _doctor(as_json: bool) -> int:
             f"{'installed' if status['visual_embedding_sentence_transformers'] else 'missing'}"
         )
         print(f"  Default visual embedding backend: {status['visual_embedding_default_backend']}")
+        print(f"  Visual caption transformers: {'installed' if status['visual_caption_transformers'] else 'missing'}")
+        print(f"  Visual caption Ollama: {'installed' if status['visual_caption_ollama'] else 'missing'}")
+        print(f"  Default visual caption backend: {status['visual_caption_default_backend']}")
+        print(f"  Speaker diarization pyannote: {'installed' if status['speaker_diarization_pyannote'] else 'missing'}")
+        print(f"  Speaker diarization HF token: {'configured' if status['speaker_diarization_hf_token'] else 'missing'}")
     return 0
 
 
@@ -1339,6 +1440,23 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "caption-visuals":
+            print(
+                json.dumps(
+                    caption_visual_assets_for_project(
+                        args.project,
+                        source_video_id=args.source_video_id,
+                        subject_type=args.subject_type,
+                        backend=args.backend,
+                        model_name=args.model,
+                        prompt=args.prompt,
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.command == "build-visual-similarity":
             print(
                 json.dumps(
@@ -1346,6 +1464,18 @@ def main(argv: list[str] | None = None) -> int:
                         args.project,
                         min_similarity=args.min_similarity,
                         limit_per_asset=args.limit_per_asset,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "classify-content":
+            print(
+                json.dumps(
+                    build_content_classifications_for_project(
+                        args.project,
+                        confidence_threshold=args.confidence_threshold,
                     ),
                     indent=2,
                     sort_keys=True,
@@ -1423,6 +1553,38 @@ def main(argv: list[str] | None = None) -> int:
                             source_video_id=args.source_video_id,
                             transcript_format=args.format,
                             language=args.language,
+                            offset_seconds=args.offset_seconds,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+        if args.command == "speakers":
+            if args.speaker_command == "diarize":
+                print(
+                    json.dumps(
+                        diarize_project_speakers(
+                            args.project,
+                            source_video_id=args.source_video_id,
+                            backend=args.backend,
+                            model_name=args.model,
+                            force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.speaker_command == "import":
+                print(
+                    json.dumps(
+                        import_speaker_segments(
+                            args.project,
+                            args.speaker_file,
+                            source_video_id=args.source_video_id,
+                            speaker_format=args.format,
                             offset_seconds=args.offset_seconds,
                             force=args.force,
                         ),

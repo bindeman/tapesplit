@@ -57,15 +57,37 @@ Optional local OCR and visual embeddings:
 ```bash
 .venv/bin/python -m pip install -e '.[vision,macos,visual-ai]'
 .venv/bin/tapesplit detect-text /path/to/family-videos.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit caption-visuals /path/to/family-videos.tapesplit --subject-type event --backend auto
 .venv/bin/tapesplit embed-visuals /path/to/family-videos.tapesplit --subject-type event --backend auto
 .venv/bin/tapesplit build-visual-similarity /path/to/family-videos.tapesplit
+.venv/bin/tapesplit classify-content /path/to/family-videos.tapesplit
 ```
 
 OCR rows are written to `visual_text_observations.jsonl` and become searchable
-after `build-evidence` and `search build`. Visual embeddings are written to
-`visual_embeddings.jsonl`; `build-visual-similarity` turns them into
-`visual_similarity_edges.jsonl` candidate same-place/same-event/same-era
-evidence.
+after `build-evidence` and `search build`. Captions are written to
+`visual_captions.jsonl`. Visual embeddings are written to `visual_embeddings.jsonl`;
+`build-visual-similarity` turns them into `visual_similarity_edges.jsonl`
+candidate same-place/same-event/same-era evidence. `classify-content` writes
+`content_classifications.jsonl` for likely family, unrelated, non-content, or
+uncertain event-level guesses.
+
+Optional speaker diarization can be imported from RTTM/JSON without installing a
+heavy diarization model:
+
+```bash
+.venv/bin/tapesplit speakers import /path/to/family-videos.tapesplit speakers.rttm \
+  --source-video-id video_000001 \
+  --force
+```
+
+To run pyannote locally, install the optional dependency and configure a
+Hugging Face token accepted for the selected diarization model:
+
+```bash
+.venv/bin/python -m pip install -e '.[speaker-ai]'
+export HF_TOKEN=...
+.venv/bin/tapesplit speakers diarize /path/to/family-videos.tapesplit --source-video-id video_000001
+```
 
 For whisper.cpp, download/build whisper.cpp separately and set the model path:
 

@@ -100,6 +100,54 @@ def build_evidence(project_dir: Path) -> dict:
             }
         )
 
+    for row in read_jsonl(project / "visual_captions.jsonl"):
+        caption = str(row.get("caption") or "").strip()
+        if not caption:
+            continue
+        add(
+            {
+                "source_video_id": row.get("source_video_id"),
+                "start_s": row.get("time_s") if row.get("time_s") is not None else row.get("start_s"),
+                "end_s": row.get("time_s") if row.get("time_s") is not None else row.get("end_s"),
+                "modality": "visual_caption",
+                "kind": "visual_caption",
+                "text": caption,
+                "confidence": row.get("confidence", 0.55),
+                "metadata": {
+                    "visual_caption_id": row.get("id"),
+                    "visual_asset_id": row.get("visual_asset_id"),
+                    "source_subject_type": row.get("source_subject_type"),
+                    "source_subject_id": row.get("source_subject_id"),
+                    "caption_backend": row.get("caption_backend"),
+                    "caption_model": row.get("caption_model"),
+                },
+            }
+        )
+
+    for row in read_jsonl(project / "content_classifications.jsonl"):
+        label = str(row.get("label") or "").strip()
+        if not label:
+            continue
+        add(
+            {
+                "source_video_id": row.get("source_video_id"),
+                "start_s": row.get("start_s"),
+                "end_s": row.get("end_s"),
+                "modality": "classifier",
+                "kind": "content_classification",
+                "text": f"{row.get('title') or row.get('source_subject_id')}: {label}",
+                "confidence": row.get("confidence", 0.5),
+                "metadata": {
+                    "content_classification_id": row.get("id"),
+                    "source_subject_type": row.get("source_subject_type"),
+                    "source_subject_id": row.get("source_subject_id"),
+                    "label": label,
+                    "reasons": row.get("reasons") or [],
+                    "signals": row.get("signals") or {},
+                },
+            }
+        )
+
     seen_transcripts: set[tuple[float, float, str]] = set()
     for search in read_jsonl(project / "twelvelabs_searches.jsonl"):
         query = search.get("query")
@@ -193,8 +241,10 @@ def _evidence_prompt_priority(row: dict[str, Any]) -> int:
     modality = row.get("modality")
     if kind in {"local_transcript_segment", "twelvelabs_search_transcript"}:
         return 0
-    if kind == "ocr_text":
+    if kind in {"ocr_text", "visual_caption"}:
         return 1
+    if kind == "content_classification":
+        return 2
     if modality in {"transcript", "multimodal"}:
         return 1
     if kind == "twelvelabs_search_hit":

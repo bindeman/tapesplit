@@ -232,6 +232,30 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
             )
         )
 
+    for row in read_jsonl(project / "visual_captions.jsonl"):
+        caption = str(row.get("caption") or "").strip()
+        if not caption:
+            continue
+        asset = visual_assets_by_id.get(str(row.get("visual_asset_id") or "")) or {}
+        docs.append(
+            _document(
+                "visual_caption",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("time_s") if row.get("time_s") is not None else row.get("start_s"),
+                end_s=row.get("time_s") if row.get("time_s") is not None else row.get("end_s"),
+                title=f"Caption: {asset.get('label') or row.get('source_subject_id') or row.get('id')}",
+                text=caption,
+                metadata={
+                    "visual_asset_id": row.get("visual_asset_id"),
+                    "source_subject_type": row.get("source_subject_type"),
+                    "source_subject_id": row.get("source_subject_id"),
+                    "caption_backend": row.get("caption_backend"),
+                    "caption_model": row.get("caption_model"),
+                },
+            )
+        )
+
     for row in read_jsonl(project / "visual_assets.jsonl"):
         if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
             continue
@@ -286,6 +310,56 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
                     "right_source_subject_id": row.get("right_source_subject_id"),
                     "right_source_video_id": row.get("right_source_video_id"),
                     "review_status": row.get("review_status"),
+                },
+            )
+        )
+
+    for row in read_jsonl(project / "content_classifications.jsonl"):
+        docs.append(
+            _document(
+                "content_classification",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("start_s"),
+                end_s=row.get("end_s"),
+                title=f"Content classification: {row.get('title') or row.get('source_subject_id')}",
+                text=" ".join(
+                    [
+                        str(row.get("label") or ""),
+                        " ".join(str(item) for item in row.get("reasons") or []),
+                        json.dumps(row.get("signals") or {}, sort_keys=True),
+                    ]
+                ),
+                metadata={
+                    "source_subject_id": row.get("source_subject_id"),
+                    "label": row.get("label"),
+                    "confidence": row.get("confidence"),
+                    "review_status": row.get("review_status"),
+                },
+            )
+        )
+
+    for row in read_jsonl(project / "speaker_segments.jsonl"):
+        docs.append(
+            _document(
+                "speaker_segment",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("start_s"),
+                end_s=row.get("end_s"),
+                title=f"Speaker: {row.get('speaker_label') or row.get('id')}",
+                text=" ".join(
+                    [
+                        str(row.get("speaker_label") or ""),
+                        str(row.get("provider") or ""),
+                        str(row.get("model") or ""),
+                    ]
+                ),
+                metadata={
+                    "speaker_label": row.get("speaker_label"),
+                    "provider": row.get("provider"),
+                    "model": row.get("model"),
+                    "confidence": row.get("confidence"),
                 },
             )
         )

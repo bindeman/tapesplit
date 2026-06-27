@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from tapesplit.storage import read_jsonl
+from tapesplit.visual_captions import caption_visual_assets_for_project
 from tapesplit.visual_embeddings import build_visual_similarity_for_project, embed_visual_assets_for_project
 from tapesplit.visual_text import detect_text_for_project
 
@@ -93,6 +94,47 @@ def test_embed_visual_assets_writes_vectors(tmp_path: Path, monkeypatch):
     assert result["visual_embeddings"] == 1
     assert rows[0]["dim"] == 3
     assert rows[0]["vector"] == [0.1, 0.2, 0.3]
+    assert rows[0]["source_subject_id"] == "event_1"
+
+
+def test_caption_visual_assets_writes_captions(tmp_path: Path, monkeypatch):
+    keyframe = tmp_path / "keyframes" / "events" / "event_1.jpg"
+    keyframe.parent.mkdir(parents=True)
+    keyframe.write_bytes(b"fake image")
+    _write_jsonl(
+        tmp_path / "visual_assets.jsonl",
+        [
+            {
+                "id": "visual_asset_000001",
+                "subject_type": "event",
+                "subject_id": "event_1",
+                "source_video_id": "video_000001",
+                "time_s": 15,
+                "keyframe_path": "keyframes/events/event_1.jpg",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "tapesplit.visual_captions._resolve_visual_caption_backend",
+        lambda backend, require_available=True: "transformers-blip",
+    )
+
+    class FakeCaptioner:
+        model_name = "fake-captioner"
+
+        def caption(self, _image_path: Path) -> str:
+            return "a family birthday party in a living room"
+
+    monkeypatch.setattr(
+        "tapesplit.visual_captions._create_captioner",
+        lambda backend, *, model_name, prompt: FakeCaptioner(),
+    )
+
+    result = caption_visual_assets_for_project(tmp_path, subject_type="event", force=True)
+    rows = read_jsonl(tmp_path / "visual_captions.jsonl")
+
+    assert result["visual_captions"] == 1
+    assert rows[0]["caption"] == "a family birthday party in a living room"
     assert rows[0]["source_subject_id"] == "event_1"
 
 

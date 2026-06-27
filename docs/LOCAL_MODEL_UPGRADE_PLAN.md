@@ -48,17 +48,34 @@ The current implementation adds:
 
 ```text
 tapesplit detect-text /path/to/project.tapesplit --backend auto
+tapesplit caption-visuals /path/to/project.tapesplit --backend auto
 tapesplit embed-visuals /path/to/project.tapesplit --backend auto
 tapesplit build-visual-similarity /path/to/project.tapesplit
+tapesplit classify-content /path/to/project.tapesplit
+tapesplit speakers import /path/to/project.tapesplit speakers.rttm --source-video-id video_000001
 ```
 
 `detect-text` runs OCR over `visual_assets.jsonl` keyframes. On macOS, `auto`
 uses Apple Vision.
 
+`caption-visuals` runs a local image-caption model over keyframes and writes
+`visual_captions.jsonl`. The default local model is BLIP because it is practical
+on a laptop; Ollama/LLaVA/Qwen-style backends can replace it later without
+changing the artifact contract.
+
 `embed-visuals` writes normalized image vectors for each visual asset. These are
 not final labels; they are reusable similarity evidence for same-place,
 same-event, and same-era grouping. `build-visual-similarity` turns those vectors
 into candidate edges for review and search.
+
+`classify-content` combines Gemini relatedness, OCR, captions, faces, and event
+metadata into `content_classifications.jsonl`. High-confidence unrelated or
+non-content classifications can hide ranges from customer-facing derived output,
+but the raw evidence remains available.
+
+`speakers import` creates the `speaker_segments.jsonl` contract now. `speakers
+diarize` can run pyannote when its dependency and model access token are
+available.
 
 `build-evidence` and `search build` should index OCR text so signs and burned
 dates become searchable and available to later reconciliation passes.
