@@ -21,10 +21,13 @@ from tapesplit.evaluation import build_eval_packet, score_eval_packet
 from tapesplit.event_alignment import build_event_alignments
 from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.face_clustering import (
+    DEFAULT_FACE_EMBEDDING_BACKEND,
     DEFAULT_FACE_CLUSTER_DISTANCE,
+    check_face_embedding_config,
     cluster_faces_for_project,
 )
 from tapesplit.faces import (
+    DEFAULT_FACE_DETECTION_BACKEND,
     DEFAULT_FACE_MIN_SIZE,
     check_face_detection_config,
     detect_face_thumbnails_for_project,
@@ -462,6 +465,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_FACE_MIN_SIZE,
         help=f"Minimum face size in pixels. Default: {DEFAULT_FACE_MIN_SIZE}.",
     )
+    faces_parser.add_argument(
+        "--backend",
+        choices=["auto", "opencv", "apple-vision"],
+        default=DEFAULT_FACE_DETECTION_BACKEND,
+        help="Face detector backend. auto uses Apple Vision on macOS when available, else OpenCV.",
+    )
     faces_parser.add_argument("--force", action="store_true", help="Overwrite existing face thumbnails.")
 
     cluster_faces_parser = subparsers.add_parser(
@@ -472,8 +481,17 @@ def _build_parser() -> argparse.ArgumentParser:
     cluster_faces_parser.add_argument(
         "--max-distance",
         type=float,
-        default=DEFAULT_FACE_CLUSTER_DISTANCE,
-        help=f"Maximum cosine distance for merging face thumbnails. Default: {DEFAULT_FACE_CLUSTER_DISTANCE}.",
+        default=None,
+        help=(
+            "Maximum cosine distance for merging face thumbnails. "
+            f"Default: backend-specific; OpenCV={DEFAULT_FACE_CLUSTER_DISTANCE}."
+        ),
+    )
+    cluster_faces_parser.add_argument(
+        "--embedding-backend",
+        choices=["auto", "opencv-gray", "arcface-insightface"],
+        default=DEFAULT_FACE_EMBEDDING_BACKEND,
+        help="Face embedding backend. auto uses ArcFace/InsightFace when installed, else OpenCV grayscale.",
     )
     cluster_faces_parser.add_argument(
         "--min-cluster-size",
@@ -860,6 +878,7 @@ def _doctor(as_json: bool) -> int:
     status.update(check_gemini_config())
     status.update(check_transcription_config())
     status.update(check_face_detection_config())
+    status.update(check_face_embedding_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -892,6 +911,10 @@ def _doctor(as_json: bool) -> int:
         print(f"  whisper.cpp main: {'installed' if status['whisper_cpp_main'] else 'missing'}")
         print(f"  WHISPER_CPP_MODEL: {'configured' if status['whisper_cpp_model'] else 'missing'}")
         print(f"  OpenCV face detection: {'installed' if status['opencv'] else 'missing'}")
+        print(f"  Apple Vision face detection: {'installed' if status['apple_vision'] else 'missing'}")
+        print(f"  Default face detection backend: {status['face_detection_default_backend']}")
+        print(f"  ArcFace face embeddings: {'installed' if status['face_embedding_arcface'] else 'missing'}")
+        print(f"  Default face embedding backend: {status['face_embedding_default_backend']}")
     return 0
 
 
@@ -1195,6 +1218,7 @@ def main(argv: list[str] | None = None) -> int:
                         source_video_id=args.source_video_id,
                         subject_type=args.subject_type,
                         min_size=args.min_size,
+                        backend=args.backend,
                         force=args.force,
                     ),
                     indent=2,
@@ -1209,6 +1233,7 @@ def main(argv: list[str] | None = None) -> int:
                         args.project,
                         max_distance=args.max_distance,
                         min_cluster_size=args.min_cluster_size,
+                        embedding_backend=args.embedding_backend,
                     ),
                     indent=2,
                     sort_keys=True,

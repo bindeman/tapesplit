@@ -88,7 +88,7 @@ def test_cluster_faces_groups_similar_faces_and_proposes_people_from_event_conte
         lambda _path: {"usable": True, "status": "usable", "notes": []},
     )
 
-    result = cluster_faces_for_project(tmp_path, max_distance=0.05)
+    result = cluster_faces_for_project(tmp_path, max_distance=0.05, embedding_backend="opencv-gray")
     faces = read_jsonl(tmp_path / "face_observations.jsonl")
     clusters = read_jsonl(tmp_path / "face_clusters.jsonl")
     candidates = read_jsonl(tmp_path / "face_identity_candidates.jsonl")
@@ -179,7 +179,7 @@ def test_cluster_faces_excludes_roles_and_boosts_direct_name_context(
         lambda _path: {"usable": True, "status": "usable", "notes": []},
     )
 
-    cluster_faces_for_project(tmp_path, max_distance=0.05)
+    cluster_faces_for_project(tmp_path, max_distance=0.05, embedding_backend="opencv-gray")
     clusters = read_jsonl(tmp_path / "face_clusters.jsonl")
     candidates = clusters[0]["candidate_people"]
 
@@ -250,7 +250,7 @@ def test_cluster_faces_keeps_low_quality_faces_as_review_only_candidates(
         },
     )
 
-    result = cluster_faces_for_project(tmp_path, max_distance=0.05)
+    result = cluster_faces_for_project(tmp_path, max_distance=0.05, embedding_backend="opencv-gray")
     faces = read_jsonl(tmp_path / "face_observations.jsonl")
     clusters = read_jsonl(tmp_path / "face_clusters.jsonl")
     candidates = read_jsonl(tmp_path / "face_identity_candidates.jsonl")

@@ -34,6 +34,24 @@ Optional local face-thumbnail support:
 .venv/bin/python -m pip install -e '.[vision]'
 ```
 
+On macOS, install the Apple Vision bindings as well. `detect-faces --backend
+auto` will use Apple Vision when these bindings are present and fall back to
+OpenCV elsewhere:
+
+```bash
+.venv/bin/python -m pip install -e '.[vision,macos]'
+.venv/bin/tapesplit detect-faces /path/to/family-videos.tapesplit --subject-type event --backend apple-vision
+```
+
+For stronger local identity clustering, install the ArcFace/InsightFace backend.
+On Apple Silicon, ONNX Runtime can use the Core ML execution provider; Linux and
+Windows servers can use CUDA when available:
+
+```bash
+.venv/bin/python -m pip install -e '.[vision,macos,face-ai]'
+.venv/bin/tapesplit cluster-faces /path/to/family-videos.tapesplit --embedding-backend auto
+```
+
 For whisper.cpp, download/build whisper.cpp separately and set the model path:
 
 ```bash

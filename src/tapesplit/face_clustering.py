@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import contextlib
+import io
 import math
+import platform
 from pathlib import Path
 import re
 from typing import Any
+import warnings
 
 from tapesplit.face_quality import analyze_face_quality
 from tapesplit.storage import append_jsonl, read_jsonl
@@ -12,6 +16,9 @@ from tapesplit.visibility import build_visibility_filter
 
 
 DEFAULT_FACE_CLUSTER_DISTANCE = 0.28
+DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE = 0.65
+DEFAULT_FACE_EMBEDDING_BACKEND = "auto"
+FACE_EMBEDDING_BACKENDS = {"auto", "opencv-gray", "arcface-insightface"}
 
 FACE_IDENTITY_EXCLUDED_KINDS = {
     "role_candidate",
@@ -32,14 +39,30 @@ FACE_IDENTITY_GROUP_LABELS = {
 }
 
 
+def check_face_embedding_config() -> dict[str, Any]:
+    resolved = _resolve_face_embedding_backend("auto")
+    return {
+        "face_embedding_arcface": _arcface_available(),
+        "face_embedding_default_backend": resolved,
+        "face_embedding_default_max_distance": _default_face_cluster_distance(resolved),
+    }
+
+
 def cluster_faces_for_project(
     project_dir: Path,
     *,
-    max_distance: float = DEFAULT_FACE_CLUSTER_DISTANCE,
+    max_distance: float | None = None,
     min_cluster_size: int = 1,
+    embedding_backend: str = DEFAULT_FACE_EMBEDDING_BACKEND,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
-    if max_distance <= 0:
+    resolved_embedding_backend = _resolve_face_embedding_backend(embedding_backend)
+    resolved_max_distance = (
+        max_distance
+        if max_distance is not None
+        else _default_face_cluster_distance(resolved_embedding_backend)
+    )
+    if resolved_max_distance <= 0:
         raise ValueError("max_distance must be greater than 0")
     if min_cluster_size <= 0:
         raise ValueError("min_cluster_size must be greater than 0")
@@ -64,6 +87,7 @@ def cluster_faces_for_project(
 
     prepared_faces = []
     feature_rows = []
+    embedder = _create_face_embedder(resolved_embedding_backend)
     skipped = 0
     skipped_low_quality = 0
     review_only_faces = []
@@ -81,7 +105,7 @@ def cluster_faces_for_project(
             review_only_faces.append(prepared_face)
             continue
         try:
-            feature = _face_feature(project, prepared_face)
+            feature = embedder.feature(project, prepared_face)
         except RuntimeError:
             raise
         except Exception:
@@ -91,7 +115,7 @@ def cluster_faces_for_project(
             continue
         feature_rows.append({"face": prepared_face, "feature": feature})
 
-    clusters = _cluster_feature_rows(feature_rows, max_distance=max_distance)
+    clusters = _cluster_feature_rows(feature_rows, max_distance=resolved_max_distance)
     clusters = [cluster for cluster in clusters if len(cluster["faces"]) >= min_cluster_size]
     if min_cluster_size <= 1:
         clusters.extend(_review_only_face_clusters(review_only_faces))
@@ -126,8 +150,10 @@ def cluster_faces_for_project(
         cluster_record = _cluster_record(
             cluster_id,
             faces_for_cluster,
-            max_distance=max_distance,
+            max_distance=resolved_max_distance,
             candidate_people=candidates,
+            method=embedder.method,
+            feature_model=embedder.feature_model,
         )
         cluster_records.append(cluster_record)
         for candidate in candidates:
@@ -154,7 +180,10 @@ def cluster_faces_for_project(
         "faces_review_only_low_quality": len(review_only_faces) if min_cluster_size <= 1 else 0,
         "face_clusters": len(cluster_records),
         "identity_candidates": len(candidate_records),
-        "max_distance": max_distance,
+        "requested_embedding_backend": _normalize_face_embedding_backend(embedding_backend),
+        "resolved_embedding_backend": resolved_embedding_backend,
+        "feature_model": embedder.feature_model,
+        "max_distance": resolved_max_distance,
         "min_cluster_size": min_cluster_size,
         "outputs": {
             "face_observations": str(project / "face_observations.jsonl"),
@@ -162,6 +191,139 @@ def cluster_faces_for_project(
             "face_identity_candidates": str(project / "face_identity_candidates.jsonl"),
         },
     }
+
+
+class _OpenCVGrayEmbedder:
+    method = "local_face_thumbnail_similarity"
+    feature_model = "opencv_equalized_gray_32"
+
+    def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
+        return _face_feature(project, face)
+
+
+class _ArcFaceInsightFaceEmbedder:
+    method = "local_face_embedding_similarity"
+    feature_model = "insightface_buffalo_l_arcface_512"
+
+    def __init__(self) -> None:
+        self._app: Any | None = None
+        self._providers = _onnxruntime_providers()
+
+    def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
+        cv2 = _load_cv2()
+        image_path = project / str(face.get("face_thumbnail_path") or "")
+        image = cv2.imread(str(image_path))
+        if image is None:
+            return []
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            observations = self._face_app().get(image)
+        if not observations:
+            return []
+        observation = max(observations, key=_insightface_observation_score)
+        embedding = getattr(observation, "normed_embedding", None)
+        if embedding is None:
+            embedding = getattr(observation, "embedding", None)
+        if embedding is None:
+            return []
+        return _normalized_vector(embedding)
+
+    def _face_app(self) -> Any:
+        if self._app is not None:
+            return self._app
+        try:
+            from insightface.app import FaceAnalysis  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "InsightFace is required for ArcFace face embeddings. Install with "
+                "`python -m pip install -e '.[face-ai]'`."
+            ) from exc
+        with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
+            warnings.simplefilter("ignore", FutureWarning)
+            app = FaceAnalysis(name="buffalo_l", providers=self._providers)
+            app.prepare(ctx_id=-1, det_size=(320, 320))
+        self._app = app
+        return app
+
+
+def _create_face_embedder(embedding_backend: str) -> Any:
+    if embedding_backend == "arcface-insightface":
+        return _ArcFaceInsightFaceEmbedder()
+    if embedding_backend == "opencv-gray":
+        return _OpenCVGrayEmbedder()
+    raise ValueError(f"unsupported face embedding backend: {embedding_backend}")
+
+
+def _normalize_face_embedding_backend(value: str) -> str:
+    backend = value.strip().casefold().replace("_", "-")
+    aliases = {
+        "arcface": "arcface-insightface",
+        "insightface": "arcface-insightface",
+        "buffalo-l": "arcface-insightface",
+        "opencv": "opencv-gray",
+        "opencv-equalized-gray-32": "opencv-gray",
+    }
+    backend = aliases.get(backend, backend)
+    if backend not in FACE_EMBEDDING_BACKENDS:
+        raise ValueError("face embedding backend must be auto, opencv-gray, or arcface-insightface")
+    return backend
+
+
+def _resolve_face_embedding_backend(value: str) -> str:
+    backend = _normalize_face_embedding_backend(value)
+    if backend != "auto":
+        return backend
+    return "arcface-insightface" if _arcface_available() else "opencv-gray"
+
+
+def _default_face_cluster_distance(embedding_backend: str) -> float:
+    if embedding_backend == "arcface-insightface":
+        return DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE
+    return DEFAULT_FACE_CLUSTER_DISTANCE
+
+
+def _arcface_available() -> bool:
+    try:
+        import insightface  # noqa: F401
+        import onnxruntime  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _onnxruntime_providers() -> list[str]:
+    try:
+        import onnxruntime as ort  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "ONNX Runtime is required for ArcFace face embeddings. Install with "
+            "`python -m pip install -e '.[face-ai]'`."
+        ) from exc
+    available = set(ort.get_available_providers())
+    preferred = []
+    if platform.system() == "Darwin" and "CoreMLExecutionProvider" in available:
+        preferred.append("CoreMLExecutionProvider")
+    for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"]:
+        if provider in available:
+            preferred.append(provider)
+    if not preferred:
+        raise RuntimeError("ONNX Runtime has no supported execution providers for face embeddings")
+    return preferred
+
+
+def _insightface_observation_score(observation: Any) -> float:
+    bbox = getattr(observation, "bbox", None)
+    area = 1.0
+    if bbox is not None and len(bbox) >= 4:
+        area = max(1.0, float(bbox[2] - bbox[0]) * float(bbox[3] - bbox[1]))
+    det_score = float(getattr(observation, "det_score", 1.0) or 1.0)
+    return area * det_score
+
+
+def _normalized_vector(values: Any) -> list[float]:
+    vector = [float(value) for value in values]
+    norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / norm for value in vector]
 
 
 def _face_feature(project: Path, face: dict[str, Any]) -> list[float]:
@@ -224,6 +386,8 @@ def _cluster_record(
     *,
     max_distance: float,
     candidate_people: list[dict[str, Any]],
+    method: str,
+    feature_model: str,
 ) -> dict[str, Any]:
     source_video_ids = _unique_items(str(face.get("source_video_id") or "") for face in faces)
     face_ids = [str(face.get("id")) for face in faces if face.get("id")]
@@ -256,8 +420,8 @@ def _cluster_record(
         "candidate_people": candidate_people,
         "linked_person_group_id": "",
         "review_status": review_status,
-        "method": "local_face_thumbnail_similarity",
-        "feature_model": "opencv_equalized_gray_32",
+        "method": method,
+        "feature_model": feature_model,
         "max_distance": max_distance,
         "review_only": review_only,
         "quality_status": quality["status"],

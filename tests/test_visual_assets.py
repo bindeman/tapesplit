@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from tapesplit.faces import detect_face_thumbnails_for_project
+from tapesplit.faces import detect_face_thumbnails_for_project, _vision_rect_to_pixel_bbox
 from tapesplit.storage import read_jsonl
 from tapesplit.visual_assets import extract_visual_assets_for_project
 
@@ -96,7 +96,7 @@ def test_detect_face_thumbnails_writes_observations_from_visual_assets(tmp_path:
 
     monkeypatch.setattr(
         "tapesplit.faces._detect_faces_in_image",
-        lambda _path, *, min_size: [{"bbox": {"x": 10, "y": 12, "width": 30, "height": 34}}],
+        lambda _path, *, min_size, backend: [{"bbox": {"x": 10, "y": 12, "width": 30, "height": 34}}],
     )
 
     def fake_crop(_image_path: Path, output_path: Path, _bbox: dict, *, padding: float = 0.25) -> None:
@@ -105,13 +105,25 @@ def test_detect_face_thumbnails_writes_observations_from_visual_assets(tmp_path:
 
     monkeypatch.setattr("tapesplit.faces._crop_face_thumbnail", fake_crop)
 
-    result = detect_face_thumbnails_for_project(tmp_path)
+    result = detect_face_thumbnails_for_project(tmp_path, backend="opencv")
     faces = read_jsonl(tmp_path / "face_observations.jsonl")
 
     assert result["faces"] == 1
+    assert result["resolved_backend"] == "opencv"
     assert faces[0]["source_subject_id"] == "scene_1"
+    assert faces[0]["detection_backend"] == "opencv"
     assert faces[0]["bbox"]["width"] == 30
     assert (tmp_path / faces[0]["face_thumbnail_path"]).exists()
+
+
+def test_vision_rect_to_pixel_bbox_flips_normalized_y_axis():
+    bbox = _vision_rect_to_pixel_bbox(
+        ((0.25, 0.20), (0.50, 0.25)),
+        image_width=200,
+        image_height=100,
+    )
+
+    assert bbox == {"x": 50, "y": 55, "width": 100, "height": 25}
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

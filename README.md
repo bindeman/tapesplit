@@ -32,6 +32,9 @@ relationship, and role-resolution model.
 See [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) for the
 family-graph, relationship-candidate, face-linking, and thumbnail plan.
 
+See [docs/LOCAL_FACE_STACK.md](docs/LOCAL_FACE_STACK.md) for the Mac-first
+Apple Vision detector and ArcFace/InsightFace identity-model plan.
+
 See [docs/CONTEXT_GRAPH_VISUALIZATION.md](docs/CONTEXT_GRAPH_VISUALIZATION.md)
 for the longer-term family tree, friend/social-circle, era, and context graph
 visualization model.
@@ -62,8 +65,8 @@ Current local review pipeline:
 .venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit  # optional high-fidelity follow-up
 .venv/bin/tapesplit rebuild /path/to/project.tapesplit --import-gemini
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
-.venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene
-.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit
+.venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene --backend auto
+.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
 .venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
