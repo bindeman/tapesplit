@@ -28,6 +28,7 @@ export interface VisualizationData {
     people: PersonRecord[];
     places: PlaceRecord[];
     albums: AlbumRecord[];
+    speakers?: SpeakerTrack[];
   };
   places: PlaceRecord[];
   people: PersonRecord[];
@@ -48,6 +49,7 @@ export interface VisualizationData {
     face_identity_candidates: FaceIdentityCandidate[];
     event_alignments?: EventAlignmentAsset[];
     event_reconciliations?: EventReconciliationAsset[];
+    speaker_segments?: SpeakerSegment[];
   };
 }
 
@@ -274,6 +276,28 @@ export interface AlbumRecord {
   events?: EventEntry[];
   thumbnail_path?: string;
   review_status?: string;
+}
+
+export interface SpeakerTrack {
+  id: string;
+  label: string;
+  segment_count: number;
+  source_video_ids: string[];
+  start_s?: number;
+  end_s?: number;
+  total_duration_s?: number;
+  segments: SpeakerSegment[];
+}
+
+export interface SpeakerSegment {
+  id: string;
+  source_video_id?: string;
+  start_s?: number;
+  end_s?: number;
+  speaker_label?: string;
+  confidence?: number;
+  provider?: string;
+  model?: string;
 }
 
 export interface EventEntry {

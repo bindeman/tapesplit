@@ -44,6 +44,7 @@ def export_visualization_data(
     face_observations = read_jsonl(project / "face_observations.jsonl")
     face_clusters = read_jsonl(project / "face_clusters.jsonl")
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
+    speaker_segments = read_jsonl(project / "speaker_segments.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     event_alignments_by_event = {
@@ -125,6 +126,7 @@ def export_visualization_data(
                 _album_track(album, events_by_id, assets_by_subject)
                 for album in sorted(albums, key=lambda row: _number_or_large(row.get("start_s")))
             ],
+            "speakers": _speaker_tracks(speaker_segments),
         },
         "places": [_place_node(place, events_by_id) for place in sorted(places, key=lambda row: _place_sort_key(row))],
         "place_contexts": place_contexts,
@@ -156,6 +158,7 @@ def export_visualization_data(
             "event_continuity_contexts": event_continuity_contexts,
             "event_alignments": event_alignments,
             "event_reconciliations": event_reconciliations,
+            "speaker_segments": speaker_segments,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -179,6 +182,8 @@ def export_visualization_data(
             "event_continuity_contexts": len(event_continuity_contexts),
             "event_alignments": len(event_alignments),
             "event_reconciliations": len(event_reconciliations),
+            "speaker_segments": len(speaker_segments),
+            "speaker_tracks": len({str(row.get("speaker_label")) for row in speaker_segments if row.get("speaker_label")}),
         },
     }
     write_json(output, data)
@@ -312,6 +317,45 @@ def _scene_timeline_entry(
         "thumbnail_path": _first_path(assets, "thumbnail_path"),
         "keyframe_path": _first_path(assets, "keyframe_path"),
     }
+
+
+def _speaker_tracks(speaker_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for segment in speaker_segments:
+        label = str(segment.get("speaker_label") or "").strip()
+        if label:
+            grouped[label].append(segment)
+    tracks = []
+    for label, segments in grouped.items():
+        sorted_segments = sorted(segments, key=lambda row: (str(row.get("source_video_id") or ""), _number_or_large(row.get("start_s"))))
+        total_duration = sum(
+            max(0.0, float(segment.get("end_s") or 0.0) - float(segment.get("start_s") or 0.0))
+            for segment in sorted_segments
+        )
+        tracks.append(
+            {
+                "id": label,
+                "label": label,
+                "segment_count": len(sorted_segments),
+                "source_video_ids": sorted({str(segment.get("source_video_id")) for segment in sorted_segments if segment.get("source_video_id")}),
+                "start_s": min((_number_or_large(segment.get("start_s")) for segment in sorted_segments), default=None),
+                "end_s": max((float(segment.get("end_s") or 0.0) for segment in sorted_segments), default=None),
+                "total_duration_s": round(total_duration, 3),
+                "segments": [
+                    {
+                        "id": str(segment.get("id") or ""),
+                        "source_video_id": segment.get("source_video_id"),
+                        "start_s": segment.get("start_s"),
+                        "end_s": segment.get("end_s"),
+                        "confidence": segment.get("confidence"),
+                        "provider": segment.get("provider"),
+                        "model": segment.get("model"),
+                    }
+                    for segment in sorted_segments
+                ],
+            }
+        )
+    return sorted(tracks, key=lambda row: (-int(row.get("segment_count") or 0), str(row.get("label") or "")))
 
 
 def _people_track(

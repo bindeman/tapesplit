@@ -155,6 +155,31 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
         ],
     )
     _write_jsonl(
+        tmp_path / "speaker_segments.jsonl",
+        [
+            {
+                "id": "speaker_segment_000001",
+                "source_video_id": "video_000001",
+                "start_s": 5,
+                "end_s": 10,
+                "speaker_label": "LOCAL_SPEAKER_00",
+                "confidence": 0.8,
+                "provider": "transcript-embedding",
+                "model": "speechbrain/spkrec-ecapa-voxceleb",
+            },
+            {
+                "id": "speaker_segment_000002",
+                "source_video_id": "video_000001",
+                "start_s": 20,
+                "end_s": 25,
+                "speaker_label": "LOCAL_SPEAKER_00",
+                "confidence": 0.75,
+                "provider": "transcript-embedding",
+                "model": "speechbrain/spkrec-ecapa-voxceleb",
+            },
+        ],
+    )
+    _write_jsonl(
         tmp_path / "context_edges.jsonl",
         [
             {
@@ -283,6 +308,11 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert payload["summary"]["review_backlog_items"] == 2
     assert payload["summary"]["review_total_items"] == 3
     assert payload["summary"]["suggested_review_actions"] == 3
+    assert payload["summary"]["speaker_segments"] == 2
+    assert payload["summary"]["speaker_tracks"] == 1
+    assert payload["tracks"]["speakers"][0]["label"] == "LOCAL_SPEAKER_00"
+    assert payload["tracks"]["speakers"][0]["segment_count"] == 2
+    assert payload["assets"]["speaker_segments"][0]["id"] == "speaker_segment_000001"
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

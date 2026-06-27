@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from bisect import bisect_left
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -13,8 +14,12 @@ from tapesplit.transcription import extract_project_audio
 
 
 SUPPORTED_SPEAKER_FORMATS = {"json", "rttm"}
-DEFAULT_SPEAKER_DIARIZATION_BACKEND = "pyannote"
+DEFAULT_SPEAKER_DIARIZATION_BACKEND = "auto"
 DEFAULT_SPEAKER_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
+DEFAULT_TRANSCRIPT_EMBEDDING_MODEL = "speechbrain/spkrec-ecapa-voxceleb"
+TRANSCRIPT_EMBEDDING_BACKEND = "transcript-embedding"
+TRANSCRIPT_EMBEDDING_STRIDE_S = 10.0
+TRANSCRIPT_EMBEDDING_CLUSTER_DISTANCE = 0.9
 
 _RTTM_RE = re.compile(r"\s+")
 
@@ -23,9 +28,11 @@ def check_speaker_diarization_config() -> dict[str, Any]:
     load_dotenv()
     return {
         "speaker_diarization_pyannote": _pyannote_available(),
+        "speaker_diarization_speechbrain": _speechbrain_available(),
         "speaker_diarization_hf_token": bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")),
         "speaker_diarization_default_backend": DEFAULT_SPEAKER_DIARIZATION_BACKEND,
         "speaker_diarization_default_model": DEFAULT_SPEAKER_DIARIZATION_MODEL,
+        "speaker_diarization_transcript_embedding_model": DEFAULT_TRANSCRIPT_EMBEDDING_MODEL,
     }
 
 
@@ -39,8 +46,64 @@ def diarize_project_speakers(
 ) -> dict[str, Any]:
     load_dotenv()
     project = project_dir.expanduser().resolve()
-    if backend != "pyannote":
-        raise ValueError("speaker diarization backend must be pyannote")
+    if backend == "auto":
+        pyannote_error: Exception | None = None
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
+        if _pyannote_available():
+            if _pyannote_model_accessible(model_name, token=token):
+                try:
+                    return _diarize_project_speakers_pyannote(
+                        project,
+                        source_video_id=source_video_id,
+                        model_name=model_name,
+                        force=force,
+                    )
+                except Exception as exc:
+                    pyannote_error = exc
+            else:
+                pyannote_error = RuntimeError(
+                    f"HF token does not have access to pyannote diarization model {model_name}"
+                )
+        if _speechbrain_available():
+            return _diarize_project_speakers_transcript_embeddings(
+                project,
+                source_video_id=source_video_id,
+                model_name=DEFAULT_TRANSCRIPT_EMBEDDING_MODEL,
+                force=force,
+                fallback_error=pyannote_error,
+            )
+        if pyannote_error:
+            raise pyannote_error
+        raise RuntimeError(
+            "no speaker diarization backend is available. Install pyannote.audio or speechbrain."
+        )
+    if backend == "pyannote":
+        return _diarize_project_speakers_pyannote(
+            project,
+            source_video_id=source_video_id,
+            model_name=model_name,
+            force=force,
+        )
+    if backend in {TRANSCRIPT_EMBEDDING_BACKEND, "speechbrain"}:
+        selected_model = model_name
+        if selected_model == DEFAULT_SPEAKER_DIARIZATION_MODEL:
+            selected_model = DEFAULT_TRANSCRIPT_EMBEDDING_MODEL
+        return _diarize_project_speakers_transcript_embeddings(
+            project,
+            source_video_id=source_video_id,
+            model_name=selected_model,
+            force=force,
+        )
+    raise ValueError("speaker diarization backend must be one of: auto, pyannote, transcript-embedding")
+
+
+def _diarize_project_speakers_pyannote(
+    project: Path,
+    *,
+    source_video_id: str | None,
+    model_name: str,
+    force: bool,
+) -> dict[str, Any]:
     if not _pyannote_available():
         raise RuntimeError("pyannote.audio is not installed. Install a diarization extra or import RTTM/JSON instead.")
 
@@ -90,6 +153,129 @@ def diarize_project_speakers(
         "project": str(project),
         "run_id": run_id,
         "backend": backend,
+        "model": model_name,
+        "speaker_segments": written,
+        "output": str(project / "speaker_segments.jsonl"),
+    }
+
+
+def _diarize_project_speakers_transcript_embeddings(
+    project: Path,
+    *,
+    source_video_id: str | None,
+    model_name: str,
+    force: bool,
+    fallback_error: Exception | None = None,
+) -> dict[str, Any]:
+    if not _speechbrain_available():
+        raise RuntimeError("speechbrain is not installed. Install a diarization extra or use pyannote/import.")
+
+    try:
+        import numpy as np  # type: ignore
+        import torch  # type: ignore
+        import torchaudio  # type: ignore
+        from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("speechbrain diarization requires numpy, torch, torchaudio, and speechbrain") from exc
+
+    transcript_rows = [
+        row
+        for row in read_jsonl(project / "transcript_segments.jsonl")
+        if row.get("source_video_id") and (not source_video_id or row.get("source_video_id") == source_video_id)
+    ]
+    if not transcript_rows:
+        raise RuntimeError(
+            "transcript-embedding diarization needs transcript_segments.jsonl. "
+            "Run local transcription first or use the pyannote backend."
+        )
+
+    audio = extract_project_audio(project, source_video_id=source_video_id, force=False)
+    audio_by_source = {item["source_video_id"]: Path(item["audio_path"]) for item in audio["audio_files"]}
+    cache_dir = project / ".cache" / "speechbrain" / _safe_model_dir(model_name)
+    classifier = EncoderClassifier.from_hparams(source=model_name, savedir=str(cache_dir), run_opts={"device": "cpu"})
+
+    run_id = f"spk_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    all_segments: list[dict[str, Any]] = []
+    total_anchors = 0
+    for current_source_id, rows in _group_transcript_rows_by_source(transcript_rows).items():
+        audio_path = audio_by_source.get(current_source_id)
+        if not audio_path:
+            continue
+        signal, sample_rate = torchaudio.load(str(audio_path))
+        if signal.ndim == 2:
+            signal = signal.mean(dim=0)
+        if int(sample_rate) != 16000:
+            signal = torchaudio.functional.resample(signal, int(sample_rate), 16000)
+            sample_rate = 16000
+        audio_duration = float(signal.shape[-1]) / float(sample_rate or 16000)
+        sorted_rows = sorted(rows, key=lambda item: float(item.get("start_s") or 0.0))
+        anchor_rows = _sample_transcript_rows_for_speaker_embeddings(sorted_rows)
+        embedded_rows = []
+        clips = []
+        clip_lengths = []
+        for row in anchor_rows:
+            window = _speaker_embedding_window(row, audio_duration=audio_duration)
+            if not window:
+                continue
+            start_sample = max(0, int(window[0] * sample_rate))
+            end_sample = min(signal.shape[-1], int(window[1] * sample_rate))
+            clip = signal[start_sample:end_sample]
+            if clip.numel() < int(0.4 * sample_rate):
+                continue
+            embedded_rows.append(row)
+            clips.append(clip)
+            clip_lengths.append(int(clip.numel()))
+        if not clips:
+            continue
+        cache_path = _speaker_embedding_cache_path(project, current_source_id, model_name)
+        cached_embeddings = _load_speaker_embedding_cache(cache_path, embedded_rows, model_name)
+        if cached_embeddings is None:
+            embeddings = _encode_speechbrain_embeddings(classifier, clips, clip_lengths, torch=torch)
+            _write_speaker_embedding_cache(cache_path, embedded_rows, embeddings, model_name)
+        else:
+            embeddings = cached_embeddings
+        labels = _cluster_voice_embeddings(embeddings)
+        canonical_labels = _canonicalize_cluster_labels(labels)
+        confidences = _cluster_confidences(embeddings, canonical_labels)
+        total_anchors += len(embedded_rows)
+        labeled_rows = _label_transcript_rows_from_speaker_anchors(
+            sorted_rows,
+            embedded_rows,
+            canonical_labels,
+            confidences,
+            source_video_id=current_source_id,
+            model_name=model_name,
+            run_id=run_id,
+            audio_path=audio_path,
+        )
+        all_segments.extend(_merge_adjacent_speaker_segments(labeled_rows))
+
+    written = write_speaker_segments(project, all_segments, force=force, source_video_id=source_video_id)
+    run_record = {
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "provider": TRANSCRIPT_EMBEDDING_BACKEND,
+        "model": model_name,
+        "source_video_id": source_video_id,
+        "segments": written,
+        "metadata": {
+            "embedding_anchor_segments": total_anchors,
+            "embedding_stride_s": TRANSCRIPT_EMBEDDING_STRIDE_S,
+            "cluster_distance": _speaker_cluster_distance_threshold(),
+        },
+    }
+    if fallback_error:
+        run_record["metadata"] = {
+            **run_record["metadata"],
+            "fallback_from": "pyannote",
+            "fallback_error_type": type(fallback_error).__name__,
+            "fallback_error": str(fallback_error).splitlines()[0] if str(fallback_error).splitlines() else "",
+        }
+    append_jsonl(project / "speaker_runs.jsonl", run_record)
+    return {
+        "project": str(project),
+        "run_id": run_id,
+        "backend": TRANSCRIPT_EMBEDDING_BACKEND,
         "model": model_name,
         "speaker_segments": written,
         "output": str(project / "speaker_segments.jsonl"),
@@ -240,6 +426,314 @@ def _pyannote_available() -> bool:
     except ImportError:
         return False
     return True
+
+
+def _pyannote_model_accessible(model_name: str, *, token: str | None) -> bool:
+    if Path(model_name).expanduser().exists():
+        return True
+    try:
+        from huggingface_hub import hf_hub_download  # type: ignore
+
+        hf_hub_download(model_name, "config.yaml", token=token)
+    except Exception:
+        return False
+    return True
+
+
+def _speechbrain_available() -> bool:
+    try:
+        import speechbrain  # type: ignore  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _group_transcript_rows_by_source(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("source_video_id")), []).append(row)
+    return grouped
+
+
+def _sample_transcript_rows_for_speaker_embeddings(
+    rows: list[dict[str, Any]],
+    *,
+    stride_s: float = TRANSCRIPT_EMBEDDING_STRIDE_S,
+) -> list[dict[str, Any]]:
+    buckets: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        start = _number_or_none(row.get("start_s")) or 0.0
+        end = _number_or_none(row.get("end_s"))
+        if end is None or end <= start:
+            continue
+        bucket = int(_row_midpoint(row) // max(stride_s, 1.0))
+        existing = buckets.get(bucket)
+        if existing is None or _row_duration(row) > _row_duration(existing):
+            buckets[bucket] = row
+    return [buckets[key] for key in sorted(buckets)]
+
+
+def _speaker_embedding_window(row: dict[str, Any], *, audio_duration: float) -> tuple[float, float] | None:
+    start = _number_or_none(row.get("start_s")) or 0.0
+    end = _number_or_none(row.get("end_s"))
+    if end is None or end <= start:
+        return None
+    center = (start + end) / 2.0
+    raw_span = end - start
+    span = min(2.4, max(1.0, raw_span + 0.15))
+    window_start = max(0.0, center - span / 2.0)
+    window_end = min(audio_duration, window_start + span)
+    if window_end - window_start < span:
+        window_start = max(0.0, window_end - span)
+    if window_end <= window_start:
+        return None
+    return round(window_start, 3), round(window_end, 3)
+
+
+def _label_transcript_rows_from_speaker_anchors(
+    rows: list[dict[str, Any]],
+    anchor_rows: list[dict[str, Any]],
+    anchor_labels: list[int],
+    anchor_confidences: list[float],
+    *,
+    source_video_id: str,
+    model_name: str,
+    run_id: str,
+    audio_path: Path,
+) -> list[dict[str, Any]]:
+    if not anchor_rows:
+        return []
+    anchors = sorted(
+        [
+            {
+                "midpoint": _row_midpoint(row),
+                "row": row,
+                "label": label,
+                "confidence": confidence,
+            }
+            for row, label, confidence in zip(anchor_rows, anchor_labels, anchor_confidences, strict=False)
+        ],
+        key=lambda item: float(item["midpoint"]),
+    )
+    anchor_midpoints = [float(anchor["midpoint"]) for anchor in anchors]
+    labeled_rows = []
+    for row in rows:
+        midpoint = _row_midpoint(row)
+        nearest = _nearest_anchor(anchors, anchor_midpoints, midpoint)
+        if nearest is None:
+            continue
+        distance_s = abs(midpoint - float(nearest["midpoint"]))
+        confidence = max(0.2, float(nearest["confidence"]) - min(0.25, distance_s / 180.0))
+        anchor_row = nearest["row"]
+        labeled_rows.append(
+            {
+                "source_video_id": source_video_id,
+                "start_s": row.get("start_s"),
+                "end_s": row.get("end_s"),
+                "speaker_label": f"LOCAL_SPEAKER_{int(nearest['label']):02d}",
+                "confidence": round(confidence, 3),
+                "provider": TRANSCRIPT_EMBEDDING_BACKEND,
+                "model": model_name,
+                "metadata": {
+                    "run_id": run_id,
+                    "audio_path": str(audio_path),
+                    "transcript_segment_id": row.get("id"),
+                    "transcript_text": row.get("text"),
+                    "anchor_transcript_segment_id": anchor_row.get("id"),
+                    "anchor_distance_s": round(distance_s, 3),
+                    "method": "speechbrain anchors clustered from transcript-aligned audio windows",
+                },
+            }
+        )
+    return labeled_rows
+
+
+def _nearest_anchor(anchors: list[dict[str, Any]], anchor_midpoints: list[float], midpoint: float) -> dict[str, Any] | None:
+    if not anchors:
+        return None
+    insertion = bisect_left(anchor_midpoints, midpoint)
+    candidates = []
+    if insertion < len(anchors):
+        candidates.append(anchors[insertion])
+    if insertion > 0:
+        candidates.append(anchors[insertion - 1])
+    return min(candidates, key=lambda item: abs(float(item["midpoint"]) - midpoint)) if candidates else None
+
+
+def _encode_speechbrain_embeddings(classifier: Any, clips: list[Any], clip_lengths: list[int], *, torch: Any) -> Any:
+    embeddings = []
+    batch_size = 32
+    with torch.no_grad():
+        for index in range(0, len(clips), batch_size):
+            batch_clips = clips[index : index + batch_size]
+            batch_lengths = clip_lengths[index : index + batch_size]
+            padded = torch.nn.utils.rnn.pad_sequence(batch_clips, batch_first=True)
+            wav_lens = torch.tensor(
+                [length / max(batch_lengths) for length in batch_lengths],
+                dtype=padded.dtype,
+                device=padded.device,
+            )
+            batch_embeddings = classifier.encode_batch(padded, wav_lens=wav_lens)
+            batch_embeddings = batch_embeddings.detach().cpu().numpy()
+            batch_embeddings = batch_embeddings.reshape(batch_embeddings.shape[0], -1)
+            embeddings.extend(batch_embeddings)
+    import numpy as np  # type: ignore
+
+    return np.asarray(embeddings, dtype="float32")
+
+
+def _cluster_voice_embeddings(embeddings: Any, *, distance_threshold: float | None = None) -> list[int]:
+    if len(embeddings) == 0:
+        return []
+    if len(embeddings) == 1:
+        return [0]
+    if distance_threshold is None:
+        distance_threshold = _speaker_cluster_distance_threshold()
+    from sklearn.cluster import AgglomerativeClustering  # type: ignore
+
+    try:
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            metric="cosine",
+            linkage="average",
+            distance_threshold=distance_threshold,
+        )
+    except TypeError:
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            affinity="cosine",
+            linkage="average",
+            distance_threshold=distance_threshold,
+        )
+    return [int(label) for label in clustering.fit_predict(embeddings)]
+
+
+def _canonicalize_cluster_labels(labels: list[int]) -> list[int]:
+    mapping: dict[int, int] = {}
+    canonical = []
+    for label in labels:
+        if label not in mapping:
+            mapping[label] = len(mapping)
+        canonical.append(mapping[label])
+    return canonical
+
+
+def _cluster_confidences(embeddings: Any, labels: list[int]) -> list[float]:
+    if len(labels) == 0:
+        return []
+    import numpy as np  # type: ignore
+
+    matrix = np.asarray(embeddings, dtype="float32")
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    matrix = matrix / np.clip(norms, 1e-12, None)
+    centroids = {}
+    for label in sorted(set(labels)):
+        members = matrix[[index for index, item in enumerate(labels) if item == label]]
+        centroid = members.mean(axis=0)
+        centroid = centroid / max(float(np.linalg.norm(centroid)), 1e-12)
+        centroids[label] = centroid
+    confidences = []
+    for embedding, label in zip(matrix, labels, strict=False):
+        similarity = float(np.dot(embedding, centroids[label]))
+        confidences.append(max(0.0, min(1.0, (similarity + 1.0) / 2.0)))
+    return confidences
+
+
+def _merge_adjacent_speaker_segments(segments: list[dict[str, Any]], *, max_gap_s: float = 1.5) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for segment in sorted(segments, key=lambda item: (str(item.get("source_video_id")), float(item.get("start_s") or 0.0))):
+        if (
+            merged
+            and segment["source_video_id"] == merged[-1]["source_video_id"]
+            and segment["speaker_label"] == merged[-1]["speaker_label"]
+            and float(segment["start_s"]) - float(merged[-1]["end_s"]) <= max_gap_s
+        ):
+            previous = merged[-1]
+            previous["end_s"] = round(max(float(previous["end_s"]), float(segment["end_s"])), 3)
+            previous["confidence"] = round((float(previous["confidence"] or 0.0) + float(segment["confidence"] or 0.0)) / 2.0, 3)
+            previous_metadata = previous.setdefault("metadata", {})
+            transcript_ids = previous_metadata.setdefault("transcript_segment_ids", [])
+            if previous_metadata.get("transcript_segment_id"):
+                transcript_ids.append(previous_metadata.pop("transcript_segment_id"))
+            if segment.get("metadata", {}).get("transcript_segment_id"):
+                transcript_ids.append(segment["metadata"]["transcript_segment_id"])
+            continue
+        merged.append(dict(segment))
+    return merged
+
+
+def _safe_model_dir(model_name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "_", model_name).strip("_") or "model"
+
+
+def _speaker_embedding_cache_path(project: Path, source_video_id: str, model_name: str) -> Path:
+    return project / ".cache" / "speaker_embeddings" / f"{source_video_id}_{_safe_model_dir(model_name)}.jsonl"
+
+
+def _load_speaker_embedding_cache(path: Path, rows: list[dict[str, Any]], model_name: str) -> Any | None:
+    if not path.exists() or not rows:
+        return None
+    import numpy as np  # type: ignore
+
+    cached = {}
+    for item in read_jsonl(path):
+        if item.get("model") != model_name or not item.get("transcript_segment_id"):
+            continue
+        vector = item.get("embedding")
+        if isinstance(vector, list):
+            cached[str(item["transcript_segment_id"])] = vector
+    ordered = []
+    for row in rows:
+        key = str(row.get("id") or "")
+        vector = cached.get(key)
+        if vector is None:
+            return None
+        ordered.append(vector)
+    return np.asarray(ordered, dtype="float32")
+
+
+def _write_speaker_embedding_cache(path: Path, rows: list[dict[str, Any]], embeddings: Any, model_name: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        path.unlink()
+    for row, embedding in zip(rows, embeddings, strict=False):
+        append_jsonl(
+            path,
+            {
+                "source_video_id": row.get("source_video_id"),
+                "transcript_segment_id": row.get("id"),
+                "start_s": row.get("start_s"),
+                "end_s": row.get("end_s"),
+                "model": model_name,
+                "embedding": [round(float(value), 6) for value in embedding],
+            },
+        )
+
+
+def _speaker_cluster_distance_threshold() -> float:
+    value = os.environ.get("TAPESPLIT_SPEAKER_CLUSTER_DISTANCE")
+    if not value:
+        return TRANSCRIPT_EMBEDDING_CLUSTER_DISTANCE
+    try:
+        return float(value)
+    except ValueError:
+        return TRANSCRIPT_EMBEDDING_CLUSTER_DISTANCE
+
+
+def _row_midpoint(row: dict[str, Any]) -> float:
+    start = _number_or_none(row.get("start_s")) or 0.0
+    end = _number_or_none(row.get("end_s"))
+    if end is None or end < start:
+        end = start
+    return (start + end) / 2.0
+
+
+def _row_duration(row: dict[str, Any]) -> float:
+    start = _number_or_none(row.get("start_s")) or 0.0
+    end = _number_or_none(row.get("end_s"))
+    if end is None or end < start:
+        return 0.0
+    return end - start
 
 
 def _number_or_none(value: Any) -> float | None:

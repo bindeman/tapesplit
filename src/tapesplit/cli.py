@@ -716,9 +716,9 @@ def _build_parser() -> argparse.ArgumentParser:
     speaker_diarize.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     speaker_diarize.add_argument(
         "--backend",
-        choices=["pyannote"],
+        choices=["auto", "pyannote", "transcript-embedding", "speechbrain"],
         default=DEFAULT_SPEAKER_DIARIZATION_BACKEND,
-        help="Speaker diarization backend. Default: pyannote.",
+        help="Speaker diarization backend. Default: auto.",
     )
     speaker_diarize.add_argument(
         "--model",

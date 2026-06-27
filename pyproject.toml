@@ -37,6 +37,7 @@ visual-ai = [
 ]
 speaker-ai = [
   "pyannote.audio",
+  "speechbrain",
 ]
 
 [project.scripts]
