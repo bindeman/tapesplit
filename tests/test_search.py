@@ -55,11 +55,43 @@ def test_build_search_index_and_query_transcripts_events_and_albums(tmp_path: Pa
             }
         ],
     )
+    _write_jsonl(
+        tmp_path / "visual_assets.jsonl",
+        [
+            {
+                "id": "visual_asset_000001",
+                "subject_type": "event",
+                "subject_id": "canonical_event_000001",
+                "source_video_id": "video_000001",
+                "time_s": 36,
+                "label": "Volcano Exploration",
+                "keyframe_path": "keyframes/events/canonical_event_000001.jpg",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "visual_text_observations.jsonl",
+        [
+            {
+                "id": "visual_text_000001",
+                "visual_asset_id": "visual_asset_000001",
+                "source_video_id": "video_000001",
+                "source_subject_type": "event",
+                "source_subject_id": "canonical_event_000001",
+                "time_s": 36,
+                "text": "Kilauea Visitor Center",
+                "confidence": 0.88,
+                "engine": "apple_vision_recognize_text",
+            }
+        ],
+    )
 
     result = build_search_index(tmp_path)
 
-    assert result["documents"] == 4
+    assert result["documents"] == 6
     assert result["by_type"]["transcript"] == 2
+    assert result["by_type"]["visual_text"] == 1
+    assert result["by_type"]["visual_asset"] == 1
 
     school = query_search_index(tmp_path, "classroom teacher", limit=3)
     assert school["results"][0]["source_id"] == "tr_000001"
@@ -72,6 +104,10 @@ def test_build_search_index_and_query_transcripts_events_and_albums(tmp_path: Pa
     album = query_search_index(tmp_path, "vacation hawaii", limit=3)
     album_ids = {(row["record_type"], row["source_id"]) for row in album["results"]}
     assert ("album", "album_000001") in album_ids
+
+    sign = query_search_index(tmp_path, "visitor center sign", limit=3)
+    sign_ids = {(row["record_type"], row["source_id"]) for row in sign["results"]}
+    assert ("visual_text", "visual_text_000001") in sign_ids
 
     similar = similar_search_documents(tmp_path, "canonical_event_000001", record_type="event", limit=3)
     similar_ids = {(row["record_type"], row["source_id"]) for row in similar["results"]}

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from tapesplit.context_graph import build_context_graph
+from tapesplit.evidence import build_evidence
 from tapesplit.event_alignment import build_event_alignments
 from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.event_stitching import stitch_project_events
@@ -50,6 +51,7 @@ def rebuild_project_outputs(
             }
         )
 
+    steps.append({"step": "build_evidence", "result": build_evidence(project)})
     steps.append(
         {
             "step": "stitch_events",

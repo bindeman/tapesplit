@@ -52,6 +52,21 @@ Windows servers can use CUDA when available:
 .venv/bin/tapesplit cluster-faces /path/to/family-videos.tapesplit --embedding-backend auto
 ```
 
+Optional local OCR and visual embeddings:
+
+```bash
+.venv/bin/python -m pip install -e '.[vision,macos,visual-ai]'
+.venv/bin/tapesplit detect-text /path/to/family-videos.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit embed-visuals /path/to/family-videos.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit build-visual-similarity /path/to/family-videos.tapesplit
+```
+
+OCR rows are written to `visual_text_observations.jsonl` and become searchable
+after `build-evidence` and `search build`. Visual embeddings are written to
+`visual_embeddings.jsonl`; `build-visual-similarity` turns them into
+`visual_similarity_edges.jsonl` candidate same-place/same-event/same-era
+evidence.
+
 For whisper.cpp, download/build whisper.cpp separately and set the model path:
 
 ```bash

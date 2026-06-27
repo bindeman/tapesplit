@@ -14,6 +14,25 @@ def test_build_evidence_from_metadata(tmp_path: Path):
     assert result["by_kind"]["date_candidate"] == 1
 
 
+def test_build_evidence_from_visual_text_observations(tmp_path: Path):
+    (tmp_path / "visual_text_observations.jsonl").write_text(
+        (
+            '{"id":"visual_text_000001","visual_asset_id":"visual_asset_000001",'
+            '"source_video_id":"video_1","source_subject_type":"event",'
+            '"source_subject_id":"canonical_event_000001","time_s":42,'
+            '"text":"Roosevelt Middle School","confidence":0.88,'
+            '"engine":"apple_vision_recognize_text","text_backend":"apple-vision"}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    result = build_evidence(tmp_path)
+
+    assert result["evidence_count"] == 1
+    assert result["by_kind"]["ocr_text"] == 1
+    assert result["by_modality"]["visual_text"] == 1
+
+
 def test_evidence_for_prompt_prioritizes_content_over_metadata(tmp_path: Path):
     rows = []
     for index in range(130):

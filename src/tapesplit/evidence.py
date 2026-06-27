@@ -75,6 +75,31 @@ def build_evidence(project_dir: Path) -> dict:
             }
         )
 
+    for row in read_jsonl(project / "visual_text_observations.jsonl"):
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        add(
+            {
+                "source_video_id": row.get("source_video_id"),
+                "start_s": row.get("time_s") if row.get("time_s") is not None else row.get("start_s"),
+                "end_s": row.get("time_s") if row.get("time_s") is not None else row.get("end_s"),
+                "modality": "visual_text",
+                "kind": "ocr_text",
+                "text": text,
+                "confidence": row.get("confidence", 0.5),
+                "metadata": {
+                    "visual_text_observation_id": row.get("id"),
+                    "visual_asset_id": row.get("visual_asset_id"),
+                    "source_subject_type": row.get("source_subject_type"),
+                    "source_subject_id": row.get("source_subject_id"),
+                    "engine": row.get("engine"),
+                    "text_backend": row.get("text_backend"),
+                    "bbox": row.get("bbox"),
+                },
+            }
+        )
+
     seen_transcripts: set[tuple[float, float, str]] = set()
     for search in read_jsonl(project / "twelvelabs_searches.jsonl"):
         query = search.get("query")
@@ -168,6 +193,8 @@ def _evidence_prompt_priority(row: dict[str, Any]) -> int:
     modality = row.get("modality")
     if kind in {"local_transcript_segment", "twelvelabs_search_transcript"}:
         return 0
+    if kind == "ocr_text":
+        return 1
     if modality in {"transcript", "multimodal"}:
         return 1
     if kind == "twelvelabs_search_hit":

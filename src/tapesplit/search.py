@@ -15,6 +15,7 @@ from tapesplit.visibility import build_visibility_filter
 
 SEARCH_DB_NAME = "search.sqlite"
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+SQLITE_VEC_MAX_K = 4096
 
 STOPWORDS = {
     "a",
@@ -198,6 +199,93 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
                     "scene_type": row.get("scene_type"),
                     "label": row.get("label"),
                     "method": row.get("method"),
+                },
+            )
+        )
+
+    visual_assets_by_id = {
+        str(row.get("id")): row
+        for row in read_jsonl(project / "visual_assets.jsonl")
+        if row.get("id")
+    }
+    for row in read_jsonl(project / "visual_text_observations.jsonl"):
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        asset = visual_assets_by_id.get(str(row.get("visual_asset_id") or "")) or {}
+        docs.append(
+            _document(
+                "visual_text",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("time_s") if row.get("time_s") is not None else row.get("start_s"),
+                end_s=row.get("time_s") if row.get("time_s") is not None else row.get("end_s"),
+                title=f"OCR: {asset.get('label') or row.get('source_subject_id') or row.get('id')}",
+                text=text,
+                metadata={
+                    "visual_asset_id": row.get("visual_asset_id"),
+                    "source_subject_type": row.get("source_subject_type"),
+                    "source_subject_id": row.get("source_subject_id"),
+                    "engine": row.get("engine"),
+                    "confidence": row.get("confidence"),
+                },
+            )
+        )
+
+    for row in read_jsonl(project / "visual_assets.jsonl"):
+        if visibility.excluded_row(row, evidence_by_id=evidence_by_id):
+            continue
+        docs.append(
+            _document(
+                "visual_asset",
+                row.get("id"),
+                source_video_id=row.get("source_video_id"),
+                start_s=row.get("time_s") if row.get("time_s") is not None else row.get("start_s"),
+                end_s=row.get("time_s") if row.get("time_s") is not None else row.get("end_s"),
+                title=row.get("label") or row.get("subject_id"),
+                text=" ".join(
+                    [
+                        str(row.get("subject_type") or ""),
+                        str(row.get("subject_id") or ""),
+                        str(row.get("keyframe_path") or ""),
+                    ]
+                ),
+                metadata={
+                    "subject_type": row.get("subject_type"),
+                    "subject_id": row.get("subject_id"),
+                    "keyframe_path": row.get("keyframe_path"),
+                    "thumbnail_path": row.get("thumbnail_path"),
+                },
+            )
+        )
+
+    for row in read_jsonl(project / "visual_similarity_edges.jsonl"):
+        docs.append(
+            _document(
+                "visual_similarity_edge",
+                row.get("id"),
+                source_video_id=row.get("left_source_video_id"),
+                start_s=row.get("left_time_s"),
+                end_s=row.get("right_time_s"),
+                title=row.get("predicate") or "visual similarity",
+                text=" ".join(
+                    [
+                        str(row.get("left_source_subject_id") or ""),
+                        str(row.get("right_source_subject_id") or ""),
+                        str(row.get("left_visual_asset_id") or ""),
+                        str(row.get("right_visual_asset_id") or ""),
+                        " ".join(str(item) for item in row.get("basis") or []),
+                        str(row.get("embedding_model") or ""),
+                    ]
+                ),
+                metadata={
+                    "similarity": row.get("similarity"),
+                    "predicate": row.get("predicate"),
+                    "method": row.get("method"),
+                    "left_source_subject_id": row.get("left_source_subject_id"),
+                    "right_source_subject_id": row.get("right_source_subject_id"),
+                    "right_source_video_id": row.get("right_source_video_id"),
+                    "review_status": row.get("review_status"),
                 },
             )
         )
@@ -809,7 +897,9 @@ def _sqlite_vec_query_scores(conn: sqlite3.Connection, query_vector: list[float]
     sqlite_vec = _load_sqlite_vec(conn)
     if not sqlite_vec or not _has_table(conn, "dense_vector_index"):
         return None
-    total = _indexed_document_count(conn)
+    total = min(_indexed_document_count(conn), SQLITE_VEC_MAX_K)
+    if total <= 0:
+        return {}
     rows = conn.execute(
         """
         SELECT document_id, distance
@@ -832,7 +922,9 @@ def _sqlite_vec_document_scores(conn: sqlite3.Connection, document_id: str) -> d
     if not anchor_row:
         return {}
     anchor_vector = json.loads(anchor_row["vector_json"])
-    total = _indexed_document_count(conn)
+    total = min(_indexed_document_count(conn), SQLITE_VEC_MAX_K)
+    if total <= 0:
+        return {}
     rows = conn.execute(
         """
         SELECT document_id, distance

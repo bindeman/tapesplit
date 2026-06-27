@@ -85,6 +85,19 @@ from tapesplit.visual_assets import (
     DEFAULT_THUMBNAIL_WIDTH,
     extract_visual_assets_for_project,
 )
+from tapesplit.visual_embeddings import (
+    DEFAULT_VISUAL_EMBEDDING_BACKEND,
+    DEFAULT_VISUAL_EMBEDDING_MODEL,
+    build_visual_similarity_for_project,
+    check_visual_embedding_config,
+    embed_visual_assets_for_project,
+)
+from tapesplit.visual_text import (
+    DEFAULT_TEXT_MIN_CONFIDENCE,
+    DEFAULT_TEXT_RECOGNITION_BACKEND,
+    check_visual_text_config,
+    detect_text_for_project,
+)
 from tapesplit.visualization import export_visualization_data
 
 
@@ -446,6 +459,80 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Also extract visual assets for non-content scenes.",
     )
     visuals_parser.add_argument("--force", action="store_true", help="Overwrite existing extracted images.")
+
+    text_parser = subparsers.add_parser(
+        "detect-text",
+        help="Run local OCR over extracted scene/event keyframes.",
+    )
+    text_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    text_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    text_parser.add_argument(
+        "--subject-type",
+        choices=["all", "scene", "event"],
+        default="all",
+        help="Visual asset subject type to scan. Default: all.",
+    )
+    text_parser.add_argument(
+        "--backend",
+        choices=["auto", "apple-vision"],
+        default=DEFAULT_TEXT_RECOGNITION_BACKEND,
+        help="OCR backend. auto uses Apple Vision on macOS when available.",
+    )
+    text_parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=DEFAULT_TEXT_MIN_CONFIDENCE,
+        help=f"Minimum OCR confidence. Default: {DEFAULT_TEXT_MIN_CONFIDENCE}.",
+    )
+    text_parser.add_argument(
+        "--languages",
+        default="",
+        help="Comma-separated recognition language hints such as en-US,ru-RU. Default: auto.",
+    )
+    text_parser.add_argument("--force", action="store_true", help="Replace matching OCR observations.")
+
+    visual_embeddings_parser = subparsers.add_parser(
+        "embed-visuals",
+        help="Generate local image embeddings for extracted scene/event keyframes.",
+    )
+    visual_embeddings_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_embeddings_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    visual_embeddings_parser.add_argument(
+        "--subject-type",
+        choices=["all", "scene", "event"],
+        default="all",
+        help="Visual asset subject type to scan. Default: all.",
+    )
+    visual_embeddings_parser.add_argument(
+        "--backend",
+        choices=["auto", "sentence-transformers"],
+        default=DEFAULT_VISUAL_EMBEDDING_BACKEND,
+        help="Visual embedding backend. Default: auto.",
+    )
+    visual_embeddings_parser.add_argument(
+        "--model",
+        default=DEFAULT_VISUAL_EMBEDDING_MODEL,
+        help=f"SentenceTransformers image model. Default: {DEFAULT_VISUAL_EMBEDDING_MODEL}.",
+    )
+    visual_embeddings_parser.add_argument("--force", action="store_true", help="Replace matching visual embeddings.")
+
+    visual_similarity_parser = subparsers.add_parser(
+        "build-visual-similarity",
+        help="Build local visual-similarity candidate edges from visual embeddings.",
+    )
+    visual_similarity_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_similarity_parser.add_argument(
+        "--min-similarity",
+        type=float,
+        default=0.82,
+        help="Minimum cosine similarity for candidate visual edges. Default: 0.82.",
+    )
+    visual_similarity_parser.add_argument(
+        "--limit-per-asset",
+        type=int,
+        default=5,
+        help="Maximum visual neighbors to keep per asset. Default: 5.",
+    )
 
     faces_parser = subparsers.add_parser(
         "detect-faces",
@@ -879,6 +966,8 @@ def _doctor(as_json: bool) -> int:
     status.update(check_transcription_config())
     status.update(check_face_detection_config())
     status.update(check_face_embedding_config())
+    status.update(check_visual_text_config())
+    status.update(check_visual_embedding_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
     if as_json:
@@ -915,6 +1004,13 @@ def _doctor(as_json: bool) -> int:
         print(f"  Default face detection backend: {status['face_detection_default_backend']}")
         print(f"  ArcFace face embeddings: {'installed' if status['face_embedding_arcface'] else 'missing'}")
         print(f"  Default face embedding backend: {status['face_embedding_default_backend']}")
+        print(f"  Apple Vision OCR: {'installed' if status['apple_vision_ocr'] else 'missing'}")
+        print(f"  Default visual text backend: {status['visual_text_default_backend']}")
+        print(
+            "  Visual image embeddings: "
+            f"{'installed' if status['visual_embedding_sentence_transformers'] else 'missing'}"
+        )
+        print(f"  Default visual embedding backend: {status['visual_embedding_default_backend']}")
     return 0
 
 
@@ -1204,6 +1300,52 @@ def main(argv: list[str] | None = None) -> int:
                         thumbnail_width=args.thumbnail_width,
                         include_non_content=args.include_non_content,
                         force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "detect-text":
+            print(
+                json.dumps(
+                    detect_text_for_project(
+                        args.project,
+                        source_video_id=args.source_video_id,
+                        subject_type=args.subject_type,
+                        backend=args.backend,
+                        min_confidence=args.min_confidence,
+                        languages=[item.strip() for item in args.languages.split(",") if item.strip()],
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "embed-visuals":
+            print(
+                json.dumps(
+                    embed_visual_assets_for_project(
+                        args.project,
+                        source_video_id=args.source_video_id,
+                        subject_type=args.subject_type,
+                        backend=args.backend,
+                        model_name=args.model,
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "build-visual-similarity":
+            print(
+                json.dumps(
+                    build_visual_similarity_for_project(
+                        args.project,
+                        min_similarity=args.min_similarity,
+                        limit_per_asset=args.limit_per_asset,
                     ),
                     indent=2,
                     sort_keys=True,
