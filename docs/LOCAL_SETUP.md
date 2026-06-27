@@ -81,7 +81,9 @@ heavy diarization model:
 ```
 
 To run pyannote locally, install the optional dependency and configure a
-Hugging Face token accepted for the selected diarization model:
+Hugging Face token accepted for the selected diarization model. The default
+local model is `pyannote/speaker-diarization-community-1`; accept that model's
+Hugging Face terms before running the command.
 
 ```bash
 .venv/bin/python -m pip install -e '.[speaker-ai]'

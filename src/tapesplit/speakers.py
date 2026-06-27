@@ -14,7 +14,7 @@ from tapesplit.transcription import extract_project_audio
 
 SUPPORTED_SPEAKER_FORMATS = {"json", "rttm"}
 DEFAULT_SPEAKER_DIARIZATION_BACKEND = "pyannote"
-DEFAULT_SPEAKER_DIARIZATION_MODEL = "pyannote/speaker-diarization-3.1"
+DEFAULT_SPEAKER_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 
 _RTTM_RE = re.compile(r"\s+")
 
@@ -50,7 +50,12 @@ def diarize_project_speakers(
         raise RuntimeError("pyannote.audio is not installed") from exc
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    pipeline = Pipeline.from_pretrained(model_name, use_auth_token=token)
+    pipeline = Pipeline.from_pretrained(model_name, token=token)
+    if pipeline is None:
+        raise RuntimeError(
+            f"could not load speaker diarization model {model_name}. "
+            "Confirm the HF token has access and the model conditions are accepted."
+        )
     audio = extract_project_audio(project, source_video_id=source_video_id, force=False)
     run_id = f"spk_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     all_segments = []
