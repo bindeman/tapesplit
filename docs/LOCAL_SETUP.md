@@ -91,6 +91,13 @@ export HF_TOKEN=...
 .venv/bin/tapesplit speakers diarize /path/to/family-videos.tapesplit --source-video-id video_000001
 ```
 
+After diarization, generate reviewable speaker/person guesses from transcript,
+face, event, and relationship context:
+
+```bash
+.venv/bin/tapesplit speakers identify /path/to/family-videos.tapesplit
+```
+
 For whisper.cpp, download/build whisper.cpp separately and set the model path:
 
 ```bash

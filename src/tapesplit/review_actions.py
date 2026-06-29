@@ -11,6 +11,8 @@ from tapesplit.storage import append_jsonl, read_jsonl
 SUPPORTED_REVIEW_ACTIONS = {
     "confirm_identity",
     "reject_identity",
+    "confirm_speaker_identity",
+    "reject_speaker_identity",
     "confirm_person",
     "merge_person",
     "mark_role_only",
@@ -149,6 +151,8 @@ class _ProjectReviewState:
             "people_groups.jsonl": read_jsonl(project / "people_groups.jsonl"),
             "place_groups.jsonl": read_jsonl(project / "place_groups.jsonl"),
             "relationship_candidates.jsonl": read_jsonl(project / "relationship_candidates.jsonl"),
+            "speaker_identity_candidates.jsonl": read_jsonl(project / "speaker_identity_candidates.jsonl"),
+            "speaker_segments.jsonl": read_jsonl(project / "speaker_segments.jsonl"),
         }
 
     def rows(self, filename: str) -> list[dict[str, Any]]:
@@ -171,6 +175,8 @@ def _apply_action(state: _ProjectReviewState, correction: dict[str, Any]) -> lis
     dispatch = {
         "confirm_identity": _confirm_identity,
         "reject_identity": _reject_identity,
+        "confirm_speaker_identity": _confirm_speaker_identity,
+        "reject_speaker_identity": _reject_speaker_identity,
         "confirm_person": _confirm_person,
         "merge_person": _merge_person,
         "mark_role_only": _mark_role_only,
@@ -249,6 +255,44 @@ def _reject_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> 
         _append_unique(cluster, "review_correction_ids", correction["id"])
         effects.append(_effect("face_clusters.jsonl", cluster, "rejected person candidate on face cluster"))
     return effects
+
+
+def _confirm_speaker_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    candidate = _require_target(state, "speaker_identity_candidates.jsonl", correction)
+    payload = correction["payload"]
+    speaker_label = str(payload.get("speaker_label") or candidate.get("speaker_label") or "")
+    person_group_id = str(payload.get("person_group_id") or candidate.get("person_group_id") or "")
+    if not speaker_label or not person_group_id:
+        raise ValueError("confirm_speaker_identity requires speaker_label and person_group_id")
+
+    effects = []
+    candidate["speaker_label"] = speaker_label
+    candidate["person_group_id"] = person_group_id
+    _mark_reviewed(candidate, "confirmed", correction)
+    effects.append(_effect("speaker_identity_candidates.jsonl", candidate, "confirmed speaker identity candidate"))
+
+    for segment in state.rows("speaker_segments.jsonl"):
+        if str(segment.get("speaker_label") or "") != speaker_label:
+            continue
+        segment["person_group_id"] = person_group_id
+        segment["speaker_identity_review_status"] = "confirmed"
+        segment["speaker_identity_candidate_id"] = candidate.get("id")
+        _append_unique(segment, "review_correction_ids", correction["id"])
+        effects.append(_effect("speaker_segments.jsonl", segment, "linked speaker segment to person"))
+
+    person = state.row_by_id("people_groups.jsonl", person_group_id)
+    if person:
+        _append_unique(person, "confirmed_speaker_labels", speaker_label)
+        _append_unique(person, "confirmed_speaker_identity_candidate_ids", candidate.get("id"))
+        _append_unique(person, "review_correction_ids", correction["id"])
+        effects.append(_effect("people_groups.jsonl", person, "stored confirmed speaker on person"))
+    return effects
+
+
+def _reject_speaker_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    candidate = _require_target(state, "speaker_identity_candidates.jsonl", correction)
+    _mark_reviewed(candidate, "rejected", correction)
+    return [_effect("speaker_identity_candidates.jsonl", candidate, "rejected speaker identity candidate")]
 
 
 def _confirm_person(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
@@ -602,6 +646,7 @@ def _target_filename(correction: dict[str, Any]) -> str:
         "people_group": "people_groups.jsonl",
         "place_group": "place_groups.jsonl",
         "relationship_candidate": "relationship_candidates.jsonl",
+        "speaker_identity_candidate": "speaker_identity_candidates.jsonl",
     }.get(target_type, "")
 
 
@@ -651,6 +696,7 @@ def _infer_target_type(target_id: str) -> str:
         "people_group_": "people_group",
         "place_group_": "place_group",
         "relationship_candidate_": "relationship_candidate",
+        "speaker_identity_candidate_": "speaker_identity_candidate",
     }
     return next((value for prefix, value in prefixes.items() if target_id.startswith(prefix)), "")
 

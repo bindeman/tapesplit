@@ -16,6 +16,7 @@ from tapesplit.relationships import build_relationship_candidates
 from tapesplit.report import export_review_report
 from tapesplit.review_actions import reapply_review_corrections
 from tapesplit.search import DEFAULT_EMBEDDING_MODEL, build_search_index
+from tapesplit.speaker_identity import build_speaker_identity_candidates
 from tapesplit.storage import read_jsonl
 from tapesplit.story import export_story
 from tapesplit.visualization import export_visualization_data
@@ -84,6 +85,8 @@ def rebuild_project_outputs(
             "result": build_relationship_candidates(project, context_seconds=relationship_context_seconds),
         }
     )
+    if read_jsonl(project / "speaker_segments.jsonl"):
+        steps.append({"step": "build_speaker_identities", "result": build_speaker_identity_candidates(project)})
     _append_reapply_step(steps, project, "review_reapply_after_relationships")
     steps.append({"step": "build_context_graph", "result": build_context_graph(project)})
     _append_reapply_step(steps, project, "review_reapply_after_context_graph")

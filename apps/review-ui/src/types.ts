@@ -1,5 +1,6 @@
 export type TaskType =
   | "resolve_face_cluster"
+  | "resolve_speaker"
   | "confirm_place_context"
   | "confirm_relationship"
   | "resolve_place"
@@ -50,6 +51,7 @@ export interface VisualizationData {
     event_alignments?: EventAlignmentAsset[];
     event_reconciliations?: EventReconciliationAsset[];
     speaker_segments?: SpeakerSegment[];
+    speaker_identity_candidates?: SpeakerIdentityCandidate[];
   };
 }
 
@@ -286,6 +288,7 @@ export interface SpeakerTrack {
   start_s?: number;
   end_s?: number;
   total_duration_s?: number;
+  identity_candidates?: SpeakerIdentityCandidate[];
   segments: SpeakerSegment[];
 }
 
@@ -298,6 +301,29 @@ export interface SpeakerSegment {
   confidence?: number;
   provider?: string;
   model?: string;
+}
+
+export interface SpeakerIdentityCandidate {
+  speaker_identity_candidate_id?: string;
+  id?: string;
+  speaker_label: string;
+  person_group_id: string;
+  person_label: string;
+  person_kind?: string;
+  confidence?: number;
+  supporting_event_ids?: string[];
+  relationship_candidate_ids?: string[];
+  face_cluster_ids?: string[];
+  speaker_segment_count?: number;
+  speaker_segment_ids?: string[];
+  transcript_segment_count?: number;
+  transcript_segment_ids?: string[];
+  supporting_signals?: string[];
+  basis?: string[];
+  text_examples?: string[];
+  mentioned_people?: Array<Record<string, unknown>>;
+  signal_sources?: Record<string, number>;
+  review_status?: string;
 }
 
 export interface EventEntry {

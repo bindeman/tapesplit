@@ -45,6 +45,7 @@ def export_visualization_data(
     face_clusters = read_jsonl(project / "face_clusters.jsonl")
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
     speaker_segments = read_jsonl(project / "speaker_segments.jsonl")
+    speaker_identity_candidates = read_jsonl(project / "speaker_identity_candidates.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     event_alignments_by_event = {
@@ -81,6 +82,7 @@ def export_visualization_data(
         events_by_id=events_by_id,
         people_by_id=people_by_id,
         face_clusters_by_id=face_clusters_by_id,
+        speaker_identity_candidates=speaker_identity_candidates,
         assets_by_subject=assets_by_subject,
         video_offsets=video_offsets,
     )
@@ -126,7 +128,7 @@ def export_visualization_data(
                 _album_track(album, events_by_id, assets_by_subject)
                 for album in sorted(albums, key=lambda row: _number_or_large(row.get("start_s")))
             ],
-            "speakers": _speaker_tracks(speaker_segments),
+            "speakers": _speaker_tracks(speaker_segments, speaker_identity_candidates, people_by_id),
         },
         "places": [_place_node(place, events_by_id) for place in sorted(places, key=lambda row: _place_sort_key(row))],
         "place_contexts": place_contexts,
@@ -159,6 +161,7 @@ def export_visualization_data(
             "event_alignments": event_alignments,
             "event_reconciliations": event_reconciliations,
             "speaker_segments": speaker_segments,
+            "speaker_identity_candidates": speaker_identity_candidates,
             "by_subject": {key: value for key, value in sorted(assets_by_subject.items())},
         },
         "summary": {
@@ -184,6 +187,7 @@ def export_visualization_data(
             "event_reconciliations": len(event_reconciliations),
             "speaker_segments": len(speaker_segments),
             "speaker_tracks": len({str(row.get("speaker_label")) for row in speaker_segments if row.get("speaker_label")}),
+            "speaker_identity_candidates": len(speaker_identity_candidates),
         },
     }
     write_json(output, data)
@@ -319,12 +323,17 @@ def _scene_timeline_entry(
     }
 
 
-def _speaker_tracks(speaker_segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _speaker_tracks(
+    speaker_segments: list[dict[str, Any]],
+    speaker_identity_candidates: list[dict[str, Any]],
+    people_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for segment in speaker_segments:
         label = str(segment.get("speaker_label") or "").strip()
         if label:
             grouped[label].append(segment)
+    identity_by_label = _speaker_identity_candidates_by_label(speaker_identity_candidates)
     tracks = []
     for label, segments in grouped.items():
         sorted_segments = sorted(segments, key=lambda row: (str(row.get("source_video_id") or ""), _number_or_large(row.get("start_s"))))
@@ -341,6 +350,10 @@ def _speaker_tracks(speaker_segments: list[dict[str, Any]]) -> list[dict[str, An
                 "start_s": min((_number_or_large(segment.get("start_s")) for segment in sorted_segments), default=None),
                 "end_s": max((float(segment.get("end_s") or 0.0) for segment in sorted_segments), default=None),
                 "total_duration_s": round(total_duration, 3),
+                "identity_candidates": [
+                    _speaker_identity_candidate_for_review(candidate, people_by_id)
+                    for candidate in identity_by_label.get(label, [])[:5]
+                ],
                 "segments": [
                     {
                         "id": str(segment.get("id") or ""),
@@ -356,6 +369,51 @@ def _speaker_tracks(speaker_segments: list[dict[str, Any]]) -> list[dict[str, An
             }
         )
     return sorted(tracks, key=lambda row: (-int(row.get("segment_count") or 0), str(row.get("label") or "")))
+
+
+def _speaker_identity_candidates_by_label(candidates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for candidate in candidates:
+        if _review_closed(candidate):
+            continue
+        speaker_label = str(candidate.get("speaker_label") or "")
+        if speaker_label:
+            grouped[speaker_label].append(candidate)
+    return {
+        speaker_label: sorted(rows, key=lambda row: (_number_or_none(row.get("confidence")) or 0.0), reverse=True)
+        for speaker_label, rows in grouped.items()
+    }
+
+
+def _speaker_identity_candidate_for_review(
+    candidate: dict[str, Any],
+    people_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    person = people_by_id.get(str(candidate.get("person_group_id") or "")) or {}
+    metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
+    speaker_segment_ids = [str(item) for item in candidate.get("speaker_segment_ids") or []]
+    transcript_segment_ids = [str(item) for item in candidate.get("transcript_segment_ids") or []]
+    return {
+        "speaker_identity_candidate_id": str(candidate.get("id") or ""),
+        "speaker_label": str(candidate.get("speaker_label") or ""),
+        "person_group_id": str(candidate.get("person_group_id") or ""),
+        "person_label": str(candidate.get("person_label") or person.get("label") or ""),
+        "person_kind": candidate.get("person_kind") or person.get("kind"),
+        "confidence": candidate.get("confidence"),
+        "supporting_event_ids": [str(item) for item in candidate.get("canonical_event_ids") or []],
+        "relationship_candidate_ids": [str(item) for item in candidate.get("relationship_candidate_ids") or []],
+        "face_cluster_ids": [str(item) for item in candidate.get("face_cluster_ids") or []],
+        "speaker_segment_count": len(speaker_segment_ids),
+        "speaker_segment_ids": speaker_segment_ids[:20],
+        "transcript_segment_count": len(transcript_segment_ids),
+        "transcript_segment_ids": transcript_segment_ids[:20],
+        "supporting_signals": [str(item) for item in candidate.get("supporting_signals") or []],
+        "basis": [str(item) for item in candidate.get("basis") or []],
+        "text_examples": [str(item) for item in candidate.get("text_examples") or []],
+        "mentioned_people": candidate.get("mentioned_people") or [],
+        "signal_sources": metadata.get("signal_sources") if isinstance(metadata.get("signal_sources"), dict) else {},
+        "review_status": candidate.get("review_status") or "needs_review",
+    }
 
 
 def _people_track(
@@ -641,6 +699,7 @@ def _review_queues(
     events_by_id: dict[str, dict[str, Any]],
     people_by_id: dict[str, dict[str, Any]],
     face_clusters_by_id: dict[str, dict[str, Any]],
+    speaker_identity_candidates: list[dict[str, Any]],
     assets_by_subject: dict[str, list[dict[str, Any]]],
     video_offsets: dict[str, float],
 ) -> list[dict[str, Any]]:
@@ -684,6 +743,43 @@ def _review_queues(
                     ],
                 },
                 "actions": ["confirm_identity", "reject_identity", "rename_person", "merge_person", "mark_role_only"],
+            }
+        )
+
+    for speaker_label, candidates in _speaker_identity_candidates_by_label(speaker_identity_candidates).items():
+        review_candidates = [candidate for candidate in candidates if not _review_closed(candidate)]
+        if not review_candidates:
+            continue
+        top_candidate = review_candidates[0]
+        event_ids = _unique_items(
+            [
+                str(event_id)
+                for candidate in review_candidates
+                for event_id in candidate.get("canonical_event_ids") or []
+            ]
+        )
+        items.append(
+            {
+                "task_type": "resolve_speaker",
+                "source_record_type": "speaker_identity_candidate",
+                "source_id": str(top_candidate.get("id") or ""),
+                "title": f"Resolve speaker: {speaker_label}",
+                "prompt": "Which person, if any, is this recurring local speaker voice?",
+                "priority": 82,
+                "confidence": top_candidate.get("confidence"),
+                "review_status": top_candidate.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": _event_thumbnail_path(event_ids, assets_by_subject),
+                "candidate": {
+                    "speaker_label": speaker_label,
+                    "speaker_segment_count": len(top_candidate.get("speaker_segment_ids") or []),
+                    "identity_candidates": [
+                        _speaker_identity_candidate_for_review(candidate, people_by_id)
+                        for candidate in review_candidates[:5]
+                    ],
+                },
+                "actions": ["confirm_speaker_identity", "reject_speaker_identity"],
             }
         )
 
@@ -927,6 +1023,8 @@ def _review_item_tier(item: dict[str, Any]) -> tuple[str, str]:
 
     if task_type == "resolve_face_cluster":
         return _face_review_tier(candidate)
+    if task_type == "resolve_speaker":
+        return _speaker_review_tier(item, candidate)
     if task_type == "confirm_relationship":
         return "primary", "Relationship candidates change the people graph and should be explicitly confirmed."
     if task_type == "confirm_place_context":
@@ -952,6 +1050,20 @@ def _face_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
     if (_number_or_none(top_candidate.get("direct_name_strength")) or 0.0) >= 0.9 and quality not in {"low_quality", "unusable"}:
         return "primary", "Strong direct-name face match."
     return "backlog", "Low-quality or singleton face crop; keep as evidence but do not interrupt first-pass review."
+
+
+def _speaker_review_tier(item: dict[str, Any], candidate: dict[str, Any]) -> tuple[str, str]:
+    identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
+    top_candidate = identity_candidates[0] if identity_candidates and isinstance(identity_candidates[0], dict) else {}
+    confidence = _number_or_none(top_candidate.get("confidence")) or _number_or_none(item.get("confidence")) or 0.0
+    sources = top_candidate.get("signal_sources") if isinstance(top_candidate.get("signal_sources"), dict) else {}
+    if confidence >= 0.68 and (
+        sources.get("self_identification_phrase") or sources.get("role_identity_bridge")
+    ):
+        return "primary", "Speaker identity has a strong name/role bridge and improves narrator/person timelines."
+    if confidence >= 0.55:
+        return "primary", "Recurring speaker candidate is strong enough to review before export."
+    return "backlog", "Useful speaker context, but lower confidence than faces, dates, or relationship decisions."
 
 
 def _place_context_review_tier(item: dict[str, Any], candidate: dict[str, Any]) -> tuple[str, str]:
@@ -1038,6 +1150,28 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
             rationale=" ".join(rationale_bits),
             confidence=_number_or_none(top.get("confidence")) or confidence,
             payload={"face_cluster_id": item.get("source_id"), "person_group_id": person_group_id},
+        )
+
+    if task_type == "resolve_speaker":
+        identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
+        top = identity_candidates[0] if identity_candidates and isinstance(identity_candidates[0], dict) else {}
+        speaker_label = str(candidate.get("speaker_label") or item.get("title") or "speaker")
+        person_label = str(top.get("person_label") or "").strip()
+        speaker_identity_candidate_id = str(top.get("speaker_identity_candidate_id") or "").strip()
+        person_group_id = str(top.get("person_group_id") or "").strip()
+        if not speaker_identity_candidate_id or not person_group_id or not person_label:
+            return {}
+        return _suggestion(
+            action="confirm_speaker_identity",
+            target_id=speaker_identity_candidate_id,
+            target_type="speaker_identity_candidate",
+            label=f"{speaker_label} appears to be {person_label}",
+            rationale="Best current speaker/person guess from role, relationship, face, and transcript context. Keep editable because voice labels are still draft.",
+            confidence=_number_or_none(top.get("confidence")) or confidence,
+            payload={
+                "speaker_label": candidate.get("speaker_label"),
+                "person_group_id": person_group_id,
+            },
         )
 
     if task_type == "confirm_relationship":

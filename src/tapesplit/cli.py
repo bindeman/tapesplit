@@ -70,6 +70,11 @@ from tapesplit.search import (
     query_search_index,
     similar_search_documents,
 )
+from tapesplit.speaker_identity import (
+    DEFAULT_MAX_CANDIDATES_PER_SPEAKER,
+    DEFAULT_MIN_SPEAKER_IDENTITY_CONFIDENCE,
+    build_speaker_identity_candidates,
+)
 from tapesplit.speakers import (
     DEFAULT_SPEAKER_DIARIZATION_BACKEND,
     DEFAULT_SPEAKER_DIARIZATION_MODEL,
@@ -743,6 +748,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Add this source-time offset to imported speaker times. Default: 0.",
     )
     speaker_import.add_argument("--force", action="store_true", help="Replace existing speaker segments for this source.")
+    speaker_identify = speaker_subparsers.add_parser(
+        "identify",
+        help="Infer reviewable person identity candidates for local speaker tracks.",
+    )
+    speaker_identify.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_identify.add_argument(
+        "--min-confidence",
+        type=float,
+        default=DEFAULT_MIN_SPEAKER_IDENTITY_CONFIDENCE,
+        help=f"Minimum candidate confidence. Default: {DEFAULT_MIN_SPEAKER_IDENTITY_CONFIDENCE}.",
+    )
+    speaker_identify.add_argument(
+        "--max-candidates-per-speaker",
+        type=int,
+        default=DEFAULT_MAX_CANDIDATES_PER_SPEAKER,
+        help=f"Maximum candidates to keep per speaker. Default: {DEFAULT_MAX_CANDIDATES_PER_SPEAKER}.",
+    )
 
     geocode_parser = subparsers.add_parser(
         "geocode",
@@ -1606,6 +1628,19 @@ def main(argv: list[str] | None = None) -> int:
                             speaker_format=args.format,
                             offset_seconds=args.offset_seconds,
                             force=args.force,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.speaker_command == "identify":
+                print(
+                    json.dumps(
+                        build_speaker_identity_candidates(
+                            args.project,
+                            min_confidence=args.min_confidence,
+                            max_candidates_per_speaker=args.max_candidates_per_speaker,
                         ),
                         indent=2,
                         sort_keys=True,

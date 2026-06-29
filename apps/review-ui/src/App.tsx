@@ -46,6 +46,7 @@ import type {
   ReviewItem,
   SearchResult,
   SourceRange,
+  SpeakerIdentityCandidate,
   SuggestedReviewAction,
   TaskType,
 } from "./types";
@@ -63,6 +64,7 @@ type PlayerMoment = {
 
 const taskLabels: Record<string, string> = {
   resolve_face_cluster: "Faces",
+  resolve_speaker: "Speakers",
   confirm_place_context: "Place Links",
   confirm_relationship: "Relationships",
   resolve_place: "Places",
@@ -534,6 +536,29 @@ function ReviewSubjectPreview({
     );
   }
 
+  if (item.task_type === "resolve_speaker") {
+    const candidate = item.candidate as {
+      speaker_label?: string;
+      identity_candidates?: SpeakerIdentityCandidate[];
+    };
+    const top = candidate.identity_candidates?.[0];
+    return (
+      <div className="relation-preview">
+        <div className="subject-chip">
+          <div className="face-stack">
+            <Users size={18} />
+          </div>
+          <div>
+            <strong>{candidate.speaker_label || "Local speaker"}</strong>
+            <small>speaker track</small>
+          </div>
+        </div>
+        <span className="relation-predicate">appears to be</span>
+        <PersonChip label={top?.person_label || "Unknown person"} person={findPerson(people, top?.person_group_id, top?.person_label)} />
+      </div>
+    );
+  }
+
   if (item.task_type === "confirm_place_context") {
     const candidate = item.candidate as { source_place_id?: string; target_place_id?: string; predicate?: string };
     const source = places.find((place) => place.id === candidate.source_place_id);
@@ -601,6 +626,9 @@ function PlaceChip({
 function ReviewActionControls({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
   if (item.task_type === "resolve_face_cluster") {
     return <FaceClusterActions item={item} onQueue={onQueue} />;
+  }
+  if (item.task_type === "resolve_speaker") {
+    return <SpeakerIdentityActions item={item} onQueue={onQueue} />;
   }
   if (item.task_type === "resolve_place") {
     return <PlaceActions item={item} onQueue={onQueue} />;
@@ -705,6 +733,95 @@ function FaceClusterActions({ item, onQueue }: { item: ReviewItem; onQueue: (act
                 target_id: candidate.face_identity_candidate_id,
                 payload: {
                   face_cluster_id: item.source_id,
+                  person_group_id: candidate.person_group_id,
+                },
+              })),
+            )
+          }
+        />
+      </ActionRow>
+    </div>
+  );
+}
+
+function SpeakerIdentityActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+  const candidates = speakerIdentityCandidates(item);
+  const [selectedId, setSelectedId] = useState(candidates[0]?.speaker_identity_candidate_id ?? candidates[0]?.id ?? "");
+  const selected = candidates.find((candidate) => (candidate.speaker_identity_candidate_id ?? candidate.id) === selectedId);
+  return (
+    <div className="action-block">
+      <div className="candidate-list">
+        {candidates.map((candidate) => {
+          const candidateId = candidate.speaker_identity_candidate_id ?? candidate.id ?? "";
+          return (
+            <label key={candidateId} className="candidate-option">
+              <input
+                type="radio"
+                name={`speaker-identity-${item.id}`}
+                checked={selectedId === candidateId}
+                onChange={() => setSelectedId(candidateId)}
+              />
+              <span>
+                <strong>{candidate.person_label}</strong>
+                <small>
+                  {formatConfidence(candidate.confidence)}
+                  {candidate.person_kind ? ` · ${candidate.person_kind}` : ""}
+                  {candidate.signal_sources?.role_identity_bridge ? " · role bridge" : ""}
+                  {candidate.signal_sources?.self_identification_phrase ? " · self ID" : ""}
+                </small>
+                {candidate.basis?.length ? <small>{candidate.basis.slice(0, 2).join(" ")}</small> : null}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <ActionRow>
+        <CommandButton
+          icon={UserCheck}
+          label="Confirm Speaker"
+          disabled={!selected}
+          onClick={() =>
+            selected &&
+            onQueue({
+              ...baseAction(item, "confirm_speaker_identity"),
+              target_id: selected.speaker_identity_candidate_id ?? selected.id ?? item.source_id,
+              payload: {
+                speaker_label: selected.speaker_label,
+                person_group_id: selected.person_group_id,
+              },
+            })
+          }
+        />
+        <CommandButton
+          icon={X}
+          label="Reject Candidate"
+          tone="danger"
+          disabled={!selected}
+          onClick={() =>
+            selected &&
+            onQueue({
+              ...baseAction(item, "reject_speaker_identity"),
+              target_id: selected.speaker_identity_candidate_id ?? selected.id ?? item.source_id,
+              payload: {
+                speaker_label: selected.speaker_label,
+                person_group_id: selected.person_group_id,
+              },
+            })
+          }
+        />
+        <CommandButton
+          icon={XCircle}
+          label="No Match"
+          tone="danger"
+          disabled={!candidates.length}
+          onClick={() =>
+            onQueue(
+              candidates.map((candidate) => ({
+                ...baseAction(item, "reject_speaker_identity"),
+                id: `reject_${candidate.speaker_identity_candidate_id ?? candidate.id}`,
+                target_id: candidate.speaker_identity_candidate_id ?? candidate.id ?? item.source_id,
+                payload: {
+                  speaker_label: candidate.speaker_label,
                   person_group_id: candidate.person_group_id,
                 },
               })),
@@ -1830,6 +1947,13 @@ function identityCandidates(item: ReviewItem) {
   return candidate.identity_candidates ?? [];
 }
 
+function speakerIdentityCandidates(item: ReviewItem): SpeakerIdentityCandidate[] {
+  const candidate = item.candidate as {
+    identity_candidates?: SpeakerIdentityCandidate[];
+  };
+  return candidate.identity_candidates ?? [];
+}
+
 function normalizedPlaceOptions(candidate: {
   label?: string;
   display_label?: string;
@@ -1856,6 +1980,11 @@ function itemHasPendingAction(item: ReviewItem, actions: ReviewAction[]) {
   const targetIds = new Set([item.source_id]);
   if (item.task_type === "resolve_face_cluster") {
     identityCandidates(item).forEach((candidate) => targetIds.add(candidate.face_identity_candidate_id));
+  }
+  if (item.task_type === "resolve_speaker") {
+    speakerIdentityCandidates(item).forEach((candidate) => {
+      targetIds.add(candidate.speaker_identity_candidate_id ?? candidate.id ?? "");
+    });
   }
   if (item.task_type === "confirm_relationship") {
     relationshipIdsFromItem(item).forEach((relationshipId) => targetIds.add(relationshipId));

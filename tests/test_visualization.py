@@ -180,6 +180,24 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
         ],
     )
     _write_jsonl(
+        tmp_path / "speaker_identity_candidates.jsonl",
+        [
+            {
+                "id": "speaker_identity_candidate_000001",
+                "speaker_label": "LOCAL_SPEAKER_00",
+                "person_group_id": "people_group_000001",
+                "person_label": "Filip",
+                "confidence": 0.72,
+                "review_status": "needs_review",
+                "speaker_segment_ids": ["speaker_segment_000001", "speaker_segment_000002"],
+                "canonical_event_ids": ["canonical_event_000001"],
+                "supporting_signals": ["speaker appears to self-identify by name"],
+                "basis": ["test basis"],
+                "metadata": {"signal_sources": {"self_identification_phrase": 1}},
+            }
+        ],
+    )
+    _write_jsonl(
         tmp_path / "context_edges.jsonl",
         [
             {
@@ -276,8 +294,11 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     )
     assert place_context_edge["source_label"] == "home (Madison, Wisconsin context)"
     assert payload["relationships"]["face_identity_candidates"][0]["person_label"] == "Filip"
-    assert {item["task_type"] for item in payload["review_queue"]} == {"confirm_relationship"}
-    assert {item["source_id"] for item in payload["review_queue"]} == {"relationship_candidate_000001"}
+    assert {item["task_type"] for item in payload["review_queue"]} == {"confirm_relationship", "resolve_speaker"}
+    assert {item["source_id"] for item in payload["review_queue"]} == {
+        "relationship_candidate_000001",
+        "speaker_identity_candidate_000001",
+    }
     assert {item["task_type"] for item in payload["review_backlog"]} == {
         "resolve_face_cluster",
         "confirm_place_context",
@@ -304,15 +325,19 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert relationship_review["related_event_ids"] == ["canonical_event_000001"]
     assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
     assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"
-    assert payload["summary"]["review_items"] == 1
+    assert payload["summary"]["review_items"] == 2
     assert payload["summary"]["review_backlog_items"] == 2
-    assert payload["summary"]["review_total_items"] == 3
-    assert payload["summary"]["suggested_review_actions"] == 3
+    assert payload["summary"]["review_total_items"] == 4
+    assert payload["summary"]["suggested_review_actions"] == 4
     assert payload["summary"]["speaker_segments"] == 2
     assert payload["summary"]["speaker_tracks"] == 1
+    assert payload["summary"]["speaker_identity_candidates"] == 1
     assert payload["tracks"]["speakers"][0]["label"] == "LOCAL_SPEAKER_00"
     assert payload["tracks"]["speakers"][0]["segment_count"] == 2
+    assert payload["tracks"]["speakers"][0]["identity_candidates"][0]["person_label"] == "Filip"
+    assert any(item["task_type"] == "resolve_speaker" for item in payload["review_queue"])
     assert payload["assets"]["speaker_segments"][0]["id"] == "speaker_segment_000001"
+    assert payload["assets"]["speaker_identity_candidates"][0]["id"] == "speaker_identity_candidate_000001"
     assert payload["assets"]["face_clusters"][0]["id"] == "face_cluster_000001"
     assert payload["assets"]["by_subject"]["event:canonical_event_000001"][0]["thumbnail_path"]
 

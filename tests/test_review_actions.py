@@ -70,6 +70,46 @@ def test_apply_review_actions_confirms_face_identity(tmp_path: Path):
     assert corrections[0]["action"] == "confirm_identity"
 
 
+def test_apply_review_actions_confirms_speaker_identity(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "speaker_identity_candidates.jsonl",
+        [
+            {
+                "id": "speaker_identity_candidate_000001",
+                "speaker_label": "LOCAL_SPEAKER_00",
+                "person_group_id": "people_group_000001",
+                "person_label": "Ekaterina",
+                "review_status": "needs_review",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "speaker_segments.jsonl",
+        [{"id": "speaker_segment_000001", "speaker_label": "LOCAL_SPEAKER_00", "start_s": 1, "end_s": 2}],
+    )
+    _write_jsonl(tmp_path / "people_groups.jsonl", [{"id": "people_group_000001", "label": "Ekaterina"}])
+
+    result = apply_review_actions(
+        tmp_path,
+        actions=[
+            {
+                "action": "confirm_speaker_identity",
+                "target_id": "speaker_identity_candidate_000001",
+                "payload": {"speaker_label": "LOCAL_SPEAKER_00", "person_group_id": "people_group_000001"},
+            }
+        ],
+    )
+
+    candidates = read_jsonl(tmp_path / "speaker_identity_candidates.jsonl")
+    segments = read_jsonl(tmp_path / "speaker_segments.jsonl")
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+
+    assert result["by_action"]["confirm_speaker_identity"] == 1
+    assert candidates[0]["review_status"] == "confirmed"
+    assert segments[0]["person_group_id"] == "people_group_000001"
+    assert people[0]["confirmed_speaker_labels"] == ["LOCAL_SPEAKER_00"]
+
+
 def test_apply_review_actions_scopes_one_home_without_merging_other_homes(tmp_path: Path):
     _write_jsonl(
         tmp_path / "place_groups.jsonl",
