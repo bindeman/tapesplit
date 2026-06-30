@@ -59,6 +59,11 @@ function reviewApiPlugin(): Plugin {
             await sendJson(res, await loadProject());
             return;
           }
+          if (req.method === "POST" && req.url.startsWith("/api/apply-suggestions")) {
+            await applySuggestedActions(req);
+            await sendJson(res, await loadProject());
+            return;
+          }
           if (req.method === "POST" && req.url.startsWith("/api/apply")) {
             await applyPendingActions();
             await sendJson(res, await loadProject());
@@ -215,6 +220,13 @@ async function applyPendingActions() {
   await appendFile(appliedActionsPath, pending.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
   const archivePath = join(projectDir, `review-actions.applied.${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`);
   renameSync(pendingActionsPath, archivePath);
+}
+
+async function applySuggestedActions(req: IncomingMessage) {
+  const url = new URL(req.url || "", "http://localhost");
+  const tier = url.searchParams.get("tier") || "primary";
+  await run(tapesplitBin, ["review", "apply-suggestions", projectDir, "--tier", tier, "--reviewer", "review-ui-bulk"], repoRoot);
+  await refreshDerivedOutputs();
 }
 
 async function reapplyCorrections() {

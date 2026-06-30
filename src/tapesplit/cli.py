@@ -56,6 +56,7 @@ from tapesplit.report import export_review_report
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.review_actions import (
     apply_review_actions,
+    apply_review_suggestions,
     list_review_corrections,
     reapply_review_corrections,
 )
@@ -1049,6 +1050,33 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     review_apply.add_argument("project", type=Path, help="TapeSplit project directory.")
     review_apply.add_argument("actions", type=Path, help="JSON/JSONL review action file.")
+    review_apply_suggestions = review_subparsers.add_parser(
+        "apply-suggestions",
+        help="Apply review_queue suggested actions in bulk.",
+    )
+    review_apply_suggestions.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_apply_suggestions.add_argument(
+        "--tier",
+        choices=["primary", "backlog", "all"],
+        default="primary",
+        help="Which suggestion tier to apply.",
+    )
+    review_apply_suggestions.add_argument(
+        "--min-confidence",
+        type=float,
+        default=None,
+        help="Only apply suggestions at or above this confidence.",
+    )
+    review_apply_suggestions.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print selected actions without writing corrections.",
+    )
+    review_apply_suggestions.add_argument(
+        "--reviewer",
+        default="bulk-suggestion",
+        help="Reviewer label to store on generated corrections.",
+    )
     review_reapply = review_subparsers.add_parser(
         "reapply",
         help="Replay existing corrections.jsonl against regenerated project artifacts.",
@@ -1836,6 +1864,21 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     json.dumps(
                         apply_review_actions(args.project, actions_path=args.actions),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.review_command == "apply-suggestions":
+                print(
+                    json.dumps(
+                        apply_review_suggestions(
+                            args.project,
+                            tier=args.tier,
+                            min_confidence=args.min_confidence,
+                            dry_run=args.dry_run,
+                            reviewer=args.reviewer,
+                        ),
                         indent=2,
                         sort_keys=True,
                     )

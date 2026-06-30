@@ -682,6 +682,10 @@ small {
   background: #a4422a;
 }
 
+.queue-command {
+  width: 100%;
+}
+
 .side-panel {
   min-height: 0;
   display: grid;

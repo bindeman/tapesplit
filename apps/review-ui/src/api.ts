@@ -26,6 +26,12 @@ export async function applyReviewActions(): Promise<ProjectBundle> {
   return readResponse(response);
 }
 
+export async function applySuggestedReviewActions(tier = "primary"): Promise<ProjectBundle> {
+  const params = new URLSearchParams({ tier });
+  const response = await fetch(`/api/apply-suggestions?${params.toString()}`, { method: "POST" });
+  return readResponse(response);
+}
+
 export async function reapplyReviewCorrections(): Promise<ProjectBundle> {
   const response = await fetch("/api/reapply", { method: "POST" });
   return readResponse(response);

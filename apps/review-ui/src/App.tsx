@@ -24,6 +24,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   applyReviewActions,
+  applySuggestedReviewActions,
   assetUrl,
   loadProject,
   queueReviewAction,
@@ -129,6 +130,7 @@ export function App() {
   }, [primaryReviewItems, reviewBacklog, reviewScope]);
   const pendingActions = bundle?.pendingActions ?? [];
   const taskCounts = useMemo(() => countBy(reviewItems, (item) => item.task_type), [reviewItems]);
+  const suggestedActionCount = useMemo(() => countSuggestedActions(reviewItems), [reviewItems]);
 
   const filteredReviewItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -190,6 +192,20 @@ export function App() {
       const next = await applyReviewActions();
       setBundle(next);
       setStatus("Corrections applied and refreshed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyBestGuesses() {
+    setBusy(true);
+    setError("");
+    try {
+      const next = await applySuggestedReviewActions(reviewScope);
+      setBundle(next);
+      setStatus(`Accepted best guesses for ${reviewScope} review`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -290,6 +306,10 @@ export function App() {
               ))}
             </select>
           </div>
+          <button className="command-button queue-command" disabled={busy || !suggestedActionCount} onClick={() => void applyBestGuesses()}>
+            <CheckCircle2 size={16} />
+            <span>Accept Best Guesses</span>
+          </button>
         </div>
 
         <ReviewQueue
@@ -1919,6 +1939,10 @@ function reviewActionsFromSuggestion(suggestion: SuggestedReviewAction): ReviewA
       notes: suggestion.rationale ?? "",
     },
   ];
+}
+
+function countSuggestedActions(items: ReviewItem[]) {
+  return items.reduce((count, item) => count + (item.suggested_action ? reviewActionsFromSuggestion(item.suggested_action).length : 0), 0);
 }
 
 function relationshipIdsFromItem(item: ReviewItem) {

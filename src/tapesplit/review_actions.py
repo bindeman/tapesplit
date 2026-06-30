@@ -36,6 +36,9 @@ SUPPORTED_REVIEW_ACTIONS = {
     "edit_date",
 }
 
+REVIEW_SUGGESTION_TIERS = {"primary", "backlog", "all"}
+CLOSED_REVIEW_STATUSES = {"confirmed", "rejected", "excluded", "merged"}
+
 
 def apply_review_actions(
     project_dir: Path,
@@ -71,6 +74,38 @@ def apply_review_actions(
         "touched_files": sorted(touched_files | {"corrections.jsonl"}),
         "outputs": {"corrections": str(project / "corrections.jsonl")},
     }
+
+
+def apply_review_suggestions(
+    project_dir: Path,
+    *,
+    tier: str = "primary",
+    min_confidence: float | None = None,
+    dry_run: bool = False,
+    reviewer: str = "bulk-suggestion",
+) -> dict[str, Any]:
+    project = project_dir.expanduser().resolve()
+    selected, skipped = _collect_review_suggestion_actions(
+        project,
+        tier=tier,
+        min_confidence=min_confidence,
+        reviewer=reviewer,
+    )
+    summary: dict[str, Any] = {
+        "project": str(project),
+        "tier": tier,
+        "dry_run": dry_run,
+        "suggestions_selected": len(selected),
+        "by_action": _count_by(selected, "action"),
+        "skipped": skipped,
+    }
+    if dry_run or not selected:
+        summary["actions_applied"] = 0
+        summary["selected_actions"] = selected
+        return summary
+
+    applied = apply_review_actions(project, actions=selected)
+    return {**applied, **summary, "actions_applied": applied["actions_applied"]}
 
 
 def reapply_review_corrections(
@@ -718,6 +753,115 @@ def _load_actions(path: Path | None) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         return [payload]
     raise ValueError(f"unsupported review action payload in {source}")
+
+
+def _collect_review_suggestion_actions(
+    project: Path,
+    *,
+    tier: str,
+    min_confidence: float | None,
+    reviewer: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if tier not in REVIEW_SUGGESTION_TIERS:
+        raise ValueError(f"tier must be one of: {', '.join(sorted(REVIEW_SUGGESTION_TIERS))}")
+
+    review_items = _load_review_items_for_tier(project, tier)
+    state = _ProjectReviewState(project)
+    selected: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    seen_target_ids: set[str] = set()
+
+    for item in review_items:
+        item_id = str(item.get("id") or item.get("source_id") or "")
+        if _is_review_closed(item):
+            skipped.append({"item_id": item_id, "reason": "review item already closed"})
+            continue
+        suggestion = item.get("suggested_action") if isinstance(item.get("suggested_action"), dict) else {}
+        if not suggestion:
+            skipped.append({"item_id": item_id, "reason": "no suggested action"})
+            continue
+        confidence = _number_or_none(suggestion.get("confidence")) or _number_or_none(item.get("confidence"))
+        if min_confidence is not None and (confidence is None or confidence < min_confidence):
+            skipped.append(
+                {
+                    "item_id": item_id,
+                    "target_id": suggestion.get("target_id"),
+                    "reason": "below min confidence",
+                    "confidence": confidence,
+                }
+            )
+            continue
+
+        for action in _actions_from_suggestion(item, suggestion, reviewer=reviewer):
+            target_id = str(action.get("target_id") or "")
+            if not target_id:
+                skipped.append({"item_id": item_id, "reason": "suggested action missing target_id"})
+                continue
+            if target_id in seen_target_ids:
+                skipped.append({"item_id": item_id, "target_id": target_id, "reason": "duplicate target"})
+                continue
+            target_filename = _target_filename(action)
+            target_row = state.row_by_id(target_filename, target_id) if target_filename else None
+            if target_filename and target_row is None:
+                skipped.append({"item_id": item_id, "target_id": target_id, "reason": "target missing"})
+                continue
+            if target_row is not None and _is_review_closed(target_row):
+                skipped.append({"item_id": item_id, "target_id": target_id, "reason": "target already closed"})
+                continue
+            seen_target_ids.add(target_id)
+            selected.append(action)
+
+    return selected, skipped
+
+
+def _load_review_items_for_tier(project: Path, tier: str) -> list[dict[str, Any]]:
+    visualization_path = project / "visualization.json"
+    if not visualization_path.exists():
+        raise ValueError(f"missing visualization.json in {project}; run tapesplit export-visualization first")
+    payload = json.loads(visualization_path.read_text(encoding="utf-8"))
+    primary = payload.get("review_queue") if isinstance(payload.get("review_queue"), list) else []
+    backlog = payload.get("review_backlog") if isinstance(payload.get("review_backlog"), list) else []
+    if tier == "primary":
+        return list(primary)
+    if tier == "backlog":
+        return list(backlog)
+    return [*primary, *backlog]
+
+
+def _actions_from_suggestion(
+    item: dict[str, Any],
+    suggestion: dict[str, Any],
+    *,
+    reviewer: str,
+) -> list[dict[str, Any]]:
+    payload = dict(suggestion.get("payload") if isinstance(suggestion.get("payload"), dict) else {})
+    target_type = str(suggestion.get("target_type") or item.get("source_record_type") or "")
+    notes = str(suggestion.get("rationale") or "")
+    item_id = str(item.get("id") or item.get("source_id") or "review_item")
+    action_name = str(suggestion.get("action") or "")
+    relationship_ids = [
+        str(relationship_id)
+        for relationship_id in payload.get("relationship_ids", [])
+        if relationship_id
+    ] if isinstance(payload.get("relationship_ids"), list) else []
+
+    target_ids = relationship_ids if action_name == "confirm_relationship" and relationship_ids else [str(suggestion.get("target_id") or "")]
+    return [
+        {
+            "id": f"{item_id}_{action_name}_{index:02d}",
+            "action": action_name,
+            "target_id": target_id,
+            "target_type": target_type,
+            "reviewer": reviewer,
+            "notes": notes,
+            "payload": payload,
+        }
+        for index, target_id in enumerate(target_ids, start=1)
+    ]
+
+
+def _is_review_closed(row: dict[str, Any]) -> bool:
+    return str(row.get("review_status") or "").casefold() in CLOSED_REVIEW_STATUSES
 
 
 def _selected_geocode_from_payload(payload: dict[str, Any]) -> dict[str, Any]:

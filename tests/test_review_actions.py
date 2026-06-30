@@ -2,7 +2,12 @@ import json
 from pathlib import Path
 
 from tapesplit.cli import main
-from tapesplit.review_actions import apply_review_actions, list_review_corrections, reapply_review_corrections
+from tapesplit.review_actions import (
+    apply_review_actions,
+    apply_review_suggestions,
+    list_review_corrections,
+    reapply_review_corrections,
+)
 from tapesplit.storage import read_jsonl
 
 
@@ -362,5 +367,214 @@ def test_review_apply_cli_loads_jsonl_actions(tmp_path: Path):
     assert corrections[0]["action"] == "confirm_event_date"
 
 
+def test_apply_review_suggestions_applies_primary_only(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "date_groups.jsonl",
+        [
+            {"id": "date_group_000001", "label": "Sep 7 2005", "review_status": "needs_review"},
+            {"id": "date_group_000002", "label": "Sep 8 2005", "review_status": "needs_review"},
+        ],
+    )
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item(
+                "review_item_000001",
+                "date_group_000001",
+                "date_group",
+                "confirm_event_date",
+                {"date_value": "2005-09-07", "precision": "day"},
+            )
+        ],
+        review_backlog=[
+            _suggested_item(
+                "review_backlog_item_000001",
+                "date_group_000002",
+                "date_group",
+                "confirm_event_date",
+                {"date_value": "2005-09-08", "precision": "day"},
+            )
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path, tier="primary", reviewer="test")
+    dates = read_jsonl(tmp_path / "date_groups.jsonl")
+    corrections = read_jsonl(tmp_path / "corrections.jsonl")
+
+    assert result["suggestions_selected"] == 1
+    assert dates[0]["review_status"] == "confirmed"
+    assert dates[0]["reviewed_by"] == "test"
+    assert dates[1]["review_status"] == "needs_review"
+    assert corrections[0]["source_action_id"] == "review_item_000001_confirm_event_date_01"
+
+
+def test_apply_review_suggestions_dry_run_does_not_write(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "date_groups.jsonl",
+        [{"id": "date_group_000001", "label": "Sep 7 2005", "review_status": "needs_review"}],
+    )
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item(
+                "review_item_000001",
+                "date_group_000001",
+                "date_group",
+                "confirm_event_date",
+                {"date_value": "2005-09-07", "precision": "day"},
+            )
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path, dry_run=True)
+    dates = read_jsonl(tmp_path / "date_groups.jsonl")
+
+    assert result["suggestions_selected"] == 1
+    assert result["actions_applied"] == 0
+    assert result["selected_actions"][0]["target_id"] == "date_group_000001"
+    assert dates[0]["review_status"] == "needs_review"
+    assert not (tmp_path / "corrections.jsonl").exists()
+
+
+def test_apply_review_suggestions_expands_grouped_relationships(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "relationship_candidates.jsonl",
+        [
+            {"id": "relationship_candidate_000001", "review_status": "needs_review"},
+            {"id": "relationship_candidate_000002", "review_status": "needs_review"},
+        ],
+    )
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item(
+                "review_item_000001",
+                "relationship_candidate_000001",
+                "relationship_candidate",
+                "confirm_relationship",
+                {
+                    "predicate": "mother_of",
+                    "subject_label": "Ekaterina",
+                    "object_label": "Filip",
+                    "relationship_ids": ["relationship_candidate_000001", "relationship_candidate_000002"],
+                },
+            )
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path)
+    relationships = read_jsonl(tmp_path / "relationship_candidates.jsonl")
+
+    assert result["suggestions_selected"] == 2
+    assert result["by_action"] == {"confirm_relationship": 2}
+    assert [row["review_status"] for row in relationships] == ["confirmed", "confirmed"]
+
+
+def test_apply_review_suggestions_confirms_speaker_identity(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "speaker_identity_candidates.jsonl",
+        [
+            {
+                "id": "speaker_identity_candidate_000001",
+                "speaker_label": "LOCAL_SPEAKER_00",
+                "person_group_id": "people_group_000001",
+                "person_label": "Ekaterina",
+                "review_status": "needs_review",
+            }
+        ],
+    )
+    _write_jsonl(
+        tmp_path / "speaker_segments.jsonl",
+        [{"id": "speaker_segment_000001", "speaker_label": "LOCAL_SPEAKER_00"}],
+    )
+    _write_jsonl(tmp_path / "people_groups.jsonl", [{"id": "people_group_000001", "label": "Ekaterina"}])
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item(
+                "review_item_000001",
+                "speaker_identity_candidate_000001",
+                "speaker_identity_candidate",
+                "confirm_speaker_identity",
+                {"speaker_label": "LOCAL_SPEAKER_00", "person_group_id": "people_group_000001"},
+            )
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path)
+    segments = read_jsonl(tmp_path / "speaker_segments.jsonl")
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+
+    assert result["by_action"] == {"confirm_speaker_identity": 1}
+    assert segments[0]["person_group_id"] == "people_group_000001"
+    assert people[0]["confirmed_speaker_labels"] == ["LOCAL_SPEAKER_00"]
+
+
+def test_apply_review_suggestions_skips_duplicate_targets(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "date_groups.jsonl",
+        [{"id": "date_group_000001", "label": "Sep 7 2005", "review_status": "needs_review"}],
+    )
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item(
+                "review_item_000001",
+                "date_group_000001",
+                "date_group",
+                "confirm_event_date",
+                {"date_value": "2005-09-07", "precision": "day"},
+            ),
+            _suggested_item(
+                "review_item_000002",
+                "date_group_000001",
+                "date_group",
+                "confirm_event_date",
+                {"date_value": "2005-09-07", "precision": "day"},
+            ),
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path, dry_run=True)
+
+    assert result["suggestions_selected"] == 1
+    assert result["skipped"][0]["reason"] == "duplicate target"
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+
+
+def _write_visualization(
+    path: Path,
+    *,
+    review_queue: list[dict] | None = None,
+    review_backlog: list[dict] | None = None,
+) -> None:
+    payload = {"review_queue": review_queue or [], "review_backlog": review_backlog or []}
+    (path / "visualization.json").write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _suggested_item(
+    item_id: str,
+    target_id: str,
+    target_type: str,
+    action: str,
+    payload: dict,
+) -> dict:
+    return {
+        "id": item_id,
+        "source_id": target_id,
+        "source_record_type": target_type,
+        "review_status": "needs_review",
+        "confidence": 0.9,
+        "suggested_action": {
+            "action": action,
+            "target_id": target_id,
+            "target_type": target_type,
+            "label": "Best guess",
+            "rationale": "Test suggestion",
+            "confidence": 0.9,
+            "payload": payload,
+        },
+    }
