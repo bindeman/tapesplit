@@ -801,6 +801,11 @@ def _collect_review_suggestion_actions(
     selected: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     seen_target_ids: set[str] = set()
+    tuned_floors: dict[str, float] = {}
+    if policy == "safe":
+        from tapesplit.calibration import load_review_policy_floors
+
+        tuned_floors = load_review_policy_floors(project)
 
     for item in review_items:
         item_id = str(item.get("id") or item.get("source_id") or "")
@@ -840,7 +845,7 @@ def _collect_review_suggestion_actions(
                 skipped.append({"item_id": item_id, "target_id": target_id, "reason": "target already closed"})
                 continue
             if policy == "safe":
-                block_reason = _safe_policy_block_reason(action, confidence, target_row)
+                block_reason = _safe_policy_block_reason(action, confidence, target_row, tuned_floors)
                 if block_reason:
                     skipped.append(
                         {
@@ -862,11 +867,14 @@ def _safe_policy_block_reason(
     action: dict[str, Any],
     confidence: float | None,
     target_row: dict[str, Any] | None,
+    tuned_floors: dict[str, float] | None = None,
 ) -> str | None:
     """Return why the safe auto-accept policy refuses this action, or None."""
 
     action_name = str(action.get("action") or "")
     floor = SAFE_AUTO_ACCEPT_MIN_CONFIDENCE.get(action_name, 0.7)
+    if tuned_floors and action_name in tuned_floors and floor is not None:
+        floor = tuned_floors[action_name]
     if floor is not None:
         if confidence is None:
             return f"{action_name} has no confidence (needs >= {floor})"

@@ -557,12 +557,18 @@ MAX_SUGGESTION_PASSES = 3
 
 
 def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
+    from tapesplit.calibration import calibrate_review_policy
     from tapesplit.pipeline import rebuild_project_outputs
     from tapesplit.review_actions import apply_review_suggestions
 
     tier = context.options.suggestions_tier
     if not tier:
         raise StageSkipped("suggestion auto-acceptance disabled")
+
+    # Close the loop before accepting anything: grade past suggestions
+    # against this project's human decisions and tune the per-action floors
+    # the safe policy is about to use.
+    calibration = calibrate_review_policy(context.project)
 
     # Accepted actions can unlock further ones: e.g. a merge_person identity
     # bridge lets a previously gated relationship pass the safe policy after
@@ -598,11 +604,17 @@ def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
             embedding_backend=context.options.search_embedding_backend,
         )
 
+    tuned = {
+        action: entry["tuned_floor"]
+        for action, entry in (calibration.get("report") or {}).items()
+        if entry.get("adjustment") in ("raised", "lowered")
+    }
     return {
         "tier": tier,
         "actions_applied": total_applied,
         "by_action": by_action,
         "passes": len(passes),
+        "calibrated_floors": tuned or None,
         "skipped": last_skipped,
     }
 

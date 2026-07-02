@@ -1195,6 +1195,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="safe",
         help="safe: per-action confidence floors + relationship corroboration gates; legacy: tier/min-confidence only.",
     )
+    review_calibrate = review_subparsers.add_parser(
+        "calibrate",
+        help="Tune safe-policy confidence floors from this project's review outcomes.",
+    )
+    review_calibrate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_calibrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the tuned policy without writing review_policy.json.",
+    )
     review_reapply = review_subparsers.add_parser(
         "reapply",
         help="Replay existing corrections.jsonl against regenerated project artifacts.",
@@ -2129,6 +2139,17 @@ def main(argv: list[str] | None = None) -> int:
                             reviewer=args.reviewer,
                             policy=args.policy,
                         ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.review_command == "calibrate":
+                from tapesplit.calibration import calibrate_review_policy
+
+                print(
+                    json.dumps(
+                        calibrate_review_policy(args.project, write=not args.dry_run),
                         indent=2,
                         sort_keys=True,
                     )

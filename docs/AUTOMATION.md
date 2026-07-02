@@ -114,6 +114,25 @@ tier selection:
 suggestions carry a `safe policy: <reason>` entry in the result so the review
 UI can explain why something still needs a human.
 
+### Closed-loop calibration
+
+Every review decision is ground truth about the system's suggestions, and
+`src/tapesplit/calibration.py` closes the loop:
+
+- human confirmations count for a suggestion type; human rejections count
+  against it; an auto-accepted correction later rejected or edited by a human
+  counts double against it (automation asserted something a person had to
+  undo).
+- `tapesplit review calibrate <project>` computes Laplace-smoothed precision
+  per action type from `corrections.jsonl` and tunes the safe-policy floors
+  toward per-type precision targets (e.g. 0.95 for identities and
+  relationships), bounded per type and only once ≥8 human observations
+  exist. Results are written to `review_policy.json` in the project.
+- `apply_review_suggestions --policy safe` reads the tuned floors, and the
+  `auto` pipeline recalibrates immediately before each acceptance stage — so
+  every correction a reviewer makes tightens or relaxes what the next run
+  accepts automatically, per archive, with no model retraining.
+
 After acceptance mutates artifacts, the stage re-runs the derived rebuild so
 exports, search, and the review queue reflect the accepted guesses.
 
