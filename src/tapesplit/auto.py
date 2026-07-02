@@ -1021,6 +1021,8 @@ _HIGHLIGHT_KEYS = (
     ("videos", "videos"),
     ("videos_analyzed", "analyzed"),
     ("videos_diarized", "diarized"),
+    ("videos_transcribed", "transcribed"),
+    ("segments_written", "segments"),
     ("canonical_events", "events"),
     ("heuristic_events", "heuristic events"),
     ("scenes", "scenes"),
