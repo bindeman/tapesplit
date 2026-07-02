@@ -1088,7 +1088,11 @@ def collect_project_metrics(project: Path) -> dict[str, Any]:
     if viz_path.exists():
         try:
             viz = json.loads(viz_path.read_text(encoding="utf-8"))
-            counts["timeline_events"] = len(viz.get("timeline") or [])
+            timeline = viz.get("timeline")
+            if isinstance(timeline, dict):
+                counts["timeline_events"] = len(timeline.get("events") or [])
+            else:
+                counts["timeline_events"] = len(timeline or [])
             counts["people"] = len(viz.get("people") or [])
             counts["places"] = len(viz.get("places") or [])
             counts["review_primary"] = len(viz.get("review_queue") or [])
