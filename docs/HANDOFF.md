@@ -93,26 +93,24 @@ has no output.
 
 ## Current Sample Project Snapshot
 
-`examples/family-haul.tapesplit` currently has:
+`examples/family-haul.tapesplit` was fully processed by `tapesplit auto` on
+2026-07-02 (all 19 tapes / 31.4 hours Gemini-analyzed, ~$4.2 incremental
+cloud spend) and now has:
 
-- source videos: 19
-- canonical event rows: 68
-- visualization timeline events: 20
-- people in visualization: 21
-- places: 16
-- face clusters: 22
-- speaker segments: 214
-- speaker tracks: 11
-- speaker identity candidates: 34
-- primary review items: 17
-- backlog review items: 42
-- durable corrections applied: 0
+- source videos: 19 (19/19 transcribed, diarized, and Gemini-analyzed)
+- canonical event rows: 311 (0 heuristic — all superseded by analysis)
+- visualization timeline events: 195
+- people in visualization: 72
+- places: 181
+- face observations / clusters: 1230 / 714
+- speaker segments: 5540
+- scenes: 9345, non-content ranges: 2060, visual assets: 4525
+- durable corrections applied: 181 (auto-accepted under the safe policy)
+- primary review items remaining: 60
 
-Note: these numbers describe the checked-in artifacts. Re-running `rebuild
---import-gemini --import-all-gemini` (or `tapesplit auto`) on a copy now
-yields 83 canonical events — the same 68 plus 15 heuristic "recording
-segment" events for the 15 tapes that were never Gemini-analyzed. Work on a
-copy if you need to preserve the checked-in baseline.
+The full history of the run (four passes, including the Vertex failure modes
+that drove the chunk-routing/retry/coverage fixes) is in the git log around
+2026-07-02.
 
 Dry-running bulk primary suggestions selects 20 correction actions with
 `--policy legacy`, and 12 with the default `--policy safe` (unbridged role
