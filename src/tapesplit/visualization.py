@@ -1045,11 +1045,59 @@ def _face_review_tier(candidate: dict[str, Any]) -> tuple[str, str]:
     identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
     top_candidate = identity_candidates[0] if identity_candidates and isinstance(identity_candidates[0], dict) else {}
     quality = str(top_candidate.get("face_quality_status") or "").casefold()
+    if _face_significance_score(candidate) <= 0:
+        return (
+            "backlog",
+            "Appears to be a background face (one-off appearance in a crowd scene); "
+            "not worth resolving unless this person matters to the family story.",
+        )
     if face_count >= 2 and quality != "low_quality":
         return "primary", "Usable multi-face cluster; resolving it improves people timelines."
     if (_number_or_none(top_candidate.get("direct_name_strength")) or 0.0) >= 0.9 and quality not in {"low_quality", "unusable"}:
         return "primary", "Strong direct-name face match."
     return "backlog", "Low-quality or singleton face crop; keep as evidence but do not interrupt first-pass review."
+
+
+def _face_significance_score(candidate: dict[str, Any]) -> float:
+    """How much this face matters to the family narrative.
+
+    Recurrence across events, being named on tape, and appearing in
+    small-group scenes make a face significant; a single appearance inside a
+    crowded scene (party guests, audiences) makes it background noise that
+    should not demand review.
+    """
+
+    face_count = int(_number_or_none(candidate.get("face_count")) or 0)
+    identity_candidates = candidate.get("identity_candidates") if isinstance(candidate.get("identity_candidates"), list) else []
+    event_ids: set[str] = set()
+    direct_name = 0.0
+    crowd = None
+    for row in identity_candidates:
+        if not isinstance(row, dict):
+            continue
+        for event_id in row.get("supporting_event_ids") or []:
+            event_ids.add(str(event_id))
+        direct_name = max(direct_name, _number_or_none(row.get("direct_name_strength")) or 0.0)
+        people_count = _number_or_none(row.get("average_event_people_count"))
+        if people_count is not None:
+            crowd = people_count if crowd is None else min(crowd, people_count)
+
+    score = 0.0
+    if len(event_ids) >= 2:
+        score += 2.0
+    if face_count >= 3:
+        score += 1.0
+    if face_count >= 6:
+        score += 1.0
+    if direct_name >= 0.9:
+        score += 3.0
+    if crowd is not None and crowd <= 4:
+        score += 1.0
+    if crowd is not None and crowd >= 7 and len(event_ids) <= 1 and face_count <= 2:
+        score -= 2.0
+    if face_count <= 1 and len(event_ids) <= 1 and direct_name < 0.9:
+        score -= 1.0
+    return score
 
 
 def _speaker_review_tier(item: dict[str, Any], candidate: dict[str, Any]) -> tuple[str, str]:

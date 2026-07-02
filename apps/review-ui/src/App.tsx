@@ -42,6 +42,7 @@ import type {
   AlbumRecord,
   EventEntry,
   EventRecord,
+  FaceObservation,
   MediaRecord,
   PersonRecord,
   PlaceContext,
@@ -56,6 +57,7 @@ import type {
   SpeakerIdentityCandidate,
   SuggestedReviewAction,
   TaskType,
+  VisualAsset,
 } from "./types";
 
 type ViewMode = "library" | "people" | "places" | "albums" | "search";
@@ -446,6 +448,8 @@ export function App() {
                     media={bundle.data.media}
                     people={bundle.data.people}
                     places={bundle.data.places}
+                    faces={bundle.data.assets.faces}
+                    visualAssets={bundle.data.assets.visual}
                     onPlay={setActiveMoment}
                     onQueue={queueAction}
                   />
@@ -479,17 +483,35 @@ function LibraryView({
   summary: Record<string, number>;
   onOpen: (event: EventRecord) => void;
 }) {
+  const [sort, setSort] = useState<LibrarySort>("tape");
   const { related, unrelated } = useMemo(() => splitByRelatedness(events), [events]);
-  const groups = useMemo(() => libraryGroups(related, media), [related, media]);
+  const groups = useMemo(() => libraryGroups(related, media, sort), [related, media, sort]);
   const totalHours = Math.round(media.reduce((acc, tape) => acc + (tape.duration_s ?? 0), 0) / 3600);
 
   return (
     <section className="library">
       <header className="stage-hero">
-        <h1>Library</h1>
-        <p>
-          {media.length} tapes · {totalHours} hours · {events.length} events · {summary.people ?? 0} people
-        </p>
+        <div className="hero-row">
+          <div>
+            <h1>Library</h1>
+            <p>
+              {media.length} tapes · {totalHours} hours · {events.length} events · {summary.people ?? 0} people
+            </p>
+          </div>
+          <div className="segmented" role="tablist" aria-label="Sort library">
+            {(
+              [
+                ["tape", "By Tape"],
+                ["chrono", "Chronological"],
+                ["place", "By Place"],
+              ] as Array<[LibrarySort, string]>
+            ).map(([id, label]) => (
+              <button key={id} className={sort === id ? "active" : ""} onClick={() => setSort(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
       {groups.map((group) => (
@@ -497,12 +519,13 @@ function LibraryView({
           <div className="group-head">
             <h2>{group.label}</h2>
             <span>
-              {group.sublabel} · {group.events.length === 1 ? "1 event" : `${group.events.length} events`}
+              {group.sublabel ? `${group.sublabel} · ` : ""}
+              {group.events.length === 1 ? "1 event" : `${group.events.length} events`}
             </span>
           </div>
           <div className="event-grid">
             {group.events.map((event) => (
-              <EventCard key={event.id} event={event} onOpen={onOpen} />
+              <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
             ))}
           </div>
         </section>
@@ -516,7 +539,7 @@ function LibraryView({
           </summary>
           <div className="event-grid dimmed">
             {unrelated.map((event) => (
-              <EventCard key={event.id} event={event} onOpen={onOpen} />
+              <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
             ))}
           </div>
         </details>
@@ -525,19 +548,63 @@ function LibraryView({
   );
 }
 
-function EventCard({ event, onOpen }: { event: EventRecord; onOpen: (event: EventRecord) => void }) {
+function EventCard({
+  event,
+  media,
+  onOpen,
+}: {
+  event: EventRecord;
+  media: MediaRecord[];
+  onOpen: (event: EventRecord) => void;
+}) {
   const image = event.thumbnail_path || event.keyframe_path;
   const year = eventYear(event);
   const place = event.places[0]?.label;
   const subtitle = [year, place, formatEventDuration(event)].filter(Boolean).join(" · ");
+  const [previewing, setPreviewing] = useState(false);
+  const hoverTimer = useRef<number | null>(null);
+  const moment = useMemo(() => momentFromEvent(event, media), [event, media]);
+
+  function armPreview() {
+    if (!moment) return;
+    hoverTimer.current = window.setTimeout(() => setPreviewing(true), 380);
+  }
+
+  function disarmPreview() {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    setPreviewing(false);
+  }
+
   return (
-    <figure className="event-card" onClick={() => onOpen(event)} role="button" tabIndex={0} onKeyDown={(keyEvent) => keyEvent.key === "Enter" && onOpen(event)}>
+    <figure
+      className="event-card"
+      onClick={() => onOpen(event)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(keyEvent) => keyEvent.key === "Enter" && onOpen(event)}
+      onMouseEnter={armPreview}
+      onMouseLeave={disarmPreview}
+    >
       {image ? (
         <img src={assetUrl(image)} alt="" loading="lazy" />
       ) : (
         <div className="card-fallback">
           <Film size={26} />
         </div>
+      )}
+      {previewing && moment && (
+        <video
+          className="card-preview"
+          src={`${videoUrl(moment.videoId)}#t=${Math.max(0, moment.startS).toFixed(1)}`}
+          muted
+          autoPlay
+          playsInline
+          preload="none"
+          onError={() => setPreviewing(false)}
+        />
       )}
       <figcaption className="card-shade">
         <strong>{event.title}</strong>
@@ -760,7 +827,7 @@ function PersonSheet({
             {appearances.map((entry) => {
               const record = eventsById.get(entry.event_id);
               if (record) {
-                return <EventCard key={entry.event_id} event={record} onOpen={onOpenEvent} />;
+                return <EventCard key={entry.event_id} event={record} media={media} onOpen={onOpenEvent} />;
               }
               return (
                 <button key={entry.event_id} className="mini-event" onClick={() => playEvent(entry, media, onPlay)}>
@@ -789,17 +856,63 @@ function splitByRelatedness(events: EventRecord[]) {
   return { related, unrelated };
 }
 
-function libraryGroups(events: EventRecord[], media: MediaRecord[]) {
-  // Home-video dates are unreliable until reviewed (narration often mentions
-  // historical years), so the library groups by tape — like film rolls —
-  // and shows a year on the card only when one is known.
+type LibrarySort = "tape" | "chrono" | "place";
+
+type LibraryGroup = {
+  key: string;
+  label: string;
+  sublabel?: string;
+  events: EventRecord[];
+};
+
+function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: LibrarySort = "tape"): LibraryGroup[] {
+  const byTimeline = (a: EventRecord, b: EventRecord) => (a.start_s ?? 0) - (b.start_s ?? 0);
+
+  if (sort === "chrono") {
+    // Dates come from narration and can be historical; unknown years are
+    // grouped honestly rather than guessed.
+    const byYear = new Map<string, EventRecord[]>();
+    for (const event of events) {
+      const year = eventYear(event) || "Undated";
+      (byYear.get(year) ?? byYear.set(year, []).get(year))!.push(event);
+    }
+    const keys = [...byYear.keys()].sort((a, b) => {
+      if (a === "Undated") return 1;
+      if (b === "Undated") return -1;
+      return a.localeCompare(b);
+    });
+    return keys.map((key) => ({
+      key,
+      label: key === "Undated" ? "No date yet" : key,
+      events: (byYear.get(key) ?? []).sort(byTimeline),
+    }));
+  }
+
+  if (sort === "place") {
+    const byPlace = new Map<string, EventRecord[]>();
+    for (const event of events) {
+      const place = event.places[0]?.label || "No place identified";
+      (byPlace.get(place) ?? byPlace.set(place, []).get(place))!.push(event);
+    }
+    const keys = [...byPlace.keys()].sort((a, b) => {
+      if (a === "No place identified") return 1;
+      if (b === "No place identified") return -1;
+      return (byPlace.get(b)?.length ?? 0) - (byPlace.get(a)?.length ?? 0);
+    });
+    return keys.map((key) => ({
+      key,
+      label: key,
+      events: (byPlace.get(key) ?? []).sort(byTimeline),
+    }));
+  }
+
+  // Default: by tape — like film rolls — since home-video dates are
+  // unreliable until reviewed; years show on cards when known.
   const order = new Map(media.map((tape, index) => [tape.id, index]));
   const byTape = new Map<string, EventRecord[]>();
   for (const event of events) {
     const tapeId = event.source_video_ids[0] ?? "unknown";
-    const bucket = byTape.get(tapeId) ?? [];
-    bucket.push(event);
-    byTape.set(tapeId, bucket);
+    (byTape.get(tapeId) ?? byTape.set(tapeId, []).get(tapeId))!.push(event);
   }
   const keys = [...byTape.keys()].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
   return keys.map((key) => {
@@ -810,7 +923,7 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[]) {
       key,
       label: typeof index === "number" ? `Tape ${index + 1}` : "Loose footage",
       sublabel: stem,
-      events: (byTape.get(key) ?? []).sort((a, b) => (a.start_s ?? 0) - (b.start_s ?? 0)),
+      events: (byTape.get(key) ?? []).sort(byTimeline),
     };
   });
 }
@@ -949,6 +1062,8 @@ function ReviewDetail({
   media,
   people,
   places,
+  faces = [],
+  visualAssets = [],
   onPlay,
   onQueue,
 }: {
@@ -958,21 +1073,28 @@ function ReviewDetail({
   media: MediaRecord[];
   people: PersonRecord[];
   places: PlaceRecord[];
+  faces?: FaceObservation[];
+  visualAssets?: VisualAsset[];
   onPlay: (moment: PlayerMoment) => void;
   onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
 }) {
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const isFaceItem = item.task_type === "resolve_face_cluster";
   return (
     <section className="review-surface">
-      <div className="review-media">
-        {item.thumbnail_path ? (
-          <img src={assetUrl(item.thumbnail_path)} alt="" />
-        ) : (
-          <div className="media-placeholder">
-            <ImageIcon size={28} />
-          </div>
-        )}
-      </div>
+      {isFaceItem ? (
+        <FaceContextGallery clusterId={item.source_id} faces={faces} visualAssets={visualAssets} media={media} onPlay={onPlay} />
+      ) : (
+        <div className="review-media">
+          {item.thumbnail_path ? (
+            <img src={assetUrl(item.thumbnail_path)} alt="" />
+          ) : (
+            <div className="media-placeholder">
+              <ImageIcon size={28} />
+            </div>
+          )}
+        </div>
+      )}
       <div className="review-body">
         <div className="review-heading">
           <span className={`task-badge ${item.task_type}`}>{taskLabel(item.task_type)}</span>
@@ -984,9 +1106,72 @@ function ReviewDetail({
         <SuggestedResolution item={item} onQueue={onQueue} />
         <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
         <EvidenceList item={item} media={media} onPlay={onPlay} />
-        <ReviewActionControls item={item} onQueue={onQueue} />
+        <ReviewActionControls item={item} people={people} onQueue={onQueue} />
       </div>
     </section>
+  );
+}
+
+function FaceContextGallery({
+  clusterId,
+  faces,
+  visualAssets,
+  media,
+  onPlay,
+}: {
+  clusterId: string;
+  faces: FaceObservation[];
+  visualAssets: VisualAsset[];
+  media: MediaRecord[];
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const tiles = useMemo(() => {
+    const assetsById = new Map(visualAssets.map((asset) => [asset.id, asset]));
+    const assetsBySubject = new Map<string, VisualAsset>();
+    for (const asset of visualAssets) {
+      if (!assetsBySubject.has(asset.subject_id)) {
+        assetsBySubject.set(asset.subject_id, asset);
+      }
+    }
+    return faces
+      .filter((face) => face.face_cluster_id === clusterId && face.face_thumbnail_path)
+      .slice(0, 18)
+      .map((face) => {
+        const asset = assetsById.get(face.source_subject_id ?? "") ?? assetsBySubject.get(face.source_subject_id ?? "");
+        return { face, asset };
+      });
+  }, [clusterId, faces, visualAssets]);
+
+  if (!tiles.length) {
+    return null;
+  }
+  return (
+    <div className="face-context-grid">
+      {tiles.map(({ face, asset }) => {
+        const scene = asset?.keyframe_path || asset?.thumbnail_path;
+        const tape = media.find((row) => row.id === asset?.source_video_id);
+        const playable = asset && typeof asset.time_s === "number";
+        return (
+          <button
+            key={face.id}
+            className="face-context-tile"
+            title={playable ? "Play this moment" : undefined}
+            onClick={() =>
+              playable &&
+              onPlay({
+                videoId: asset.source_video_id,
+                videoLabel: tape?.filename || asset.source_video_id,
+                startS: Math.max(0, (asset.time_s ?? 0) - 2),
+                title: "Face context",
+              })
+            }
+          >
+            {scene ? <img className="scene-frame" src={assetUrl(scene)} alt="" loading="lazy" /> : <div className="card-fallback" />}
+            <img className="face-inset" src={assetUrl(face.face_thumbnail_path ?? "")} alt="" loading="lazy" />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1129,9 +1314,17 @@ function PlaceChip({
   );
 }
 
-function ReviewActionControls({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+function ReviewActionControls({
+  item,
+  people = [],
+  onQueue,
+}: {
+  item: ReviewItem;
+  people?: PersonRecord[];
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
   if (item.task_type === "resolve_face_cluster") {
-    return <FaceClusterActions item={item} onQueue={onQueue} />;
+    return <FaceClusterActions item={item} people={people} onQueue={onQueue} />;
   }
   if (item.task_type === "resolve_speaker") {
     return <SpeakerIdentityActions item={item} onQueue={onQueue} />;
@@ -1162,12 +1355,54 @@ function ReviewActionControls({ item, onQueue }: { item: ReviewItem; onQueue: (a
   return null;
 }
 
-function FaceClusterActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+function FaceClusterActions({
+  item,
+  people = [],
+  onQueue,
+}: {
+  item: ReviewItem;
+  people?: PersonRecord[];
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
   const candidates = identityCandidates(item);
   const [selectedId, setSelectedId] = useState(candidates[0]?.face_identity_candidate_id ?? "");
+  const [customName, setCustomName] = useState("");
   const selected = candidates.find((candidate) => candidate.face_identity_candidate_id === selectedId);
+
+  function nameCluster() {
+    const label = customName.trim();
+    if (!label) return;
+    const match = findPerson(people, undefined, label);
+    void onQueue({
+      id: `label_${item.source_id}`,
+      action: "label_face_cluster",
+      target_id: item.source_id,
+      target_type: "face_cluster",
+      notes: match ? `Matched existing person ${match.label}` : "Named directly by reviewer",
+      payload: match ? { label, person_group_id: match.id } : { label },
+    });
+    setCustomName("");
+  }
+
   return (
     <div className="action-block">
+      <form
+        className="name-entry"
+        onSubmit={(event) => {
+          event.preventDefault();
+          nameCluster();
+        }}
+      >
+        <input
+          value={customName}
+          onChange={(event) => setCustomName(event.target.value)}
+          placeholder="No match? Type who this is…"
+        />
+        <button type="submit" className="command-button secondary" disabled={!customName.trim()}>
+          <UserCheck size={15} />
+          <span>Name Person</span>
+        </button>
+      </form>
       <div className="candidate-list">
         {candidates.map((candidate) => (
           <label key={candidate.face_identity_candidate_id} className="candidate-option">

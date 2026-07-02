@@ -10,6 +10,7 @@ from tapesplit.storage import append_jsonl, read_jsonl
 
 SUPPORTED_REVIEW_ACTIONS = {
     "confirm_identity",
+    "label_face_cluster",
     "reject_identity",
     "confirm_speaker_identity",
     "reject_speaker_identity",
@@ -237,6 +238,7 @@ def _apply_action(state: _ProjectReviewState, correction: dict[str, Any]) -> lis
         raise ValueError(f"unsupported review action: {action}")
     dispatch = {
         "confirm_identity": _confirm_identity,
+        "label_face_cluster": _label_face_cluster,
         "reject_identity": _reject_identity,
         "confirm_speaker_identity": _confirm_speaker_identity,
         "reject_speaker_identity": _reject_speaker_identity,
@@ -263,6 +265,21 @@ def _apply_action(state: _ProjectReviewState, correction: dict[str, Any]) -> lis
         "edit_date": _edit_date,
     }
     return dispatch[action](state, correction)
+
+
+def _label_face_cluster(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Name a face cluster directly — for people no candidate matched."""
+
+    cluster = _require_target(state, "face_clusters.jsonl", correction)
+    payload = correction["payload"]
+    label = str(payload.get("label") or "").strip()
+    if not label:
+        raise ValueError("label_face_cluster requires payload.label")
+    _apply_label_payload(cluster, {"label": label})
+    if payload.get("person_group_id"):
+        cluster["linked_person_group_id"] = str(payload["person_group_id"])
+    _mark_reviewed(cluster, "confirmed", correction)
+    return [_effect("face_clusters.jsonl", cluster, f"named face cluster {label}")]
 
 
 def _confirm_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
@@ -705,6 +722,7 @@ def _target_filename(correction: dict[str, Any]) -> str:
         "context_edge": "context_edges.jsonl",
         "date_group": "date_groups.jsonl",
         "event": "canonical_events.jsonl",
+        "face_cluster": "face_clusters.jsonl",
         "face_identity_candidate": "face_identity_candidates.jsonl",
         "people_group": "people_groups.jsonl",
         "place_group": "place_groups.jsonl",
