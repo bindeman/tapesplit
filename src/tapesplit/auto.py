@@ -352,9 +352,18 @@ def _run_diarize(context: StageContext) -> dict[str, Any]:
     return summary
 
 
+# Whole-video analysis must fit the model context (~1.05M tokens for
+# gemini-2.5-flash) with headroom for the prompt, output, and thinking.
+# Tapes estimating above this input-token threshold are analyzed in
+# overlapping chunks instead; the event stitcher re-merges events across
+# chunk boundaries.
+GEMINI_WHOLE_VIDEO_MAX_INPUT_TOKENS = 900_000
+
+
 def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
     from tapesplit.gemini_adapter import (
         analyze_project_video,
+        analyze_project_video_chunks,
         estimate_project_videos,
         prepare_project_video_proxies,
     )
@@ -372,6 +381,7 @@ def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
         return {"videos_analyzed": 0, "note": "all videos already analyzed"}
 
     estimated_cost: float | None
+    input_tokens_by_video: dict[str, int] = {}
     try:
         estimate = estimate_project_videos(project, all_videos=True)
         pending_results = [
@@ -381,6 +391,11 @@ def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
         ]
         costs = [result.get("estimated_cost_usd") for result in pending_results]
         estimated_cost = None if any(cost is None for cost in costs) else round(sum(costs), 4)
+        for result in pending_results:
+            units = result.get("units") if isinstance(result.get("units"), dict) else {}
+            input_tokens_by_video[str(result.get("source_video_id"))] = int(
+                sum(value for key, value in units.items() if key.startswith("input_"))
+            )
     except Exception as exc:
         estimated_cost = None
         estimate_error = str(exc)
@@ -403,9 +418,16 @@ def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
     prepare_project_video_proxies(project)
     results = []
     errors = []
+    chunked_videos = []
     for source_video_id in pending:
+        input_tokens = input_tokens_by_video.get(source_video_id)
+        use_chunks = input_tokens is not None and input_tokens > GEMINI_WHOLE_VIDEO_MAX_INPUT_TOKENS
         try:
-            results.append(analyze_project_video(project, source_video_id=source_video_id))
+            if use_chunks:
+                results.append(analyze_project_video_chunks(project, source_video_id=source_video_id))
+                chunked_videos.append(source_video_id)
+            else:
+                results.append(analyze_project_video(project, source_video_id=source_video_id))
         except Exception as exc:
             errors.append({"source_video_id": source_video_id, "error": str(exc)})
     if errors and not results:
@@ -414,6 +436,8 @@ def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
         "videos_analyzed": len(results),
         "estimated_cost_usd": estimated_cost,
     }
+    if chunked_videos:
+        summary["chunked_for_context"] = chunked_videos
     if errors:
         summary["videos_failed"] = errors
     return summary

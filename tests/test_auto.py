@@ -478,3 +478,49 @@ def test_adoption_requires_full_video_coverage(tmp_path):
     append_jsonl(project / "gemini_analyses.jsonl", {"source_video_id": "video_000001"})
     actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, state))
     assert actions["gemini"] == "skip-done"
+
+
+def test_gemini_routes_oversized_tapes_to_chunked_analysis(tmp_path, monkeypatch):
+    import tapesplit.gemini_adapter as gemini_adapter
+
+    project = _project(tmp_path)
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000002", "probe": {"duration_s": 12600.0}})
+
+    monkeypatch.setattr(
+        gemini_adapter,
+        "estimate_project_videos",
+        lambda *args, **kwargs: {
+            "results": [
+                {
+                    "source_video_id": "video_000001",
+                    "estimated_cost_usd": 0.2,
+                    "units": {"input_video_tokens": 400_000, "input_audio_tokens": 190_000, "input_text_tokens": 1200},
+                },
+                {
+                    "source_video_id": "video_000002",
+                    "estimated_cost_usd": 0.7,
+                    "units": {"input_video_tokens": 831_000, "input_audio_tokens": 403_000, "input_text_tokens": 1200},
+                },
+            ]
+        },
+    )
+    monkeypatch.setattr(gemini_adapter, "prepare_project_video_proxies", lambda project: {"proxies": 2})
+    whole_calls, chunk_calls = [], []
+    monkeypatch.setattr(
+        gemini_adapter,
+        "analyze_project_video",
+        lambda project, source_video_id: whole_calls.append(source_video_id) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        gemini_adapter,
+        "analyze_project_video_chunks",
+        lambda project, source_video_id: chunk_calls.append(source_video_id) or {"ok": True},
+    )
+
+    context = auto.StageContext(project=project, options=AutoOptions(), capabilities=dict(FULL_CAPS))
+    summary = auto._run_gemini_analyze(context)
+
+    assert whole_calls == ["video_000001"]  # 591k tokens → whole video
+    assert chunk_calls == ["video_000002"]  # 1.235M tokens → chunked
+    assert summary["chunked_for_context"] == ["video_000002"]
+    assert summary["videos_analyzed"] == 2
