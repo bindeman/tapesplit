@@ -428,6 +428,9 @@ def _run_finalize(context: StageContext) -> dict[str, Any]:
     return _compact_rebuild_summary(result, {})
 
 
+MAX_SUGGESTION_PASSES = 3
+
+
 def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
     from tapesplit.pipeline import rebuild_project_outputs
     from tapesplit.review_actions import apply_review_suggestions
@@ -435,29 +438,48 @@ def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
     tier = context.options.suggestions_tier
     if not tier:
         raise StageSkipped("suggestion auto-acceptance disabled")
-    applied = apply_review_suggestions(
-        context.project,
-        tier=tier,
-        min_confidence=context.options.suggestions_min_confidence,
-        reviewer="auto-pipeline",
-        policy="safe",
-    )
-    summary = {
-        "tier": tier,
-        "actions_applied": applied.get("actions_applied", 0),
-        "by_action": applied.get("by_action", {}),
-        "skipped": applied.get("skipped"),
-    }
-    if applied.get("actions_applied"):
+
+    # Accepted actions can unlock further ones: e.g. a merge_person identity
+    # bridge lets a previously gated relationship pass the safe policy after
+    # the rebuild regenerates candidates with resolved identities. Iterate
+    # until a pass accepts nothing (bounded, since targets close as they are
+    # accepted).
+    passes = []
+    total_applied = 0
+    by_action: dict[str, int] = {}
+    last_skipped: Any = None
+    for _ in range(MAX_SUGGESTION_PASSES):
+        applied = apply_review_suggestions(
+            context.project,
+            tier=tier,
+            min_confidence=context.options.suggestions_min_confidence,
+            reviewer="auto-pipeline",
+            policy="safe",
+        )
+        count = applied.get("actions_applied", 0)
+        passes.append({"actions_applied": count, "by_action": applied.get("by_action", {})})
+        last_skipped = applied.get("skipped")
+        if not count:
+            break
+        total_applied += count
+        for action, action_count in (applied.get("by_action") or {}).items():
+            by_action[action] = by_action.get(action, 0) + action_count
         # Corrections mutated core artifacts; rebuild derived outputs so the
-        # exported archive and review queue reflect the accepted guesses.
+        # exported archive and review queue reflect the accepted guesses
+        # before the next pass re-reads visualization.json.
         rebuild_project_outputs(
             context.project,
             import_gemini=False,
             embedding_backend=context.options.search_embedding_backend,
         )
-        summary["outputs_refreshed"] = True
-    return summary
+
+    return {
+        "tier": tier,
+        "actions_applied": total_applied,
+        "by_action": by_action,
+        "passes": len(passes),
+        "skipped": last_skipped,
+    }
 
 
 def _compact_rebuild_summary(result: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:

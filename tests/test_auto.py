@@ -315,3 +315,45 @@ def test_save_and_load_pipeline_state_roundtrip(tmp_path):
 
     (project / "pipeline_state.json").write_text("{broken", encoding="utf-8")
     assert load_pipeline_state(project) == {"schema_version": 1, "stages": {}}
+
+
+def test_apply_suggestions_stage_iterates_until_no_new_acceptance(tmp_path, monkeypatch):
+    import tapesplit.pipeline as pipeline
+    import tapesplit.review_actions as review_actions
+
+    project = _project(tmp_path)
+    apply_counts = iter([2, 1, 0])
+    applied_calls = []
+    rebuild_calls = []
+
+    def fake_apply(project_dir, **kwargs):
+        count = next(apply_counts)
+        applied_calls.append(kwargs["tier"])
+        return {"actions_applied": count, "by_action": {"confirm_relationship": count} if count else {}}
+
+    monkeypatch.setattr(review_actions, "apply_review_suggestions", fake_apply)
+    monkeypatch.setattr(
+        pipeline,
+        "rebuild_project_outputs",
+        lambda project_dir, **kwargs: rebuild_calls.append(True) or {"steps": []},
+    )
+
+    context = auto.StageContext(project=project, options=AutoOptions(), capabilities=dict(FULL_CAPS))
+    summary = auto._run_apply_suggestions(context)
+
+    assert summary["actions_applied"] == 3
+    assert summary["by_action"] == {"confirm_relationship": 3}
+    assert summary["passes"] == 3
+    assert len(applied_calls) == 3
+    assert len(rebuild_calls) == 2  # no rebuild after the empty final pass
+
+
+def test_apply_suggestions_stage_disabled_raises_skip(tmp_path):
+    project = _project(tmp_path)
+    context = auto.StageContext(
+        project=project,
+        options=AutoOptions(suggestions_tier=None),
+        capabilities=dict(FULL_CAPS),
+    )
+    with pytest.raises(StageSkipped):
+        auto._run_apply_suggestions(context)

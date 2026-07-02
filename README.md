@@ -2,112 +2,144 @@
 
 TapeSplit is a local-first VHS and home-video intelligence layer.
 
-The goal is to take long digitized tapes or DVD transfers and produce:
+It takes unorganized digitized tapes (long VHS/DVD/camcorder transfers) and
+automatically produces a reviewable modern archive:
 
-- scene and event groups
-- likely dates, people, places, and event labels
-- family vs unrelated-footage classification
-- transcript-backed and frame-backed evidence
-- multilingual transcript preservation and translation
-- semantic search over clips and moments
-- reviewable metadata and album-ready exports
+- canonical events, albums, and a browsable timeline
+- likely dates, people, places, relationships, and related/unrelated labels
+- transcript, frame, face, speaker, OCR, and visual evidence with provenance
+- multilingual transcript preservation and semantic search over moments
+- a local review UI where every remaining guess is one click to correct
+- durable corrections that survive re-runs
 
-The first MVP is designed for a 128 GB M3 Max MacBook Pro with an optional cloud
-LLM or video-intelligence backend. The core VHS-specific logic should remain
-backend-agnostic so it can run locally or call cloud providers depending on the
-deployment.
+The system defaults to best guesses with provenance ("appears to be …"),
+auto-accepts only well-corroborated inferences, and keeps everything else one
+click away in the review UI. It runs fully locally on a Mac (Apple Vision OCR
+and face detection, whisper.cpp transcription, pyannote/speechbrain
+diarization, ArcFace face identity, BLIP captions), with an optional
+Vertex Gemini backend for deep video understanding.
 
-See [docs/MVP_ENGINEERING_PLAN.md](docs/MVP_ENGINEERING_PLAN.md) for the current
-one-week build plan.
-
-See [docs/HANDOFF.md](docs/HANDOFF.md) first if another agent or contributor is
-taking over without chat history.
-
-See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) for local setup and provider
-smoke-test commands.
-
-See [docs/TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md) for
-the longer-term data model and reasoning architecture.
-
-See [docs/ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) for the alias,
-relationship, and role-resolution model.
-
-See [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) for the
-family-graph, relationship-candidate, face-linking, and thumbnail plan.
-
-See [docs/LOCAL_FACE_STACK.md](docs/LOCAL_FACE_STACK.md) for the Mac-first
-Apple Vision detector and ArcFace/InsightFace identity-model plan.
-
-See [docs/LOCAL_MODEL_UPGRADE_PLAN.md](docs/LOCAL_MODEL_UPGRADE_PLAN.md) for the
-local OCR, visual embedding, transcription, diarization, VLM, and classifier
-upgrade plan.
-
-See [docs/CONTEXT_GRAPH_VISUALIZATION.md](docs/CONTEXT_GRAPH_VISUALIZATION.md)
-for the longer-term family tree, friend/social-circle, era, and context graph
-visualization model.
-
-See [docs/PHOTO_ARCHIVE_PRODUCT.md](docs/PHOTO_ARCHIVE_PRODUCT.md) for a
-separate photo-library family-graph product concept that reuses the same
-evidence/review architecture.
-
-See [docs/VISUALIZATION_BACKEND.md](docs/VISUALIZATION_BACKEND.md) for the
-scene/event thumbnails, face observations, scoped place contexts, normalized
-location display, review queues, and UI-ready visualization export.
-
-See [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) for the
-family-review evaluation packet, SQL learning workflow, annotation scoring, and
-follow-up queue.
-
-Current local review pipeline:
+## Quickstart
 
 ```bash
-.venv/bin/tapesplit ingest /path/to/video-or-folder
-.venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
-.venv/bin/tapesplit detect-scenes /path/to/project.tapesplit
-.venv/bin/tapesplit extract-visuals /path/to/project.tapesplit
-.venv/bin/tapesplit gemini prepare-video /path/to/project.tapesplit
-.venv/bin/tapesplit gemini estimate-video /path/to/project.tapesplit --all --output-tokens 12000
-.venv/bin/tapesplit gemini analyze-video /path/to/project.tapesplit --all --continue-on-error
-.venv/bin/tapesplit gemini compare-analyses /path/to/project.tapesplit
-.venv/bin/tapesplit gemini analyze-video-chunks /path/to/project.tapesplit  # optional high-fidelity follow-up
-.venv/bin/tapesplit rebuild /path/to/project.tapesplit --import-gemini
-.venv/bin/tapesplit eval build /path/to/project.tapesplit --force
-.venv/bin/tapesplit detect-text /path/to/project.tapesplit --subject-type event --backend auto
-.venv/bin/tapesplit caption-visuals /path/to/project.tapesplit --subject-type event --backend auto
-.venv/bin/tapesplit embed-visuals /path/to/project.tapesplit --subject-type event --backend auto
-.venv/bin/tapesplit build-visual-similarity /path/to/project.tapesplit
-.venv/bin/tapesplit classify-content /path/to/project.tapesplit
-.venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene --backend auto
-.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
-.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
-.venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary --dry-run
-.venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
-.venv/bin/tapesplit review reapply /path/to/project.tapesplit
-.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
+/opt/homebrew/bin/python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
+brew install ffmpeg
+
+.venv/bin/tapesplit doctor                      # what will run on this machine
+.venv/bin/tapesplit auto /path/to/tape-folder   # tapes in, archive out
+.venv/bin/tapesplit ui /path/to/tape-folder.tapesplit
 ```
 
-Local transcript segments can come from a Whisper-compatible CLI or from an
-existing JSON/SRT/VTT file:
+`tapesplit auto` runs the whole pipeline end to end:
+
+ingest → non-content/scene detection → transcription → speaker diarization →
+(optional) Gemini video analysis → event stitching → keyframes → OCR →
+captions → visual embeddings → faces → clustering → groups/relationships →
+search index → story/report/visualization → safe auto-acceptance of
+high-confidence suggestions.
+
+Key properties:
+
+- **Capability aware.** Stages that lack a backend (no cloud keys, missing
+  optional ML package, non-macOS) are skipped with a reason instead of
+  failing; the archive is built from whatever evidence exists. `tapesplit
+  doctor` shows per-stage readiness.
+- **Resumable.** Per-stage state lives in `pipeline_state.json` inside the
+  project; re-running `auto` continues where it stopped, and per-video stages
+  skip already-processed videos. `tapesplit status <project>` shows progress.
+- **Cost guarded.** Cloud analysis is estimated first and skipped when the
+  estimate exceeds `--max-cloud-usd` (default $10).
+- **Local events without cloud.** Tapes with no cloud analysis still get
+  low-confidence "recording segment" events synthesized from scene/non-content
+  boundaries and transcript keywords, so the timeline is never empty.
+- **Minimal-intervention.** After the build, high-confidence suggestions are
+  auto-accepted as durable corrections under a per-action-type safety policy
+  (`--no-suggestions` to disable). Relationships require resolved identities
+  on both sides, no contradicting evidence, and corroboration before
+  auto-accept.
+
+Useful variants:
 
 ```bash
-.venv/bin/tapesplit transcribe local /path/to/project.tapesplit --language ru
-.venv/bin/tapesplit transcribe import /path/to/project.tapesplit transcript.srt --source-video-id video_000001
+tapesplit auto INPUT --plan                 # show what would run, then exit
+tapesplit auto INPUT --profile local        # never call cloud providers
+tapesplit auto INPUT --profile minimal      # deterministic stages only
+tapesplit auto INPUT --max-cloud-usd 25 --language ru
+tapesplit auto INPUT --force-from scenes    # redo scenes and everything after
+tapesplit auto INPUT --skip captions --skip diarize
+tapesplit status PROJECT                    # stage state + archive metrics
+tapesplit synthesize-events PROJECT         # heuristic events on demand
+```
+
+## Review UI
+
+```bash
+.venv/bin/tapesplit ui /path/to/project.tapesplit
+```
+
+The UI supports timeline, albums, people, places, search, and review views,
+source-video playback by timestamp, a pending correction queue, and one-click
+`Accept Best Guesses` (which uses the same safe policy). Corrections are
+durable: `tapesplit auto`/`rebuild` replays them after every regeneration.
+
+## Cloud providers (optional)
+
+Copy `.env.example` to `.env`. Vertex Gemini video analysis uses gcloud ADC:
+
+```bash
+gcloud auth application-default login
+gcloud config set project <your-project>
+```
+
+`GEMINI_PROJECT_BUDGET_USD` caps cumulative spend; `tapesplit auto` also
+pre-estimates each run against `--max-cloud-usd`. TwelveLabs indexing and
+Azure OpenAI claim extraction remain available as manual commands.
+
+## Manual pipeline commands
+
+Every stage is still exposed as an individual command (`ingest`,
+`detect-non-content`, `detect-scenes`, `extract-visuals`, `transcribe local`,
+`speakers diarize`, `gemini analyze-video`, `rebuild`, `detect-text`,
+`caption-visuals`, `embed-visuals`, `build-visual-similarity`,
+`classify-content`, `detect-faces`, `cluster-faces`, `search build`,
+`export-visualization`, `review apply-suggestions`, …). See
+`docs/LOCAL_SETUP.md` and `tapesplit --help`.
+
+Local transcripts can also be imported from JSON/SRT/VTT
+(`transcribe import`), and speaker segments from JSON/RTTM
+(`speakers import`), so the pipeline works even with zero ML dependencies.
+
+Search:
+
+```bash
 .venv/bin/tapesplit search query /path/to/project.tapesplit "first day of school"
 .venv/bin/tapesplit search similar /path/to/project.tapesplit canonical_event_000001 --record-type event
 ```
 
-`search build` defaults to SQLite FTS5 plus a dependency-free local sparse vector
-scorer. Install the `local-ai` extra and pass `--embedding-backend
-sentence-transformers` when you want local neural embeddings. `search similar`
-uses the same local index to find records that are semantically close to an
-existing event, place, album, evidence item, transcript segment, or graph edge.
-The local AI extra also installs `sqlite-vec`, so dense embeddings are indexed
-inside `search.sqlite` when available.
-See `docs/RETRIEVAL_ARCHITECTURE.md` for the longer hybrid search plan.
+`search build` defaults to SQLite FTS5 plus a dependency-free local sparse
+vector scorer; install the `local-ai` extra for dense sentence-transformer
+embeddings with `sqlite-vec` ANN indexing. See
+`docs/RETRIEVAL_ARCHITECTURE.md` for the hybrid search design.
 
-Create and score a family review packet:
+Evaluation packets for family review:
 
 ```bash
 .venv/bin/tapesplit eval build /path/to/project.tapesplit --force
 .venv/bin/tapesplit eval score /path/to/project.tapesplit --annotations annotations.csv
 ```
+
+## Docs
+
+- [docs/HANDOFF.md](docs/HANDOFF.md) — blind-takeover entry point for agents/contributors
+- [docs/AUTOMATION.md](docs/AUTOMATION.md) — `tapesplit auto` design: stages, state, degradation, policies
+- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — install, provider config, per-command reference
+- [docs/MVP_ENGINEERING_PLAN.md](docs/MVP_ENGINEERING_PLAN.md) — MVP shape and rationale
+- [docs/TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md) — long-term data model
+- [docs/ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) — alias/role/merge strategy
+- [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) — family-graph inference
+- [docs/LOCAL_FACE_STACK.md](docs/LOCAL_FACE_STACK.md) — Apple Vision + ArcFace identity plan
+- [docs/LOCAL_MODEL_UPGRADE_PLAN.md](docs/LOCAL_MODEL_UPGRADE_PLAN.md) — local model roadmap
+- [docs/CONTEXT_GRAPH_VISUALIZATION.md](docs/CONTEXT_GRAPH_VISUALIZATION.md) — context graph model
+- [docs/VISUALIZATION_BACKEND.md](docs/VISUALIZATION_BACKEND.md) — UI data model and review queues
+- [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) — eval packet + scoring workflow

@@ -7,9 +7,8 @@ design docs or chat history.
 
 - Repo: `/path/to/tapesplit`
 - GitHub remote: `https://github.com/bindeman/tapesplit`
-- Current checked commit when this handoff was written: `f70930b`
 - Project type: local-first, source-available VHS and home-video intelligence backend
-  with a React/Vite review UI.
+  with a React/Vite review UI and a one-command `tapesplit auto` orchestrator.
 - Sample project: `examples/family-haul.tapesplit`
 - Secrets: never commit `.env`, tokens, raw media, project outputs, caches, or
   `cost_rates.json`.
@@ -89,7 +88,7 @@ npm --prefix apps/review-ui run build
 git diff --check
 ```
 
-Expected at this handoff: `131 passed`, UI build passes, and `git diff --check`
+Expected at this handoff: `157 passed`, UI build passes, and `git diff --check`
 has no output.
 
 ## Current Sample Project Snapshot
@@ -144,7 +143,22 @@ The UI supports:
 
 ## Core Pipeline
 
-For an already ingested project:
+The whole pipeline is one command (see `docs/AUTOMATION.md` for the design):
+
+```bash
+.venv/bin/tapesplit auto /path/to/tapes-or-project     # runs everything below
+.venv/bin/tapesplit auto /path/to/project.tapesplit --plan   # dry-run plan
+.venv/bin/tapesplit status /path/to/project.tapesplit  # stage state + metrics
+```
+
+`auto` is resumable (per-stage state in `pipeline_state.json`), capability
+aware (missing backends skip with a reason), cost guarded
+(`--max-cloud-usd`, default $10), and finishes by auto-accepting
+high-confidence suggestions under the safe policy (`--no-suggestions`
+to disable). Tapes without cloud analysis get low-confidence heuristic
+"recording segment" events so the timeline is never empty.
+
+Every stage also remains an individual command for manual/partial runs:
 
 ```bash
 .venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
@@ -169,7 +183,8 @@ For an already ingested project:
 ```
 
 Use `rebuild --import-gemini` to regenerate local derived outputs and replay
-existing `corrections.jsonl`.
+existing `corrections.jsonl`. `rebuild` now also synthesizes heuristic events
+for uncovered tapes (disable with `synthesize_heuristic_events=False`).
 
 ## Review Corrections
 
@@ -186,16 +201,31 @@ Bulk best-guess actions:
 ```bash
 .venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary --dry-run
 .venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary
+.venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --policy legacy  # old flat behavior
 ```
 
 `apply-suggestions` reads `visualization.json`, converts `suggested_action`
 objects into durable review corrections, expands grouped relationship actions,
 skips already closed or stale targets, and appends to `corrections.jsonl`.
 
+The default `--policy safe` adds per-action confidence floors and
+relationship corroboration gates (both sides resolved to people groups, no
+contradicting evidence, multi-mention or >=0.85 confidence). On the sample
+project this selects 12 of the 20 legacy actions and skips all unbridged
+role relationships. `tapesplit auto` runs this automatically as its last
+stage (reviewer `auto-pipeline`).
+
 ## Current Capabilities
 
 Implemented and tested:
 
+- `tapesplit auto`: one-command, capability-aware, resumable, cost-guarded
+  end-to-end pipeline (see `docs/AUTOMATION.md`); plus `status`, `ui`,
+  `synthesize-events`, and an extended `doctor` with per-stage readiness
+- heuristic local events for tapes without cloud analysis, stitched at
+  lowest precedence and superseded automatically by later Gemini runs
+- safe auto-accept policy: per-action confidence floors + relationship
+  corroboration gates, used by the CLI, the `auto` pipeline, and UI bulk accept
 - VHS non-content range detection for blue/black/static sections
 - scene detection
 - Gemini whole-video/chunk analysis, import, compare, and cost tracking
@@ -237,9 +267,10 @@ These are the highest-risk areas for the next agent:
 
 Good continuation points:
 
-1. Add safer auto-accept thresholds by action type.
-   Start with relationships: require named subject/object, multiple evidence
-   modalities, or a role-identity bridge before primary auto-accept.
+1. ~~Add safer auto-accept thresholds by action type.~~ Done: `--policy safe`
+   with relationship identity-bridge/corroboration gates. Next: tune floors
+   against eval packets, and consider auto-accepting `merge_person` role
+   bridges first so gated relationships unlock on a second `auto` pass.
 2. Add a project-memory layer for reviewed aliases, known residences by era,
    relationship facts, and recurring place labels.
 3. Improve role resolution so `Mom`, `mother`, `Katya`, and `Ekaterina` can merge
@@ -250,6 +281,9 @@ Good continuation points:
    evidence tooltips and "from context" labels.
 6. Extend video search/moments so every event, person, place, and relationship
    links back to playable timestamps.
+7. `auto` follow-ups: `ingest --append` for growing projects, parallel
+   per-video transcribe/diarize, TwelveLabs as an opt-in cloud stage, and a
+   `--watch` mode that picks up new tapes dropped into a folder.
 
 ## Development Rules
 
