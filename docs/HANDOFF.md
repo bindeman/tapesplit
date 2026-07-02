@@ -108,7 +108,15 @@ has no output.
 - backlog review items: 42
 - durable corrections applied: 0
 
-Dry-running bulk primary suggestions currently selects 20 correction actions:
+Note: these numbers describe the checked-in artifacts. Re-running `rebuild
+--import-gemini --import-all-gemini` (or `tapesplit auto`) on a copy now
+yields 83 canonical events — the same 68 plus 15 heuristic "recording
+segment" events for the 15 tapes that were never Gemini-analyzed. Work on a
+copy if you need to preserve the checked-in baseline.
+
+Dry-running bulk primary suggestions selects 20 correction actions with
+`--policy legacy`, and 12 with the default `--policy safe` (unbridged role
+relationships and sub-floor confidences are skipped with reasons):
 
 ```bash
 .venv/bin/tapesplit review apply-suggestions examples/family-haul.tapesplit \
