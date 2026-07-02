@@ -357,3 +357,17 @@ def test_apply_suggestions_stage_disabled_raises_skip(tmp_path):
     )
     with pytest.raises(StageSkipped):
         auto._run_apply_suggestions(context)
+
+
+def test_interrupted_ingest_detection(tmp_path):
+    project = tmp_path / "p.tapesplit"
+    assert auto._is_interrupted_ingest(project) is False  # missing dir
+
+    project.mkdir()
+    write_json(project / "manifest.json", {"schema_version": 1})
+    (project / "keyframes").mkdir()
+    (project / "thumbnails").mkdir()
+    assert auto._is_interrupted_ingest(project) is True  # scaffolding only
+
+    append_jsonl(project / "scenes.jsonl", {"id": "x"})
+    assert auto._is_interrupted_ingest(project) is False  # has derived artifacts

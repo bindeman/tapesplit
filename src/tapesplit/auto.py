@@ -229,7 +229,25 @@ def _run_ingest(context: StageContext) -> dict[str, Any]:
         input_path=context.source_input,
         out_path=context.project,
         window_seconds=context.options.window_seconds,
+        force=_is_interrupted_ingest(context.project),
     )
+
+
+def _is_interrupted_ingest(project: Path) -> bool:
+    """True when the project dir holds only ingest scaffolding (no artifacts).
+
+    An interrupt between ``manifest.json`` and ``tapes.jsonl`` leaves a
+    half-created project that plain ``ingest`` refuses to overwrite. Redoing
+    it is safe only when nothing derived exists yet.
+    """
+
+    if not project.exists():
+        return False
+    scaffolding = {"manifest.json", "keyframes", "thumbnails", "pipeline_state.json", ".DS_Store"}
+    for entry in project.iterdir():
+        if entry.name not in scaffolding:
+            return False
+    return True
 
 
 def _run_exif(context: StageContext) -> dict[str, Any]:
