@@ -473,9 +473,15 @@ def test_adoption_requires_full_video_coverage(tmp_path):
     actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, {"stages": {}}))
     assert actions["transcribe"] == "skip-done"
 
-    # A recorded completed state always wins regardless of coverage.
+    # A recorded completed state does NOT win when coverage is partial —
+    # per-video failures inside a "completed" stage must retry next run.
     state = {"stages": {"gemini": {"status": "completed"}}}
     append_jsonl(project / "gemini_analyses.jsonl", {"source_video_id": "video_000001"})
+    actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, state))
+    assert actions["gemini"] == "run"
+
+    # Once every tape is covered, the completed state skips as usual.
+    append_jsonl(project / "gemini_analyses.jsonl", {"source_video_id": "video_000002"})
     actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, state))
     assert actions["gemini"] == "skip-done"
 

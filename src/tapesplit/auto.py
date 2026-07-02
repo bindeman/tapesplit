@@ -940,6 +940,13 @@ def plan_auto(
 def _stage_done(stage: Stage, stage_states: dict[str, Any], project: Path) -> bool:
     record = stage_states.get(stage.name)
     if isinstance(record, dict) and record.get("status") == "completed":
+        # A per-video stage can "complete" with per-video failures recorded
+        # in its summary (e.g. transient provider errors). It only counts as
+        # done when its artifacts actually cover every tape, so the next run
+        # retries just the missing videos.
+        if stage.coverage is not None:
+            complete, _reason = stage.coverage(project)
+            return complete
         return True
     # No state (e.g. project built with manual commands): adopt existing
     # artifacts, but only when they cover every tape.
