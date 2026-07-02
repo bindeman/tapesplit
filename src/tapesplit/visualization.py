@@ -232,8 +232,8 @@ def _event_timeline_entry(
         "people": [_ref("person", row) for row in people_by_event.get(event_id, [])],
         "places": [_place_ref(row) for row in places_by_event.get(event_id, [])],
         "dates": [_date_ref(row) for row in dates_by_event.get(event_id, [])],
-        "thumbnail_path": _first_path(assets, "thumbnail_path"),
-        "keyframe_path": _first_path(assets, "keyframe_path"),
+        "thumbnail_path": _representative_path(assets, "thumbnail_path"),
+        "keyframe_path": _representative_path(assets, "keyframe_path"),
         "evidence_ids": [str(item) for item in event.get("evidence_ids") or []],
         "alignment": _event_alignment_summary(event_alignments_by_event.get(event_id)),
         "reconciliation": reconciliation,
@@ -2113,6 +2113,21 @@ def _first_path(rows: list[dict[str, Any]], key: str) -> str:
         if value:
             return str(value)
     return ""
+
+
+def _representative_path(rows: list[dict[str, Any]], key: str) -> str:
+    """Pick the temporally middle frame, not the lead-in.
+
+    The first keyframe of an event is usually its establishing shot (or the
+    tail of the previous recording); the middle of the event is far more
+    likely to show what the title describes.
+    """
+
+    candidates = [row for row in rows if row.get(key)]
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda row: float(row.get("time_s") or 0.0))
+    return str(candidates[len(candidates) // 2].get(key) or "")
 
 
 def _unique_items(values: list[str]) -> list[str]:

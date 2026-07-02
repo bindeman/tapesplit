@@ -805,7 +805,22 @@ function PersonSheet({
   onPlay: (moment: PlayerMoment) => void;
 }) {
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
-  const appearances = person.appearances ?? [];
+  const appearances = useMemo(() => {
+    if (person.appearances?.length) {
+      return person.appearances;
+    }
+    // Fall back to scanning the timeline for this person's label/aliases.
+    const labels = new Set([person.label, ...(person.aliases ?? [])].map((value) => value.toLowerCase()));
+    return events
+      .filter((event) => event.people.some((ref) => ref.id === person.id || labels.has(ref.label.toLowerCase())))
+      .map((event) => ({
+        event_id: event.id,
+        title: event.title,
+        start_s: event.start_s,
+        end_s: event.end_s,
+        source_video_ids: event.source_video_ids,
+      }));
+  }, [events, person]);
   return (
     <div className="sheet-scrim" onClick={onClose}>
       <article className="event-sheet person-sheet" onClick={(clickEvent) => clickEvent.stopPropagation()}>
