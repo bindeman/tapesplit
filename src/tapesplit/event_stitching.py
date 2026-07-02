@@ -90,8 +90,34 @@ def stitch_project_events(
 def load_source_events(project: Path, *, prefer_gemini: bool = True) -> list[dict[str, Any]]:
     gemini_events = read_jsonl(project / "gemini_events.jsonl")
     if prefer_gemini and gemini_events:
-        return [_normalize_candidate(row) for row in gemini_events]
-    return [_normalize_candidate(row) for row in read_jsonl(project / "events.jsonl") + gemini_events]
+        analyzed = gemini_events
+    else:
+        analyzed = read_jsonl(project / "events.jsonl") + gemini_events
+    rows = analyzed + _uncovered_heuristic_events(project, analyzed)
+    return [_normalize_candidate(row) for row in rows]
+
+
+def _uncovered_heuristic_events(
+    project: Path,
+    analyzed_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Heuristic events only fill tapes no analyzed event touches."""
+
+    heuristic_events = read_jsonl(project / "heuristic_events.jsonl")
+    if not heuristic_events:
+        return []
+    covered = set()
+    for event in analyzed_events:
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        covered.update(_source_video_ids(event, metadata))
+    kept = []
+    for event in heuristic_events:
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        sources = set(_source_video_ids(event, metadata))
+        if sources and sources & covered:
+            continue
+        kept.append(event)
+    return kept
 
 
 def stitch_events(

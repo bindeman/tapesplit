@@ -11,6 +11,7 @@ from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
+from tapesplit.heuristic_events import build_heuristic_events
 from tapesplit.place_roles import build_place_roles_for_project
 from tapesplit.relationships import build_relationship_candidates
 from tapesplit.report import export_review_report
@@ -38,6 +39,8 @@ def rebuild_project_outputs(
     export_report: bool = True,
     export_story_output: bool = True,
     export_visualization: bool = True,
+    synthesize_heuristic_events: bool = True,
+    core_only: bool = False,
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     steps = []
@@ -56,6 +59,8 @@ def rebuild_project_outputs(
         )
 
     steps.append({"step": "build_evidence", "result": build_evidence(project)})
+    if synthesize_heuristic_events and (project / "tapes.jsonl").exists():
+        steps.append({"step": "build_heuristic_events", "result": build_heuristic_events(project)})
     steps.append(
         {
             "step": "stitch_events",
@@ -69,6 +74,12 @@ def rebuild_project_outputs(
     _append_reapply_step(steps, project, "review_reapply_after_stitch_events")
     steps.append({"step": "classify_content", "result": build_content_classifications_for_project(project)})
     steps.append({"step": "build_evidence_after_classification", "result": build_evidence(project)})
+    if core_only:
+        return {
+            "project": str(project),
+            "core_only": True,
+            "steps": steps,
+        }
     steps.append({"step": "build_groups", "result": build_project_groups(project, prefer_canonical=True)})
     _append_reapply_step(steps, project, "review_reapply_after_groups")
     steps.append({"step": "build_place_roles", "result": build_place_roles_for_project(project, prefer_canonical=True)})

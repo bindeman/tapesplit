@@ -6,6 +6,14 @@ import shutil
 import sys
 from pathlib import Path
 
+from tapesplit.auto import (
+    AutoOptions,
+    DEFAULT_MAX_CLOUD_USD,
+    PROFILES,
+    project_status,
+    run_auto,
+    stage_names,
+)
 from tapesplit.azure_openai_adapter import check_azure_openai_config, smoke_test
 from tapesplit.costs import (
     estimate_project_twelvelabs_index_cost,
@@ -47,6 +55,7 @@ from tapesplit.gemini_adapter import (
 from tapesplit.gemini_compare import compare_gemini_analysis_modes, summarize_gemini_analyses
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
+from tapesplit.heuristic_events import build_heuristic_events
 from tapesplit.ingest import ingest
 from tapesplit.media_metadata import extract_exif_for_project
 from tapesplit.non_content import detect_non_content_for_project
@@ -131,6 +140,109 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Index long VHS/DVD/home-video transfers into reviewable metadata.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    auto_parser = subparsers.add_parser(
+        "auto",
+        help="Run the full pipeline: raw videos in, reviewable archive out.",
+    )
+    auto_parser.add_argument(
+        "input",
+        type=Path,
+        help="Video file, folder of videos, or existing .tapesplit project.",
+    )
+    auto_parser.add_argument(
+        "--out",
+        type=Path,
+        help="Project output directory. Defaults to <input>.tapesplit.",
+    )
+    auto_parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        default="auto",
+        help="auto: use everything available; local: no cloud calls; minimal: deterministic stages only.",
+    )
+    auto_parser.add_argument(
+        "--max-cloud-usd",
+        type=float,
+        default=DEFAULT_MAX_CLOUD_USD,
+        help=f"Skip cloud video analysis if the estimate exceeds this. Default: {DEFAULT_MAX_CLOUD_USD}. Pass -1 to disable the gate.",
+    )
+    auto_parser.add_argument("--language", help="Transcription language hint, e.g. ru or en.")
+    auto_parser.add_argument(
+        "--window-seconds",
+        type=float,
+        default=30.0,
+        help="Ingest window size for search/indexing fallback. Default: 30.",
+    )
+    auto_parser.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        metavar="STAGE",
+        help=f"Skip a stage (repeatable). Stages: {', '.join(stage_names())}.",
+    )
+    auto_parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="STAGE",
+        help="Run only the named stages (repeatable).",
+    )
+    auto_parser.add_argument("--force", action="store_true", help="Re-run stages even if already completed.")
+    auto_parser.add_argument(
+        "--force-from",
+        metavar="STAGE",
+        help="Re-run the named stage and everything after it.",
+    )
+    auto_parser.add_argument(
+        "--suggestions-tier",
+        choices=["primary", "backlog", "all"],
+        default="primary",
+        help="Auto-accept review suggestions from this tier after the build. Default: primary.",
+    )
+    auto_parser.add_argument(
+        "--no-suggestions",
+        action="store_true",
+        help="Do not auto-accept any review suggestions.",
+    )
+    auto_parser.add_argument(
+        "--suggestions-min-confidence",
+        type=float,
+        help="Only auto-accept suggestions at or above this confidence.",
+    )
+    auto_parser.add_argument(
+        "--search-embedding-backend",
+        choices=["local-sparse", "sentence-transformers", "auto"],
+        default="local-sparse",
+        help="Embedding backend for the search index. Default: local-sparse.",
+    )
+    auto_parser.add_argument("--plan", action="store_true", help="Print the stage plan and exit without running.")
+    auto_parser.add_argument("--json", action="store_true", help="Print the machine-readable result JSON.")
+
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show pipeline stage state and archive metrics for a project.",
+    )
+    status_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    status_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+
+    ui_parser = subparsers.add_parser(
+        "ui",
+        help="Launch the local review UI against a project.",
+    )
+    ui_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    ui_parser.add_argument("--port", type=int, help="Preferred dev server port (default 5173).")
+
+    synth_parser = subparsers.add_parser(
+        "synthesize-events",
+        help="Synthesize low-confidence local events for tapes without cloud analysis.",
+    )
+    synth_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    synth_parser.add_argument(
+        "--include-covered",
+        action="store_true",
+        help="Also synthesize for tapes already covered by analyzed events.",
+    )
 
     ingest_parser = subparsers.add_parser(
         "ingest",
@@ -1121,6 +1233,47 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_ui(project_dir: Path, *, port: int | None = None) -> int:
+    import os
+    import subprocess
+
+    project = project_dir.expanduser().resolve()
+    if not (project / "visualization.json").exists():
+        print(
+            f"warning: {project / 'visualization.json'} does not exist yet; "
+            "run `tapesplit auto` or `tapesplit export-visualization` first.",
+            file=sys.stderr,
+        )
+    repo_root = Path(__file__).resolve().parents[2]
+    ui_dir = repo_root / "apps" / "review-ui"
+    if not (ui_dir / "package.json").exists():
+        print(
+            f"error: review UI not found at {ui_dir}; "
+            "`tapesplit ui` requires a repo checkout (editable install).",
+            file=sys.stderr,
+        )
+        return 1
+    if shutil.which("npm") is None:
+        print("error: npm is required to run the review UI (brew install node).", file=sys.stderr)
+        return 1
+    if not (ui_dir / "node_modules").exists():
+        print("installing review UI dependencies (first run)…")
+        install = subprocess.run(["npm", "install"], cwd=ui_dir)
+        if install.returncode != 0:
+            return install.returncode
+
+    env = dict(os.environ)
+    env["TAPESPLIT_PROJECT"] = str(project)
+    command = ["npm", "run", "dev", "--", "--host", "127.0.0.1"]
+    if port:
+        command.extend(["--port", str(port)])
+    print(f"starting review UI for {project} (Ctrl-C to stop)…")
+    try:
+        return subprocess.call(command, cwd=ui_dir, env=env)
+    except KeyboardInterrupt:
+        return 0
+
+
 def _doctor(as_json: bool) -> int:
     status = check_twelvelabs_config()
     status.update(check_azure_openai_config())
@@ -1189,6 +1342,58 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "auto":
+            options = AutoOptions(
+                profile=args.profile,
+                out=args.out,
+                window_seconds=args.window_seconds,
+                language=args.language,
+                force=args.force,
+                force_from=args.force_from,
+                skip=tuple(args.skip),
+                only=tuple(args.only),
+                max_cloud_usd=None if args.max_cloud_usd is not None and args.max_cloud_usd < 0 else args.max_cloud_usd,
+                suggestions_tier=None if args.no_suggestions else args.suggestions_tier,
+                suggestions_min_confidence=args.suggestions_min_confidence,
+                search_embedding_backend=args.search_embedding_backend,
+                plan_only=args.plan,
+                as_json=args.json,
+                quiet=args.json,
+            )
+            result = run_auto(args.input, options)
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True))
+            return 0 if (args.plan or result.get("ok")) else 1
+        if args.command == "status":
+            status = project_status(args.project)
+            if args.json:
+                print(json.dumps(status, indent=2, sort_keys=True))
+                return 0
+            print(f"TapeSplit project: {status['project']}")
+            print("  stages:")
+            for row in status["stages"]:
+                duration = f" ({row['duration_s']}s)" if row.get("duration_s") else ""
+                reason = f" — {row['reason']}" if row.get("reason") else ""
+                print(f"    {row['stage']:<18} {row['status']}{duration}{reason}")
+            print("  metrics:")
+            for key, value in sorted(status["metrics"].items()):
+                if value not in (None, 0, 0.0, []):
+                    print(f"    {key}: {value}")
+            return 0
+        if args.command == "ui":
+            return _run_ui(args.project, port=args.port)
+        if args.command == "synthesize-events":
+            print(
+                json.dumps(
+                    build_heuristic_events(
+                        args.project,
+                        only_uncovered_sources=not args.include_covered,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.command == "ingest":
             result = ingest(
                 input_path=args.input,
