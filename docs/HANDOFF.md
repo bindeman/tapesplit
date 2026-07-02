@@ -1,0 +1,263 @@
+# TapeSplit Agent Handoff
+
+This file is the blind-takeover entry point. Use it before reading the longer
+design docs or chat history.
+
+## Current State
+
+- Repo: `/path/to/tapesplit`
+- GitHub remote: `https://github.com/bindeman/tapesplit`
+- Current checked commit when this handoff was written: `f70930b`
+- Project type: local-first, source-available VHS and home-video intelligence backend
+  with a React/Vite review UI.
+- Sample project: `examples/family-haul.tapesplit`
+- Secrets: never commit `.env`, tokens, raw media, project outputs, caches, or
+  `cost_rates.json`.
+
+The codebase is versioned and pushed. The worktree should normally be clean
+before a new task starts.
+
+## Product Goal
+
+TapeSplit takes digitized VHS/DVD/home-video files and produces a reviewable
+modern archive:
+
+- canonical events and albums
+- likely dates, places, people, relationships, and related/unrelated labels
+- transcript, frame, face, speaker, OCR, and visual evidence
+- semantic search over events, moments, people, places, and evidence
+- corrections that survive reruns
+- UI-ready visualization data for a future desktop app
+
+The system should default to best guesses with provenance, then make correction
+fast in the UI. Use phrasing like "appears to be" for inferred facts.
+
+## Main Architecture
+
+The project is a Python CLI plus a local review UI.
+
+- CLI entry point: `src/tapesplit/cli.py`
+- Core project artifacts: JSONL files inside a `.tapesplit` project directory
+- Visualization export: `visualization.json`
+- Search index: `search.sqlite`
+- Review UI: `apps/review-ui`
+- Durable reviewer corrections: `corrections.jsonl`
+
+The backend is intentionally provider-agnostic. Gemini/TwelveLabs/Azure can be
+used for cloud-hybrid analysis, while local macOS/Linux/Windows components are
+being added for OCR, faces, transcription, diarization, visual embeddings, and
+search.
+
+## Important Docs
+
+Read these first:
+
+- `docs/LOCAL_SETUP.md`: install, provider config, pipeline commands
+- `docs/MVP_ENGINEERING_PLAN.md`: current MVP shape and rationale
+- `docs/VISUALIZATION_BACKEND.md`: UI data model and review queues
+- `docs/ENTITY_RESOLUTION.md`: aliases, roles, names, and merge strategy
+- `docs/RELATIONSHIP_INFERENCE.md`: family/social graph inference
+- `docs/LOCAL_MODEL_UPGRADE_PLAN.md`: local model stack plan
+- `docs/EVALUATION_WORKFLOW.md`: future human-review/eval workflow
+
+## Setup
+
+```bash
+/opt/homebrew/bin/python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e '.[twelvelabs,local-ai,vision,macos,visual-ai,face-ai,speaker-ai]' pytest
+brew install ffmpeg
+npm --prefix apps/review-ui install
+```
+
+For a lighter install, see `docs/LOCAL_SETUP.md`.
+
+Provider secrets belong in `.env`. Use `.env.example` as the schema. Google
+Vertex Gemini uses ADC rather than API keys in the current setup:
+
+```bash
+gcloud auth application-default login
+gcloud config set project <your-project>
+gcloud auth application-default set-quota-project <your-project>
+```
+
+## Verify The Repo
+
+```bash
+.venv/bin/python -m pytest -q
+npm --prefix apps/review-ui run build
+git diff --check
+```
+
+Expected at this handoff: `131 passed`, UI build passes, and `git diff --check`
+has no output.
+
+## Current Sample Project Snapshot
+
+`examples/family-haul.tapesplit` currently has:
+
+- source videos: 19
+- canonical event rows: 68
+- visualization timeline events: 20
+- people in visualization: 21
+- places: 16
+- face clusters: 22
+- speaker segments: 214
+- speaker tracks: 11
+- speaker identity candidates: 34
+- primary review items: 17
+- backlog review items: 42
+- durable corrections applied: 0
+
+Dry-running bulk primary suggestions currently selects 20 correction actions:
+
+```bash
+.venv/bin/tapesplit review apply-suggestions examples/family-haul.tapesplit \
+  --tier primary \
+  --dry-run
+```
+
+The selected actions include face identity, speaker identity, person confirms,
+role merges, place context, place confirmation, and relationship confirmations.
+Do not apply them to the sample blindly if you are trying to preserve the current
+baseline; dry-run and inspect first.
+
+## Review UI
+
+Start the UI against the sample project:
+
+```bash
+TAPESPLIT_PROJECT=examples/family-haul.tapesplit \
+  npm --prefix apps/review-ui run dev -- --host 127.0.0.1
+```
+
+Vite will print the local URL, usually `http://127.0.0.1:5173/` or the next free
+port.
+
+The UI supports:
+
+- timeline, albums, people, places, search, and review views
+- source video playback by timestamp
+- pending correction queue
+- one-click `Accept Best Guesses` for the selected review tier
+- correction replay through the local dev API
+
+## Core Pipeline
+
+For an already ingested project:
+
+```bash
+.venv/bin/tapesplit detect-non-content /path/to/project.tapesplit
+.venv/bin/tapesplit detect-scenes /path/to/project.tapesplit
+.venv/bin/tapesplit extract-visuals /path/to/project.tapesplit --force
+.venv/bin/tapesplit gemini prepare-video /path/to/project.tapesplit
+.venv/bin/tapesplit gemini estimate-video /path/to/project.tapesplit --all --output-tokens 12000
+.venv/bin/tapesplit gemini analyze-video /path/to/project.tapesplit --all --continue-on-error
+.venv/bin/tapesplit gemini compare-analyses /path/to/project.tapesplit
+.venv/bin/tapesplit rebuild /path/to/project.tapesplit --import-gemini
+.venv/bin/tapesplit detect-text /path/to/project.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit caption-visuals /path/to/project.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit embed-visuals /path/to/project.tapesplit --subject-type event --backend auto
+.venv/bin/tapesplit build-visual-similarity /path/to/project.tapesplit
+.venv/bin/tapesplit classify-content /path/to/project.tapesplit
+.venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene --backend auto
+.venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
+.venv/bin/tapesplit speakers diarize /path/to/project.tapesplit --source-video-id video_000001
+.venv/bin/tapesplit speakers identify /path/to/project.tapesplit
+.venv/bin/tapesplit search build /path/to/project.tapesplit
+.venv/bin/tapesplit export-visualization /path/to/project.tapesplit
+```
+
+Use `rebuild --import-gemini` to regenerate local derived outputs and replay
+existing `corrections.jsonl`.
+
+## Review Corrections
+
+Manual actions:
+
+```bash
+.venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
+.venv/bin/tapesplit review list /path/to/project.tapesplit
+.venv/bin/tapesplit review reapply /path/to/project.tapesplit
+```
+
+Bulk best-guess actions:
+
+```bash
+.venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary --dry-run
+.venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary
+```
+
+`apply-suggestions` reads `visualization.json`, converts `suggested_action`
+objects into durable review corrections, expands grouped relationship actions,
+skips already closed or stale targets, and appends to `corrections.jsonl`.
+
+## Current Capabilities
+
+Implemented and tested:
+
+- VHS non-content range detection for blue/black/static sections
+- scene detection
+- Gemini whole-video/chunk analysis, import, compare, and cost tracking
+- event stitching/reconciliation/alignment
+- grouping for events, albums, people, places, dates, languages
+- scoped place contexts such as multiple homes across eras
+- local OCR, captions, visual embeddings, visual similarity, content classifier
+- Apple Vision face detection path on macOS with OpenCV fallback
+- ArcFace/InsightFace-style local face embedding backend path
+- local transcription/import and multilingual search
+- speaker diarization with pyannote attempt and SpeechBrain fallback
+- speaker identity candidates using transcript/event/face/relationship context
+- local hybrid text/vector search
+- review UI with video playback and bulk suggestion acceptance
+- durable corrections and correction replay on rebuild
+
+## Known Weak Spots
+
+These are the highest-risk areas for the next agent:
+
+- Relationship candidates can be too eager when they are based only on kinship
+  words near names. Example: unresolved father/mother/grandparent candidates
+  may need more identity bridging before being accepted automatically.
+- Place drift still needs stronger safeguards. One known failure mode was an
+  Alaska mention contaminating an event that visually/contextually belonged to
+  Madison, Wisconsin.
+- Generic places such as `home`, `park`, `lake`, `classroom`, or `apartment
+  complex` need continuity, era, and parent-place scoping before GPS/export.
+- Face thumbnails exist, but low-quality crops and name/role duplicates still
+  require better clustering and UI confidence handling.
+- Speaker identity is useful but still draft. Treat it as a reviewable signal,
+  not fact.
+- Evals are designed but not yet the main development loop.
+- Bulk `Accept Best Guesses` reduces clicks, but it should eventually use
+  stronger per-action thresholds and maybe skip weak relationship categories by
+  default.
+
+## Best Next Steps
+
+Good continuation points:
+
+1. Add safer auto-accept thresholds by action type.
+   Start with relationships: require named subject/object, multiple evidence
+   modalities, or a role-identity bridge before primary auto-accept.
+2. Add a project-memory layer for reviewed aliases, known residences by era,
+   relationship facts, and recurring place labels.
+3. Improve role resolution so `Mom`, `mother`, `Katya`, and `Ekaterina` can merge
+   when event, transcript, relationship, speaker, and face signals agree.
+4. Build eval packets for the sample family and make a quick reviewer workflow
+   for validating people, places, relationships, and event labels.
+5. Improve location normalization and candidate display in the UI, including
+   evidence tooltips and "from context" labels.
+6. Extend video search/moments so every event, person, place, and relationship
+   links back to playable timestamps.
+
+## Development Rules
+
+- Preserve user/media data. Do not delete generated project artifacts unless the
+  task explicitly asks for regeneration or cleanup.
+- Do not commit secrets or raw media.
+- Prefer local/deterministic modules for VHS-specific logic; keep providers
+  swappable.
+- Keep corrections durable and replayable.
+- Add tests for any change that affects review decisions, entity resolution,
+  relationship inference, places, or export-visible metadata.

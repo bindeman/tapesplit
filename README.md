@@ -20,6 +20,9 @@ deployment.
 See [docs/MVP_ENGINEERING_PLAN.md](docs/MVP_ENGINEERING_PLAN.md) for the current
 one-week build plan.
 
+See [docs/HANDOFF.md](docs/HANDOFF.md) first if another agent or contributor is
+taking over without chat history.
+
 See [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) for local setup and provider
 smoke-test commands.
 
@@ -77,6 +80,7 @@ Current local review pipeline:
 .venv/bin/tapesplit detect-faces /path/to/project.tapesplit --subject-type scene --backend auto
 .venv/bin/tapesplit cluster-faces /path/to/project.tapesplit --embedding-backend auto
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit
+.venv/bin/tapesplit review apply-suggestions /path/to/project.tapesplit --tier primary --dry-run
 .venv/bin/tapesplit review apply /path/to/project.tapesplit review-actions.jsonl
 .venv/bin/tapesplit review reapply /path/to/project.tapesplit
 .venv/bin/tapesplit export-visualization /path/to/project.tapesplit

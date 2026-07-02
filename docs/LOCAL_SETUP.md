@@ -231,6 +231,21 @@ group, relationship, and context-graph artifacts. That keeps reviewer decisions
 durable when model outputs are rerun. Use `review reapply --strict` when you
 want missing correction targets to fail instead of being reported as skipped.
 
+To reduce review clicks, dry-run the generated best guesses before accepting
+them in bulk:
+
+```bash
+.venv/bin/tapesplit review apply-suggestions /path/to/family-videos.tapesplit \
+  --tier primary \
+  --dry-run
+.venv/bin/tapesplit review apply-suggestions /path/to/family-videos.tapesplit \
+  --tier primary
+```
+
+`apply-suggestions` reads `visualization.json`, expands grouped relationship
+suggestions, skips already closed or stale targets, and writes durable
+corrections to `corrections.jsonl`.
+
 ## Upload To TwelveLabs
 
 Estimate indexing cost before upload:
