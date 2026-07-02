@@ -1,17 +1,22 @@
 import {
   AlertTriangle,
+  Album,
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronRight,
   Clock3,
+  Film,
   GitMerge,
   ImageIcon,
   Info,
   Inbox,
+  LayoutGrid,
   ListFilter,
   MapPin,
   MapPinned,
   Pencil,
+  Play,
   RefreshCw,
   Search,
   Send,
@@ -45,6 +50,7 @@ import type {
   ProjectBundle,
   ReviewAction,
   ReviewItem,
+  SceneRecord,
   SearchResult,
   SourceRange,
   SpeakerIdentityCandidate,
@@ -52,7 +58,7 @@ import type {
   TaskType,
 } from "./types";
 
-type ViewMode = "review" | "timeline" | "albums" | "places" | "people" | "search";
+type ViewMode = "library" | "people" | "places" | "albums" | "search";
 type ReviewScope = "primary" | "backlog" | "all";
 
 type PlayerMoment = {
@@ -75,21 +81,25 @@ const taskLabels: Record<string, string> = {
 };
 
 const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
-  { id: "review", label: "Review", icon: Inbox },
-  { id: "timeline", label: "Timeline", icon: Clock3 },
-  { id: "albums", label: "Albums", icon: CalendarDays },
-  { id: "places", label: "Places", icon: MapPinned },
+  { id: "library", label: "Library", icon: LayoutGrid },
   { id: "people", label: "People", icon: Users },
+  { id: "places", label: "Places", icon: MapPinned },
+  { id: "albums", label: "Albums", icon: Album },
   { id: "search", label: "Search", icon: Search },
 ];
 
+const initialView = ((): ViewMode => {
+  const requested = new URLSearchParams(window.location.search).get("view");
+  return (viewLabels.some((item) => item.id === requested) ? requested : "library") as ViewMode;
+})();
+
 export function App() {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
-  const [view, setView] = useState<ViewMode>("review");
+  const [view, setView] = useState<ViewMode>(initialView);
   const [reviewScope, setReviewScope] = useState<ReviewScope>("primary");
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
-  const [searchQuery, setSearchQuery] = useState("Whitewater farmhouse");
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -98,6 +108,9 @@ export function App() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [openEvent, setOpenEvent] = useState<EventRecord | null>(null);
+  const [openPerson, setOpenPerson] = useState<PersonRecord | null>(null);
 
   async function refresh(nextStatus = "") {
     setBusy(true);
@@ -255,113 +268,67 @@ export function App() {
     );
   }
 
+  const reviewBadge = primaryReviewItems.length;
+
   return (
-    <div className="app-shell">
-      <aside className="left-rail">
-        <header className="brand">
-          <div>
-            <strong>TapeSplit</strong>
+    <div className="photos-shell">
+      <aside className="sidebar">
+        <header className="sidebar-brand">
+          <div className="brand-mark">
+            <Film size={17} />
+          </div>
+          <div className="brand-copy">
+            <strong>Tapes</strong>
             <span>{shortPath(bundle.projectDir)}</span>
           </div>
-          <button className="icon-button" onClick={() => void refresh("Reloaded")} disabled={busy} title="Reload project">
-            <RefreshCw size={16} className={busy ? "spin" : ""} />
-          </button>
         </header>
 
-        <nav className="mode-tabs" aria-label="Views">
+        <nav className="sidebar-nav" aria-label="Views">
           {viewLabels.map((item) => {
             const Icon = item.icon;
             return (
               <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
-                <Icon size={16} />
+                <Icon size={17} />
                 <span>{item.label}</span>
               </button>
             );
           })}
         </nav>
 
-        <ProjectStats summary={bundle.data.summary} backlogCount={reviewBacklog.length} />
-
-        <div className="queue-tools">
-          <label className="search-box">
-            <Search size={15} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter review items" />
-          </label>
-          <div className="task-filter">
-            <Inbox size={15} />
-            <select value={reviewScope} onChange={(event) => setReviewScope(event.target.value as ReviewScope)}>
-              <option value="primary">Primary guesses ({primaryReviewItems.length})</option>
-              <option value="backlog">Backlog guesses ({reviewBacklog.length})</option>
-              <option value="all">All guesses ({primaryReviewItems.length + reviewBacklog.length})</option>
-            </select>
-          </div>
-          <div className="task-filter">
-            <ListFilter size={15} />
-            <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
-              <option value="all">All review items</option>
-              {Object.entries(taskCounts).map(([task, count]) => (
-                <option key={task} value={task}>
-                  {taskLabel(task)} ({count})
-                </option>
-              ))}
-            </select>
-          </div>
-          <button className="command-button queue-command" disabled={busy || !suggestedActionCount} onClick={() => void applyBestGuesses()}>
-            <CheckCircle2 size={16} />
-            <span>Accept Best Guesses</span>
+        <div className="sidebar-footer">
+          <button className={`review-entry ${reviewOpen ? "active" : ""}`} onClick={() => setReviewOpen(true)}>
+            <Inbox size={16} />
+            <span>Review</span>
+            {reviewBadge > 0 && <em>{reviewBadge}</em>}
+          </button>
+          <button className="sidebar-refresh" onClick={() => void refresh("Reloaded")} disabled={busy}>
+            <RefreshCw size={14} className={busy ? "spin" : ""} />
+            <span>Refresh</span>
           </button>
         </div>
-
-        <ReviewQueue
-          items={filteredReviewItems}
-          selectedId={selectedItem?.id ?? ""}
-          pendingActions={pendingActions}
-          onSelect={(item) => {
-            setView("review");
-            setSelectedId(item.id);
-          }}
-        />
       </aside>
 
-      <main className="workbench">
-        <div className="workbench-top">
-          <div>
-            <h1>{viewTitle(view, selectedItem)}</h1>
-            <p>{viewSubtitle(view, bundle)}</p>
+      <main className="stage">
+        {(status || error) && (
+          <div className={`toast ${error ? "error" : ""}`}>
+            {error ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+            <span>{error || status}</span>
+            <button onClick={() => (error ? setError("") : setStatus(""))} aria-label="Dismiss">
+              <X size={13} />
+            </button>
           </div>
-          <div className="status-strip">
-            {error && (
-              <span className="status error">
-                <AlertTriangle size={14} />
-                {error}
-              </span>
-            )}
-            {status && !error && <span className="status">{status}</span>}
-          </div>
-        </div>
+        )}
 
-        {view === "review" && selectedItem && (
-          <ReviewDetail
-            key={selectedItem.id}
-            item={selectedItem}
-            pending={itemHasPendingAction(selectedItem, pendingActions)}
+        {view === "library" && (
+          <LibraryView
             events={bundle.data.timeline.events}
             media={bundle.data.media}
-            people={bundle.data.people}
-            places={bundle.data.places}
-            onPlay={setActiveMoment}
-            onQueue={queueAction}
+            summary={bundle.data.summary}
+            onOpen={setOpenEvent}
           />
         )}
-        {view === "review" && !selectedItem && <EmptyState icon={Inbox} title="No review items" />}
-        {view === "timeline" && (
-          <TimelineView
-            events={bundle.data.timeline.events}
-            media={bundle.data.media}
-            pendingActions={pendingActions}
-            onPlay={setActiveMoment}
-            onQueue={queueAction}
-          />
+        {view === "people" && (
+          <PeopleWall people={bundle.data.people} onSelect={setOpenPerson} />
         )}
         {view === "albums" && (
           <AlbumsView albums={bundle.data.tracks.albums} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
@@ -375,7 +342,6 @@ export function App() {
             onPlay={setActiveMoment}
           />
         )}
-        {view === "people" && <PeopleView people={bundle.data.people} media={bundle.data.media} onPlay={setActiveMoment} />}
         {view === "search" && (
           <SearchView
             query={searchQuery}
@@ -390,13 +356,533 @@ export function App() {
         )}
       </main>
 
-      <aside className="right-rail">
-        <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
-        <PendingActionsPanel actions={pendingActions} busy={busy} onApply={applyActions} onReapply={reapplyCorrections} onRemove={removeAction} />
-        <ContextPanel item={selectedItem} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
-      </aside>
+      {openEvent && (
+        <EventSheet
+          event={openEvent}
+          scenes={bundle.data.timeline.scenes}
+          media={bundle.data.media}
+          people={bundle.data.people}
+          reviewItems={[...primaryReviewItems, ...reviewBacklog]}
+          onClose={() => setOpenEvent(null)}
+          onPlay={setActiveMoment}
+          onOpenReview={(itemId) => {
+            setSelectedId(itemId);
+            setReviewOpen(true);
+          }}
+        />
+      )}
+
+      {openPerson && (
+        <PersonSheet
+          person={openPerson}
+          events={bundle.data.timeline.events}
+          media={bundle.data.media}
+          onClose={() => setOpenPerson(null)}
+          onOpenEvent={(event) => {
+            setOpenPerson(null);
+            setOpenEvent(event);
+          }}
+          onPlay={setActiveMoment}
+        />
+      )}
+
+      {reviewOpen && (
+        <div className="drawer-scrim" onClick={() => setReviewOpen(false)}>
+          <aside className="review-drawer" onClick={(event) => event.stopPropagation()}>
+            <header className="drawer-head">
+              <div>
+                <h2>Review</h2>
+                <p>Confirm or correct the archive’s remaining guesses</p>
+              </div>
+              <button className="icon-button" onClick={() => setReviewOpen(false)} aria-label="Close review">
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="queue-tools">
+              <label className="search-box">
+                <Search size={15} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter review items" />
+              </label>
+              <div className="task-filter">
+                <Inbox size={15} />
+                <select value={reviewScope} onChange={(event) => setReviewScope(event.target.value as ReviewScope)}>
+                  <option value="primary">Primary ({primaryReviewItems.length})</option>
+                  <option value="backlog">Backlog ({reviewBacklog.length})</option>
+                  <option value="all">All ({primaryReviewItems.length + reviewBacklog.length})</option>
+                </select>
+              </div>
+              <div className="task-filter">
+                <ListFilter size={15} />
+                <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
+                  <option value="all">All types</option>
+                  {Object.entries(taskCounts).map(([task, count]) => (
+                    <option key={task} value={task}>
+                      {taskLabel(task)} ({count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button className="command-button queue-command" disabled={busy || !suggestedActionCount} onClick={() => void applyBestGuesses()}>
+                <CheckCircle2 size={16} />
+                <span>Accept Best Guesses</span>
+              </button>
+            </div>
+
+            <div className="drawer-columns">
+              <ReviewQueue
+                items={filteredReviewItems}
+                selectedId={selectedItem?.id ?? ""}
+                pendingActions={pendingActions}
+                onSelect={(item) => setSelectedId(item.id)}
+              />
+              <div className="drawer-detail">
+                {selectedItem ? (
+                  <ReviewDetail
+                    key={selectedItem.id}
+                    item={selectedItem}
+                    pending={itemHasPendingAction(selectedItem, pendingActions)}
+                    events={bundle.data.timeline.events}
+                    media={bundle.data.media}
+                    people={bundle.data.people}
+                    places={bundle.data.places}
+                    onPlay={setActiveMoment}
+                    onQueue={queueAction}
+                  />
+                ) : (
+                  <EmptyState icon={CheckCircle2} title="Nothing needs review" />
+                )}
+                <PendingActionsPanel actions={pendingActions} busy={busy} onApply={applyActions} onReapply={reapplyCorrections} onRemove={removeAction} />
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {activeMoment && (
+        <div className="miniplayer">
+          <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
+        </div>
+      )}
     </div>
   );
+}
+
+function LibraryView({
+  events,
+  media,
+  summary,
+  onOpen,
+}: {
+  events: EventRecord[];
+  media: MediaRecord[];
+  summary: Record<string, number>;
+  onOpen: (event: EventRecord) => void;
+}) {
+  const { related, unrelated } = useMemo(() => splitByRelatedness(events), [events]);
+  const groups = useMemo(() => libraryGroups(related, media), [related, media]);
+  const totalHours = Math.round(media.reduce((acc, tape) => acc + (tape.duration_s ?? 0), 0) / 3600);
+
+  return (
+    <section className="library">
+      <header className="stage-hero">
+        <h1>Library</h1>
+        <p>
+          {media.length} tapes · {totalHours} hours · {events.length} events · {summary.people ?? 0} people
+        </p>
+      </header>
+
+      {groups.map((group) => (
+        <section key={group.key} className="library-group">
+          <div className="group-head">
+            <h2>{group.label}</h2>
+            <span>
+              {group.sublabel} · {group.events.length === 1 ? "1 event" : `${group.events.length} events`}
+            </span>
+          </div>
+          <div className="event-grid">
+            {group.events.map((event) => (
+              <EventCard key={event.id} event={event} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      {unrelated.length > 0 && (
+        <details className="offcuts">
+          <summary>
+            <ChevronRight size={15} className="chevron" />
+            Also on these tapes — TV broadcasts and other footage ({unrelated.length})
+          </summary>
+          <div className="event-grid dimmed">
+            {unrelated.map((event) => (
+              <EventCard key={event.id} event={event} onOpen={onOpen} />
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function EventCard({ event, onOpen }: { event: EventRecord; onOpen: (event: EventRecord) => void }) {
+  const image = event.thumbnail_path || event.keyframe_path;
+  const year = eventYear(event);
+  const place = event.places[0]?.label;
+  const subtitle = [year, place, formatEventDuration(event)].filter(Boolean).join(" · ");
+  return (
+    <figure className="event-card" onClick={() => onOpen(event)} role="button" tabIndex={0} onKeyDown={(keyEvent) => keyEvent.key === "Enter" && onOpen(event)}>
+      {image ? (
+        <img src={assetUrl(image)} alt="" loading="lazy" />
+      ) : (
+        <div className="card-fallback">
+          <Film size={26} />
+        </div>
+      )}
+      <figcaption className="card-shade">
+        <strong>{event.title}</strong>
+        {subtitle && <span>{subtitle}</span>}
+      </figcaption>
+      {event.review_status === "needs_review" && <span className="review-dot" title="Has an unconfirmed guess" />}
+    </figure>
+  );
+}
+
+function EventSheet({
+  event,
+  scenes,
+  media,
+  people,
+  reviewItems,
+  onClose,
+  onPlay,
+  onOpenReview,
+}: {
+  event: EventRecord;
+  scenes: SceneRecord[];
+  media: MediaRecord[];
+  people: PersonRecord[];
+  reviewItems: ReviewItem[];
+  onClose: () => void;
+  onPlay: (moment: PlayerMoment) => void;
+  onOpenReview: (itemId: string) => void;
+}) {
+  const hero = event.keyframe_path || event.thumbnail_path;
+  const strip = useMemo(() => eventFilmstrip(event, scenes, media), [event, scenes, media]);
+  const relatedItems = useMemo(
+    () =>
+      reviewItems.filter(
+        (item) => item.related_event_ids?.includes(event.id) || item.events.some((entry) => entry.event_id === event.id),
+      ),
+    [event.id, reviewItems],
+  );
+  const summaryText = event.reconciliation?.reconciled_summary || event.summary;
+  const byline = [
+    event.event_type ? humanizeToken(event.event_type) : null,
+    eventYear(event),
+    event.dates.find((date) => date.date_value)?.date_value,
+  ]
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
+
+  return (
+    <div className="sheet-scrim" onClick={onClose}>
+      <article className="event-sheet" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+        <button className="sheet-close" onClick={onClose} aria-label="Close">
+          <X size={16} />
+        </button>
+        <div className="sheet-hero">
+          {hero ? <img src={assetUrl(hero)} alt="" /> : <div className="card-fallback tall"><Film size={40} /></div>}
+          <button className="hero-play" onClick={() => playEvent(event, media, onPlay)} aria-label="Play">
+            <Play size={22} fill="currentColor" />
+          </button>
+        </div>
+        <div className="sheet-body">
+          <header>
+            <h1>{event.title}</h1>
+            {byline && <p className="byline">{byline}</p>}
+          </header>
+
+          {(event.people.length > 0 || event.places.length > 0) && (
+            <div className="sheet-chips">
+              {event.people.slice(0, 8).map((ref) => {
+                const person = findPerson(people, ref.id, ref.label);
+                const thumb = primaryPersonThumb(person);
+                return (
+                  <span key={ref.id} className="person-bubble">
+                    {thumb ? <img src={assetUrl(thumb)} alt="" /> : <i>{personInitials(ref.label)}</i>}
+                    {ref.label}
+                  </span>
+                );
+              })}
+              {event.places.slice(0, 4).map((ref) => (
+                <span key={ref.id} className="place-pill">
+                  <MapPin size={12} />
+                  {ref.label}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {summaryText && <p className="sheet-summary">{summaryText}</p>}
+
+          {strip.length > 0 && (
+            <div className="filmstrip" aria-label="Moments">
+              {strip.map((frame) => (
+                <button
+                  key={frame.scene.id}
+                  className="frame"
+                  onClick={() =>
+                    onPlay({
+                      videoId: frame.scene.source_video_id,
+                      videoLabel: frame.videoLabel,
+                      startS: frame.scene.start_s ?? 0,
+                      endS: frame.scene.end_s,
+                      title: event.title,
+                    })
+                  }
+                >
+                  <img src={assetUrl(frame.scene.thumbnail_path ?? "")} alt="" loading="lazy" />
+                  <span>{formatTime(frame.scene.start_s)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {relatedItems.length > 0 && (
+            <button className="quiet-review" onClick={() => onOpenReview(relatedItems[0].id)}>
+              <Info size={14} />
+              {relatedItems.length === 1 ? "1 detail could use a confirmation" : `${relatedItems.length} details could use a confirmation`}
+              <ChevronRight size={14} />
+            </button>
+          )}
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function PeopleWall({ people, onSelect }: { people: PersonRecord[]; onSelect: (person: PersonRecord) => void }) {
+  const { named, roles } = useMemo(() => {
+    const named: PersonRecord[] = [];
+    const roles: PersonRecord[] = [];
+    for (const person of people) {
+      (person.kind === "role_candidate" ? roles : named).push(person);
+    }
+    const count = (person: PersonRecord) => person.appearances?.length || person.appearance_count || 0;
+    const byCount = (a: PersonRecord, b: PersonRecord) => count(b) - count(a);
+    named.sort(byCount);
+    roles.sort(byCount);
+    return { named, roles };
+  }, [people]);
+
+  return (
+    <section className="people-wall">
+      <header className="stage-hero">
+        <h1>People</h1>
+        <p>{named.length} people across the tapes</p>
+      </header>
+      <div className="avatar-grid">
+        {named.map((person) => (
+          <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+            <PersonAvatar person={person} size="large" />
+            <strong>{person.label}</strong>
+            <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
+          </button>
+        ))}
+      </div>
+      {roles.length > 0 && (
+        <details className="offcuts">
+          <summary>
+            <ChevronRight size={15} className="chevron" />
+            Roles heard on tape, not yet matched to a person ({roles.length})
+          </summary>
+          <div className="avatar-grid compact">
+            {roles.map((person) => (
+              <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+                <PersonAvatar person={person} />
+                <strong>{person.label}</strong>
+                <span>{appearanceCount(person)}</span>
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function PersonAvatar({ person, size }: { person: PersonRecord; size?: "large" }) {
+  const thumb = primaryPersonThumb(person);
+  return (
+    <span className={`avatar ${size ?? ""}`}>
+      {thumb ? <img src={assetUrl(thumb)} alt="" loading="lazy" /> : <i>{personInitials(person.label)}</i>}
+    </span>
+  );
+}
+
+function PersonSheet({
+  person,
+  events,
+  media,
+  onClose,
+  onOpenEvent,
+  onPlay,
+}: {
+  person: PersonRecord;
+  events: EventRecord[];
+  media: MediaRecord[];
+  onClose: () => void;
+  onOpenEvent: (event: EventRecord) => void;
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const appearances = person.appearances ?? [];
+  return (
+    <div className="sheet-scrim" onClick={onClose}>
+      <article className="event-sheet person-sheet" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+        <button className="sheet-close" onClick={onClose} aria-label="Close">
+          <X size={16} />
+        </button>
+        <div className="sheet-body">
+          <header className="person-head">
+            <PersonAvatar person={person} size="large" />
+            <div>
+              <h1>{person.label}</h1>
+              <p className="byline">
+                {person.aliases.length > 0 && `also ${person.aliases.slice(0, 4).join(", ")} · `}
+                {appearances.length} {appearances.length === 1 ? "event" : "events"}
+              </p>
+            </div>
+          </header>
+          <div className="event-grid">
+            {appearances.map((entry) => {
+              const record = eventsById.get(entry.event_id);
+              if (record) {
+                return <EventCard key={entry.event_id} event={record} onOpen={onOpenEvent} />;
+              }
+              return (
+                <button key={entry.event_id} className="mini-event" onClick={() => playEvent(entry, media, onPlay)}>
+                  <Play size={13} />
+                  <span>{entry.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function splitByRelatedness(events: EventRecord[]) {
+  const related: EventRecord[] = [];
+  const unrelated: EventRecord[] = [];
+  for (const event of events) {
+    if ((event.relatedness ?? "").includes("unrelated")) {
+      unrelated.push(event);
+    } else {
+      related.push(event);
+    }
+  }
+  return { related, unrelated };
+}
+
+function libraryGroups(events: EventRecord[], media: MediaRecord[]) {
+  // Home-video dates are unreliable until reviewed (narration often mentions
+  // historical years), so the library groups by tape — like film rolls —
+  // and shows a year on the card only when one is known.
+  const order = new Map(media.map((tape, index) => [tape.id, index]));
+  const byTape = new Map<string, EventRecord[]>();
+  for (const event of events) {
+    const tapeId = event.source_video_ids[0] ?? "unknown";
+    const bucket = byTape.get(tapeId) ?? [];
+    bucket.push(event);
+    byTape.set(tapeId, bucket);
+  }
+  const keys = [...byTape.keys()].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
+  return keys.map((key) => {
+    const tape = media.find((row) => row.id === key);
+    const index = order.get(key);
+    const stem = (tape?.filename ?? key).replace(/\.[a-z0-9]+$/i, "");
+    return {
+      key,
+      label: typeof index === "number" ? `Tape ${index + 1}` : "Loose footage",
+      sublabel: stem,
+      events: (byTape.get(key) ?? []).sort((a, b) => (a.start_s ?? 0) - (b.start_s ?? 0)),
+    };
+  });
+}
+
+function eventYear(event: EventRecord): string {
+  for (const date of event.dates ?? []) {
+    const match = /(19|20)\d{2}/.exec(date.date_value ?? date.label ?? "");
+    if (match) {
+      return match[0];
+    }
+  }
+  return "";
+}
+
+function eventFilmstrip(event: EventRecord, scenes: SceneRecord[], media: MediaRecord[]) {
+  const frames: Array<{ scene: SceneRecord; videoLabel: string }> = [];
+  for (const videoId of event.source_video_ids) {
+    const tape = media.find((row) => row.id === videoId);
+    const offset = tape?.offset_s ?? 0;
+    const localStart = Math.max(0, (event.start_s ?? offset) - offset);
+    const localEnd = typeof event.end_s === "number" ? event.end_s - offset : Number.POSITIVE_INFINITY;
+    for (const scene of scenes) {
+      if (
+        scene.source_video_id === videoId &&
+        scene.scene_type === "content" &&
+        scene.thumbnail_path &&
+        (scene.end_s ?? 0) >= localStart &&
+        (scene.start_s ?? 0) <= localEnd
+      ) {
+        frames.push({ scene, videoLabel: tape?.filename || videoId });
+      }
+    }
+  }
+  frames.sort((a, b) => (a.scene.start_s ?? 0) - (b.scene.start_s ?? 0));
+  if (frames.length > 28) {
+    const step = frames.length / 28;
+    return Array.from({ length: 28 }, (_, index) => frames[Math.floor(index * step)]);
+  }
+  return frames;
+}
+
+function formatEventDuration(event: EventRecord): string {
+  if (typeof event.start_s !== "number" || typeof event.end_s !== "number") {
+    return "";
+  }
+  const seconds = Math.max(0, event.end_s - event.start_s);
+  if (seconds < 90) {
+    return `${Math.round(seconds)}s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+function appearanceCount(person: PersonRecord): number {
+  return person.appearances?.length || person.appearance_count || 0;
+}
+
+function personInitials(label: string): string {
+  return label
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function humanizeToken(value: string): string {
+  const text = value.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
@@ -2171,28 +2657,6 @@ function countBy<T>(rows: T[], getKey: (row: T) => string) {
 
 function taskLabel(task: string) {
   return taskLabels[task] ?? task.replace(/_/g, " ");
-}
-
-function viewTitle(view: ViewMode, selected: ReviewItem | null) {
-  if (view === "review") return selected?.title ?? "Review";
-  if (view === "timeline") return "Event Timeline";
-  if (view === "albums") return "Albums";
-  if (view === "places") return "Place Contexts";
-  if (view === "people") return "People";
-  return "Search";
-}
-
-function viewSubtitle(view: ViewMode, bundle: ProjectBundle) {
-  const summary = bundle.data.summary;
-  if (view === "review") {
-    const backlog = summary.review_backlog_items ?? bundle.data.review_backlog?.length ?? 0;
-    return `${summary.review_items ?? 0} primary review items · ${backlog} in backlog · ${bundle.pendingActions.length} pending`;
-  }
-  if (view === "timeline") return `${summary.events ?? 0} visible events across ${summary.source_videos ?? 0} videos`;
-  if (view === "albums") return `${bundle.data.tracks.albums.length} album candidates`;
-  if (view === "places") return `${summary.place_contexts ?? 0} contexts · ${summary.places ?? 0} places`;
-  if (view === "people") return `${summary.people ?? 0} people · ${summary.face_clusters ?? 0} face clusters`;
-  return `${summary.events ?? 0} events · ${summary.people ?? 0} people · ${summary.places ?? 0} places indexed`;
 }
 
 function formatConfidence(value?: number) {
