@@ -524,3 +524,74 @@ def test_gemini_routes_oversized_tapes_to_chunked_analysis(tmp_path, monkeypatch
     assert chunk_calls == ["video_000002"]  # 1.235M tokens → chunked
     assert summary["chunked_for_context"] == ["video_000002"]
     assert summary["videos_analyzed"] == 2
+
+
+def test_gemini_routes_long_duration_tapes_to_chunks_even_under_token_limit(tmp_path, monkeypatch):
+    import tapesplit.gemini_adapter as gemini_adapter
+
+    project = tmp_path / "long.tapesplit"
+    project.mkdir()
+    write_json(project / "manifest.json", {"schema_version": 1})
+    # 124 minutes: under the token threshold at low res, but over Vertex's
+    # per-request video-duration ceiling.
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000001", "probe": {"duration_s": 7440.0}})
+
+    monkeypatch.setattr(
+        gemini_adapter,
+        "estimate_project_videos",
+        lambda *args, **kwargs: {
+            "results": [
+                {
+                    "source_video_id": "video_000001",
+                    "estimated_cost_usd": 0.4,
+                    "units": {"input_video_tokens": 490_000, "input_audio_tokens": 238_000},
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(gemini_adapter, "prepare_project_video_proxies", lambda project: {})
+    chunk_calls = []
+    monkeypatch.setattr(
+        gemini_adapter,
+        "analyze_project_video_chunks",
+        lambda project, source_video_id: chunk_calls.append(source_video_id) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        gemini_adapter,
+        "analyze_project_video",
+        lambda project, source_video_id: (_ for _ in ()).throw(AssertionError("should not run whole-video")),
+    )
+
+    context = auto.StageContext(project=project, options=AutoOptions(), capabilities=dict(FULL_CAPS))
+    summary = auto._run_gemini_analyze(context)
+    assert chunk_calls == ["video_000001"]
+    assert summary["chunked_for_context"] == ["video_000001"]
+
+
+def test_gemini_retries_transient_errors_then_succeeds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(auto.time, "sleep", lambda s: sleeps.append(s))
+    attempts = {"n": 0}
+
+    def flaky():
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise RuntimeError('Vertex Gemini request failed (503): {"error": "UNAVAILABLE"}')
+        return {"ok": True}
+
+    assert auto._call_gemini_with_retry(flaky) == {"ok": True}
+    assert attempts["n"] == 3
+    assert sleeps == [60.0, 120.0]
+
+
+def test_gemini_does_not_retry_permanent_errors(monkeypatch):
+    monkeypatch.setattr(auto.time, "sleep", lambda s: (_ for _ in ()).throw(AssertionError("no sleep")))
+    attempts = {"n": 0}
+
+    def invalid():
+        attempts["n"] += 1
+        raise RuntimeError('Vertex Gemini request failed (400): {"error": "INVALID_ARGUMENT"}')
+
+    with pytest.raises(RuntimeError, match="400"):
+        auto._call_gemini_with_retry(invalid)
+    assert attempts["n"] == 1

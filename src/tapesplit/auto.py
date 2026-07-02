@@ -359,6 +359,31 @@ def _run_diarize(context: StageContext) -> dict[str, Any]:
 # chunk boundaries.
 GEMINI_WHOLE_VIDEO_MAX_INPUT_TOKENS = 900_000
 
+# Vertex also enforces a per-request video-duration ceiling independent of
+# token count: on the 2026-07 haul run every tape <= 93 minutes succeeded
+# whole-video and every tape >= 123 minutes was rejected with
+# 400 INVALID_ARGUMENT at low media resolution. Route anything longer than
+# this to chunked analysis.
+GEMINI_WHOLE_VIDEO_MAX_DURATION_S = 6_000.0
+
+# Transient Vertex failures worth retrying before recording a failure.
+GEMINI_RETRYABLE_MARKERS = ("(429)", "(500)", "(502)", "(503)", "(504)")
+GEMINI_RETRY_ATTEMPTS = 3
+GEMINI_RETRY_BACKOFF_S = 60.0
+
+
+def _call_gemini_with_retry(call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    for attempt in range(1, GEMINI_RETRY_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as exc:
+            message = str(exc)
+            retryable = any(marker in message for marker in GEMINI_RETRYABLE_MARKERS)
+            if attempt < GEMINI_RETRY_ATTEMPTS and retryable:
+                time.sleep(GEMINI_RETRY_BACKOFF_S * attempt)
+                continue
+            raise
+
 
 def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
     from tapesplit.gemini_adapter import (
@@ -415,19 +440,36 @@ def _run_gemini_analyze(context: StageContext) -> dict[str, Any]:
                 f"--max-cloud-usd {options.max_cloud_usd:.2f}"
             )
 
+    durations_by_video = {
+        str(tape.get("id")): float((tape.get("probe") or {}).get("duration_s") or 0.0)
+        for tape in tapes
+        if tape.get("id")
+    }
+
     prepare_project_video_proxies(project)
     results = []
     errors = []
     chunked_videos = []
     for source_video_id in pending:
         input_tokens = input_tokens_by_video.get(source_video_id)
-        use_chunks = input_tokens is not None and input_tokens > GEMINI_WHOLE_VIDEO_MAX_INPUT_TOKENS
+        use_chunks = (
+            (input_tokens is not None and input_tokens > GEMINI_WHOLE_VIDEO_MAX_INPUT_TOKENS)
+            or durations_by_video.get(source_video_id, 0.0) > GEMINI_WHOLE_VIDEO_MAX_DURATION_S
+        )
         try:
             if use_chunks:
-                results.append(analyze_project_video_chunks(project, source_video_id=source_video_id))
+                results.append(
+                    _call_gemini_with_retry(
+                        lambda vid=source_video_id: analyze_project_video_chunks(project, source_video_id=vid)
+                    )
+                )
                 chunked_videos.append(source_video_id)
             else:
-                results.append(analyze_project_video(project, source_video_id=source_video_id))
+                results.append(
+                    _call_gemini_with_retry(
+                        lambda vid=source_video_id: analyze_project_video(project, source_video_id=vid)
+                    )
+                )
         except Exception as exc:
             errors.append({"source_video_id": source_video_id, "error": str(exc)})
     if errors and not results:
