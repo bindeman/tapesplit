@@ -220,8 +220,25 @@ def _available_backend(key: str, hint: str) -> Callable[[dict[str, Any]], tuple[
 def _run_ingest(context: StageContext) -> dict[str, Any]:
     from tapesplit.ingest import ingest
 
-    if (context.project / "tapes.jsonl").exists():
-        tapes = read_jsonl(context.project / "tapes.jsonl")
+    tapes_path = context.project / "tapes.jsonl"
+    if tapes_path.exists():
+        tapes = read_jsonl(tapes_path)
+        expected = _manifest_video_count(context.project)
+        if expected is not None and len(tapes) < expected:
+            # Interrupted mid-ingest: some videos never made it into the
+            # project. Redo ingest when that is safe, otherwise fail loudly
+            # instead of silently dropping tapes.
+            if context.source_input is not None and _is_interrupted_ingest(context.project):
+                return ingest(
+                    input_path=context.source_input,
+                    out_path=context.project,
+                    window_seconds=context.options.window_seconds,
+                    force=True,
+                )
+            raise RuntimeError(
+                f"project has {len(tapes)} of {expected} ingested videos "
+                f"(interrupted ingest); remove {context.project} to re-ingest"
+            )
         return {"videos": len(tapes), "note": "project already ingested"}
     if context.source_input is None:
         raise RuntimeError("project has no tapes.jsonl and no source input was provided")
@@ -233,17 +250,37 @@ def _run_ingest(context: StageContext) -> dict[str, Any]:
     )
 
 
-def _is_interrupted_ingest(project: Path) -> bool:
-    """True when the project dir holds only ingest scaffolding (no artifacts).
+def _manifest_video_count(project: Path) -> int | None:
+    manifest_path = project / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        count = manifest.get("video_count")
+        return int(count) if count is not None else None
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
 
-    An interrupt between ``manifest.json`` and ``tapes.jsonl`` leaves a
-    half-created project that plain ``ingest`` refuses to overwrite. Redoing
-    it is safe only when nothing derived exists yet.
+
+def _is_interrupted_ingest(project: Path) -> bool:
+    """True when the project dir holds only ingest-era files (no artifacts).
+
+    An interrupt during ingest leaves a half-created project that plain
+    ``ingest`` refuses to overwrite. Redoing it (rmtree + re-ingest) is safe
+    only while nothing derived exists yet.
     """
 
     if not project.exists():
         return False
-    scaffolding = {"manifest.json", "keyframes", "thumbnails", "pipeline_state.json", ".DS_Store"}
+    scaffolding = {
+        "manifest.json",
+        "tapes.jsonl",
+        "windows.jsonl",
+        "keyframes",
+        "thumbnails",
+        "pipeline_state.json",
+        ".DS_Store",
+    }
     for entry in project.iterdir():
         if entry.name not in scaffolding:
             return False
@@ -886,7 +923,22 @@ def run_auto(
 
     outcomes: list[StageOutcome] = []
     completed: set[str] = set()
+    intentionally_skipped: set[str] = set()
     failed: set[str] = set()
+    stages_by_name = {item.stage.name: item.stage for item in plan}
+
+    def requirement_met(name: str) -> bool:
+        if name in completed:
+            return True
+        # A dependency outside this run's plan (e.g. excluded by --only) may
+        # already be satisfied by recorded state or existing artifacts.
+        requirement = stages_by_name.get(name)
+        return requirement is not None and _stage_done(requirement, state.get("stages", {}), project)
+
+    def persist_state() -> None:
+        if project.exists():
+            save_pipeline_state(project, state)
+
     total = len(plan)
     for index, item in enumerate(plan, start=1):
         stage = item.stage
@@ -901,7 +953,7 @@ def run_auto(
             say(f"{prefix} - {item.action}: {item.reason}")
             continue
 
-        missing = [name for name in stage.requires if name not in completed]
+        missing = [name for name in stage.requires if not requirement_met(name)]
         if missing:
             reason = f"requires {', '.join(missing)}"
             outcomes.append(StageOutcome(stage.name, stage.title, stage.kind, "blocked", reason))
@@ -915,13 +967,14 @@ def run_auto(
         except StageSkipped as exc:
             outcome = StageOutcome(stage.name, stage.title, stage.kind, "skipped", str(exc))
             outcomes.append(outcome)
+            intentionally_skipped.add(stage.name)
             _record_stage(state, stage.name, "skipped", started_at, reason=str(exc))
-            save_pipeline_state(project, state)
+            persist_state()
             say(f"{prefix} - skipped: {exc}")
             continue
         except KeyboardInterrupt:
             _record_stage(state, stage.name, "interrupted", started_at)
-            save_pipeline_state(project, state)
+            persist_state()
             say(f"{prefix} ! interrupted — rerun `tapesplit auto` to resume")
             raise
         except Exception as exc:
@@ -941,7 +994,7 @@ def run_auto(
                 traceback_tail="".join(traceback.format_exception(exc)[-3:]).strip()[:2000],
                 duration_s=round(duration, 1),
             )
-            save_pipeline_state(project, state)
+            persist_state()
             say(f"{prefix} x failed ({duration:.0f}s): {error}")
             continue
 
@@ -964,12 +1017,18 @@ def run_auto(
             duration_s=round(duration, 1),
             summary=_truncate_summary(summary),
         )
-        save_pipeline_state(project, state)
+        persist_state()
         say(f"{prefix} + done ({_format_duration(duration)}){_format_highlights(stage.name, summary)}")
 
     elapsed = time.monotonic() - started
     metrics = collect_project_metrics(project)
-    ok = all(name in completed for name in ("ingest", "core-build", "finalize"))
+    if options.only:
+        # A targeted run succeeds when every requested stage ran (or was
+        # already done / intentionally skipped), not when the whole archive
+        # was rebuilt.
+        ok = all(name in completed or name in intentionally_skipped for name in options.only)
+    else:
+        ok = all(name in completed for name in ("ingest", "core-build", "finalize"))
     result = {
         "project": str(project),
         "profile": options.profile,

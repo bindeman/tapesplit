@@ -371,3 +371,87 @@ def test_interrupted_ingest_detection(tmp_path):
 
     append_jsonl(project / "scenes.jsonl", {"id": "x"})
     assert auto._is_interrupted_ingest(project) is False  # has derived artifacts
+
+
+def test_only_runs_stage_when_requirements_satisfied_by_prior_state(tmp_path, monkeypatch):
+    project = _project(tmp_path)
+    calls: list[str] = []
+    monkeypatch.setattr(auto, "build_stages", lambda: _stub_stages(calls))
+    monkeypatch.setattr(auto, "gather_capabilities", lambda: dict(FULL_CAPS))
+
+    # First full run completes everything.
+    run_auto(project, AutoOptions(quiet=True))
+    calls.clear()
+
+    # Targeted re-run of one mid-graph stage: requirements come from state.
+    result = run_auto(project, AutoOptions(quiet=True, only=("beta",), force=True))
+    assert calls == ["beta"]
+    statuses = {row["name"]: row["status"] for row in result["stages"]}
+    assert statuses["beta"] == "completed"
+    assert result["ok"] is True
+
+
+def test_only_requirements_satisfied_by_artifacts_without_state(tmp_path, monkeypatch):
+    project = _project(tmp_path)  # tapes.jsonl exists → ingest adoptable
+    calls: list[str] = []
+    monkeypatch.setattr(auto, "build_stages", lambda: _stub_stages(calls))
+    monkeypatch.setattr(auto, "gather_capabilities", lambda: dict(FULL_CAPS))
+
+    result = run_auto(project, AutoOptions(quiet=True, only=("alpha",)))
+    assert calls == ["alpha"]
+    assert result["ok"] is True
+
+
+def test_partial_ingest_detected_and_recovered(tmp_path, monkeypatch):
+    import tapesplit.ingest as ingest_module
+
+    project = tmp_path / "p.tapesplit"
+    project.mkdir()
+    write_json(project / "manifest.json", {"schema_version": 1, "video_count": 3})
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000001", "probe": {"duration_s": 10.0}})
+    (project / "keyframes").mkdir()
+    (project / "thumbnails").mkdir()
+
+    forced = {}
+
+    def fake_ingest(*, input_path, out_path, window_seconds, force=False):
+        forced["force"] = force
+        return {"videos": 3}
+
+    monkeypatch.setattr(ingest_module, "ingest", fake_ingest)
+    context = auto.StageContext(
+        project=project,
+        options=AutoOptions(),
+        capabilities=dict(FULL_CAPS),
+        source_input=tmp_path,
+    )
+    summary = auto._run_ingest(context)
+    assert summary == {"videos": 3}
+    assert forced["force"] is True
+
+    # With derived artifacts present, re-ingest would destroy work: fail loudly.
+    append_jsonl(project / "scenes.jsonl", {"id": "s1"})
+    with pytest.raises(RuntimeError, match="interrupted ingest"):
+        auto._run_ingest(context)
+
+    # Complete ingest passes through untouched.
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000002", "probe": {}})
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000003", "probe": {}})
+    summary = auto._run_ingest(context)
+    assert summary["videos"] == 3
+    assert "already ingested" in summary["note"]
+
+
+def test_ingest_failure_before_project_creation_reports_real_error(tmp_path, monkeypatch):
+    video = tmp_path / "tape.mp4"
+    video.write_bytes(b"fake")
+    monkeypatch.setattr(auto, "gather_capabilities", lambda: dict(FULL_CAPS))
+
+    result = run_auto(video, AutoOptions(quiet=True, window_seconds=0.0))
+
+    statuses = {row["name"]: row["status"] for row in result["stages"]}
+    assert statuses["ingest"] == "failed"
+    ingest_row = next(row for row in result["stages"] if row["name"] == "ingest")
+    assert "window-seconds" in (ingest_row["error"] or "")
+    assert result["ok"] is False
+    assert not (tmp_path / "tape.mp4.tapesplit").exists()
