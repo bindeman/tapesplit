@@ -39,6 +39,31 @@ SUPPORTED_REVIEW_ACTIONS = {
 REVIEW_SUGGESTION_TIERS = {"primary", "backlog", "all"}
 CLOSED_REVIEW_STATUSES = {"confirmed", "rejected", "excluded", "merged"}
 
+AUTO_ACCEPT_POLICIES = {"safe", "legacy"}
+
+# Per-action confidence floors for the "safe" auto-accept policy. Actions that
+# only add conservative/reversible context (role-only, historical) have no
+# floor. Identity-changing actions need stronger evidence than event labels.
+SAFE_AUTO_ACCEPT_MIN_CONFIDENCE: dict[str, float | None] = {
+    "confirm_identity": 0.75,
+    "confirm_speaker_identity": 0.7,
+    "confirm_person": 0.6,
+    "merge_person": 0.7,
+    "mark_role_only": None,
+    "confirm_place": 0.65,
+    "confirm_place_context": 0.6,
+    "confirm_geocode_later": None,
+    "confirm_relationship": 0.75,
+    "confirm_event": 0.55,
+    "mark_unrelated": 0.7,
+    "confirm_event_date": 0.65,
+    "mark_historical_context": None,
+}
+
+# Relationships based only on a kinship word near a name are the known
+# over-eager case. A single-mention candidate must clear a higher bar.
+SAFE_RELATIONSHIP_SINGLE_EVIDENCE_MIN_CONFIDENCE = 0.85
+
 
 def apply_review_actions(
     project_dir: Path,
@@ -83,6 +108,7 @@ def apply_review_suggestions(
     min_confidence: float | None = None,
     dry_run: bool = False,
     reviewer: str = "bulk-suggestion",
+    policy: str = "safe",
 ) -> dict[str, Any]:
     project = project_dir.expanduser().resolve()
     selected, skipped = _collect_review_suggestion_actions(
@@ -90,10 +116,12 @@ def apply_review_suggestions(
         tier=tier,
         min_confidence=min_confidence,
         reviewer=reviewer,
+        policy=policy,
     )
     summary: dict[str, Any] = {
         "project": str(project),
         "tier": tier,
+        "policy": policy,
         "dry_run": dry_run,
         "suggestions_selected": len(selected),
         "by_action": _count_by(selected, "action"),
@@ -761,9 +789,12 @@ def _collect_review_suggestion_actions(
     tier: str,
     min_confidence: float | None,
     reviewer: str,
+    policy: str = "safe",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if tier not in REVIEW_SUGGESTION_TIERS:
         raise ValueError(f"tier must be one of: {', '.join(sorted(REVIEW_SUGGESTION_TIERS))}")
+    if policy not in AUTO_ACCEPT_POLICIES:
+        raise ValueError(f"policy must be one of: {', '.join(sorted(AUTO_ACCEPT_POLICIES))}")
 
     review_items = _load_review_items_for_tier(project, tier)
     state = _ProjectReviewState(project)
@@ -808,10 +839,65 @@ def _collect_review_suggestion_actions(
             if target_row is not None and _is_review_closed(target_row):
                 skipped.append({"item_id": item_id, "target_id": target_id, "reason": "target already closed"})
                 continue
+            if policy == "safe":
+                block_reason = _safe_policy_block_reason(action, confidence, target_row)
+                if block_reason:
+                    skipped.append(
+                        {
+                            "item_id": item_id,
+                            "target_id": target_id,
+                            "action": action.get("action"),
+                            "reason": f"safe policy: {block_reason}",
+                            "confidence": confidence,
+                        }
+                    )
+                    continue
             seen_target_ids.add(target_id)
             selected.append(action)
 
     return selected, skipped
+
+
+def _safe_policy_block_reason(
+    action: dict[str, Any],
+    confidence: float | None,
+    target_row: dict[str, Any] | None,
+) -> str | None:
+    """Return why the safe auto-accept policy refuses this action, or None."""
+
+    action_name = str(action.get("action") or "")
+    floor = SAFE_AUTO_ACCEPT_MIN_CONFIDENCE.get(action_name, 0.7)
+    if floor is not None:
+        if confidence is None:
+            return f"{action_name} has no confidence (needs >= {floor})"
+        if confidence < floor:
+            return f"confidence {confidence} below {action_name} floor {floor}"
+
+    if action_name == "confirm_relationship":
+        return _relationship_block_reason(action, target_row)
+    return None
+
+
+def _relationship_block_reason(
+    action: dict[str, Any],
+    target_row: dict[str, Any] | None,
+) -> str | None:
+    row = target_row if isinstance(target_row, dict) else {}
+    payload = action.get("payload") if isinstance(action.get("payload"), dict) else {}
+    subject = str(row.get("subject_entity_id") or payload.get("subject_entity_id") or "")
+    object_ = str(row.get("object_entity_id") or payload.get("object_entity_id") or "")
+    if not subject.startswith("people_group_") or not object_.startswith("people_group_"):
+        return "needs a resolved person on both sides (role identity not bridged yet)"
+    if row.get("contradicting_evidence_ids"):
+        return "has contradicting evidence"
+    evidence_count = len(row.get("evidence_ids") or [])
+    confidence = _number_or_none(row.get("confidence")) or 0.0
+    if evidence_count < 2 and confidence < SAFE_RELATIONSHIP_SINGLE_EVIDENCE_MIN_CONFIDENCE:
+        return (
+            "single evidence mention; needs a second corroborating mention or "
+            f"confidence >= {SAFE_RELATIONSHIP_SINGLE_EVIDENCE_MIN_CONFIDENCE}"
+        )
+    return None
 
 
 def _load_review_items_for_tier(project: Path, tier: str) -> list[dict[str, Any]]:

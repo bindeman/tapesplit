@@ -440,8 +440,22 @@ def test_apply_review_suggestions_expands_grouped_relationships(tmp_path: Path):
     _write_jsonl(
         tmp_path / "relationship_candidates.jsonl",
         [
-            {"id": "relationship_candidate_000001", "review_status": "needs_review"},
-            {"id": "relationship_candidate_000002", "review_status": "needs_review"},
+            {
+                "id": "relationship_candidate_000001",
+                "review_status": "needs_review",
+                "subject_entity_id": "people_group_000001",
+                "object_entity_id": "people_group_000002",
+                "evidence_ids": ["ev_000001", "ev_000002"],
+                "confidence": 0.8,
+            },
+            {
+                "id": "relationship_candidate_000002",
+                "review_status": "needs_review",
+                "subject_entity_id": "people_group_000001",
+                "object_entity_id": "people_group_000002",
+                "evidence_ids": ["ev_000003", "ev_000004"],
+                "confidence": 0.8,
+            },
         ],
     )
     _write_visualization(

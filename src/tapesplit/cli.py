@@ -1189,6 +1189,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="bulk-suggestion",
         help="Reviewer label to store on generated corrections.",
     )
+    review_apply_suggestions.add_argument(
+        "--policy",
+        choices=["safe", "legacy"],
+        default="safe",
+        help="safe: per-action confidence floors + relationship corroboration gates; legacy: tier/min-confidence only.",
+    )
     review_reapply = review_subparsers.add_parser(
         "reapply",
         help="Replay existing corrections.jsonl against regenerated project artifacts.",
@@ -2083,6 +2089,7 @@ def main(argv: list[str] | None = None) -> int:
                             min_confidence=args.min_confidence,
                             dry_run=args.dry_run,
                             reviewer=args.reviewer,
+                            policy=args.policy,
                         ),
                         indent=2,
                         sort_keys=True,

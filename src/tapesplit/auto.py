@@ -440,6 +440,7 @@ def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
         tier=tier,
         min_confidence=context.options.suggestions_min_confidence,
         reviewer="auto-pipeline",
+        policy="safe",
     )
     summary = {
         "tier": tier,
