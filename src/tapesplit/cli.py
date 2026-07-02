@@ -1294,6 +1294,27 @@ def _doctor(as_json: bool) -> int:
     status.update(check_speaker_diarization_config())
     status["ffprobe"] = shutil.which("ffprobe") is not None
     status["ffmpeg"] = shutil.which("ffmpeg") is not None
+    status["exiftool"] = shutil.which("exiftool") is not None
+    status["npm"] = shutil.which("npm") is not None
+    try:
+        import sentence_transformers  # noqa: F401
+
+        status["search_dense_embeddings"] = True
+    except ImportError:
+        status["search_dense_embeddings"] = False
+
+    from tapesplit.auto import build_stages, gather_capabilities
+
+    capabilities = gather_capabilities()
+    stage_availability = {}
+    for stage in build_stages():
+        if stage.availability is None:
+            stage_availability[stage.name] = {"available": True, "reason": ""}
+        else:
+            ok, reason = stage.availability(capabilities)
+            stage_availability[stage.name] = {"available": ok, "reason": reason}
+    status["pipeline_stages"] = stage_availability
+
     if as_json:
         print(json.dumps(status, indent=2, sort_keys=True))
     else:
@@ -1340,6 +1361,23 @@ def _doctor(as_json: bool) -> int:
         print(f"  Default visual caption backend: {status['visual_caption_default_backend']}")
         print(f"  Speaker diarization pyannote: {'installed' if status['speaker_diarization_pyannote'] else 'missing'}")
         print(f"  Speaker diarization HF token: {'configured' if status['speaker_diarization_hf_token'] else 'missing'}")
+        print(
+            "  Speaker diarization speechbrain fallback: "
+            f"{'installed' if status['speaker_diarization_speechbrain'] else 'missing'}"
+        )
+        print(f"  ExifTool: {'installed' if status['exiftool'] else 'missing'}")
+        print(f"  npm (review UI): {'installed' if status['npm'] else 'missing'}")
+        print(
+            "  Search dense embeddings: "
+            f"{'installed' if status['search_dense_embeddings'] else 'missing (local-sparse fallback)'}"
+        )
+        print()
+        print("  tapesplit auto stage availability:")
+        for name, info in status["pipeline_stages"].items():
+            if info["available"]:
+                print(f"    {name:<18} ready")
+            else:
+                print(f"    {name:<18} unavailable — {info['reason']}")
     return 0
 
 
