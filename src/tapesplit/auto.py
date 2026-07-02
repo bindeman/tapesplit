@@ -89,6 +89,10 @@ class Stage:
     always_run: bool = False
     availability: Callable[[dict[str, Any]], tuple[bool, str]] | None = None
     run: Callable[["StageContext"], dict[str, Any]] | None = None
+    # For per-video stages: does the existing artifact cover every tape?
+    # Consulted only when adopting artifacts that this orchestrator did not
+    # produce (no state record) — partially processed projects must re-run.
+    coverage: Callable[[Path], tuple[bool, str]] | None = None
 
 
 @dataclass
@@ -605,6 +609,7 @@ def build_stages() -> list[Stage]:
             produces=("transcript_segments.jsonl",),
             availability=_available_transcription,
             run=_run_transcribe,
+            coverage=_video_coverage("transcript_segments.jsonl", "transcript_runs.jsonl"),
         ),
         Stage(
             name="diarize",
@@ -615,6 +620,7 @@ def build_stages() -> list[Stage]:
             produces=("speaker_segments.jsonl",),
             availability=_available_diarization,
             run=_run_diarize,
+            coverage=_video_coverage("speaker_segments.jsonl", "speaker_runs.jsonl"),
         ),
         Stage(
             name="gemini",
@@ -625,6 +631,7 @@ def build_stages() -> list[Stage]:
             produces=("gemini_analyses.jsonl",),
             availability=_available_gemini,
             run=_run_gemini_analyze,
+            coverage=_video_coverage("gemini_analyses.jsonl"),
         ),
         Stage(
             name="core-build",
@@ -868,10 +875,41 @@ def _stage_done(stage: Stage, stage_states: dict[str, Any], project: Path) -> bo
     record = stage_states.get(stage.name)
     if isinstance(record, dict) and record.get("status") == "completed":
         return True
-    # No state (e.g. project built with manual commands): adopt existing artifacts.
+    # No state (e.g. project built with manual commands): adopt existing
+    # artifacts, but only when they cover every tape.
     if record is None and stage.produces:
-        return all((project / artifact).exists() for artifact in stage.produces)
+        if not all((project / artifact).exists() for artifact in stage.produces):
+            return False
+        if stage.coverage is not None:
+            complete, _reason = stage.coverage(project)
+            return complete
+        return True
     return False
+
+
+def _video_coverage(*artifact_filenames: str) -> Callable[[Path], tuple[bool, str]]:
+    """Coverage check: every tape id appears in at least one artifact row."""
+
+    def check(project: Path) -> tuple[bool, str]:
+        tape_ids = {
+            str(tape.get("id"))
+            for tape in read_jsonl(project / "tapes.jsonl")
+            if tape.get("id")
+        }
+        if not tape_ids:
+            return True, ""
+        covered: set[str] = set()
+        for filename in artifact_filenames:
+            for row in read_jsonl(project / filename):
+                source_video_id = row.get("source_video_id")
+                if source_video_id:
+                    covered.add(str(source_video_id))
+        missing = tape_ids - covered
+        if missing:
+            return False, f"{len(tape_ids) - len(missing)}/{len(tape_ids)} videos covered"
+        return True, ""
+
+    return check
 
 
 # ---------------------------------------------------------------------------

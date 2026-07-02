@@ -455,3 +455,26 @@ def test_ingest_failure_before_project_creation_reports_real_error(tmp_path, mon
     assert "window-seconds" in (ingest_row["error"] or "")
     assert result["ok"] is False
     assert not (tmp_path / "tape.mp4.tapesplit").exists()
+
+
+def test_adoption_requires_full_video_coverage(tmp_path):
+    project = _project(tmp_path)
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000002", "probe": {"duration_s": 5.0}})
+    # Only one of two videos transcribed: adoption must not mark it done.
+    append_jsonl(
+        project / "transcript_segments.jsonl",
+        {"source_video_id": "video_000001", "start_s": 0.0, "end_s": 1.0, "text": "hi"},
+    )
+    actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, {"stages": {}}))
+    assert actions["transcribe"] == "run"
+
+    # Full coverage (via runs artifact) → adopted as done.
+    append_jsonl(project / "transcript_runs.jsonl", {"source_video_id": "video_000002"})
+    actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, {"stages": {}}))
+    assert actions["transcribe"] == "skip-done"
+
+    # A recorded completed state always wins regardless of coverage.
+    state = {"stages": {"gemini": {"status": "completed"}}}
+    append_jsonl(project / "gemini_analyses.jsonl", {"source_video_id": "video_000001"})
+    actions = _actions(plan_auto(project, AutoOptions(), FULL_CAPS, state))
+    assert actions["gemini"] == "skip-done"
