@@ -82,6 +82,7 @@ def build_heuristic_events(
         if not kept and spans:
             kept = [max(spans, key=lambda span: span[1] - span[0])]
         transcripts = transcripts_by_source.get(source_video_id, [])
+        background = _token_document_frequencies(transcripts)
         for index, (start_s, end_s) in enumerate(kept, start=1):
             events.append(
                 _make_event(
@@ -91,6 +92,7 @@ def build_heuristic_events(
                     start_s=start_s,
                     end_s=end_s,
                     transcripts=_segments_in_range(transcripts, start_s, end_s),
+                    background=background,
                 )
             )
 
@@ -214,14 +216,18 @@ def _make_event(
     start_s: float,
     end_s: float,
     transcripts: list[dict[str, Any]],
+    background: "_TokenBackground | None" = None,
 ) -> dict[str, Any]:
-    keywords = _keywords(transcripts, limit=DEFAULT_MAX_TITLE_KEYWORDS)
+    keywords = _keywords(transcripts, limit=DEFAULT_MAX_TITLE_KEYWORDS, background=background)
     languages = _languages(transcripts)
     filename = str(tape.get("filename") or source_video_id)
 
     if keywords:
         title = " ".join(word.capitalize() for word in keywords)
         mention_note = f" Appears to mention: {', '.join(keywords)}."
+    elif transcripts:
+        title = f"Recording segment {index}"
+        mention_note = " Speech recognition found only noisy/repetitive audio here."
     else:
         title = f"Recording segment {index}"
         mention_note = " No transcript available for this segment."
@@ -264,11 +270,88 @@ def _make_event(
     }
 
 
-def _keywords(transcripts: list[dict[str, Any]], *, limit: int) -> list[str]:
+class _TokenBackground:
+    """Tape-wide token statistics for language-agnostic keyword weighting.
+
+    Transcripts of long tapes are dominated by recurring background text:
+    filler words in any language, repeated announcements, and Whisper
+    repetition loops. Rather than maintaining stopword lists per language,
+    tokens are down-weighted by how many distinct transcript texts across the
+    whole tape they appear in (an IDF weight).
+    """
+
+    def __init__(self, document_frequencies: Counter[str], total_documents: int) -> None:
+        self.document_frequencies = document_frequencies
+        self.total_documents = max(1, total_documents)
+
+    def idf(self, token: str) -> float:
+        from math import log
+
+        frequency = self.document_frequencies.get(token, 0)
+        return log((1 + self.total_documents) / (1 + frequency)) + 0.01
+
+
+def _token_document_frequencies(transcripts: list[dict[str, Any]]) -> _TokenBackground:
+    frequencies: Counter[str] = Counter()
+    texts = _unique_texts(transcripts)
+    for text in texts:
+        seen = set()
+        for match in _KEYWORD_PATTERN.finditer(text):
+            seen.add(match.group(0).lower())
+        frequencies.update(seen)
+    return _TokenBackground(frequencies, len(texts))
+
+
+# A normalized text repeated at least this often within one event is treated
+# as recognition noise (Whisper loops on music/static), not speech.
+REPEATED_TEXT_NOISE_THRESHOLD = 4
+
+_NORMALIZE_STRIP_PATTERN = re.compile(r"[\W\d_]+", re.UNICODE)
+
+
+def _normalized_text_key(text: str) -> str:
+    """Dedup key ignoring digits/punctuation so loop variants collapse.
+
+    Whisper hallucination loops often vary only by a timestamp or number
+    ("0:01, а в 5 минутах." / "0:45, а в 5 минутах.").
+    """
+
+    return _NORMALIZE_STRIP_PATTERN.sub(" ", text.casefold()).strip()
+
+
+def _unique_texts(transcripts: list[dict[str, Any]], *, drop_noise: bool = False) -> list[str]:
+    """Distinct transcript texts — collapses Whisper repetition loops."""
+
+    counts: Counter[str] = Counter()
+    first_by_key: dict[str, str] = {}
+    order: list[str] = []
+    for segment in transcripts:
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+        key = _normalized_text_key(text)
+        if not key:
+            continue
+        counts[key] += 1
+        if key not in first_by_key:
+            first_by_key[key] = text
+            order.append(key)
+    return [
+        first_by_key[key]
+        for key in order
+        if not (drop_noise and counts[key] >= REPEATED_TEXT_NOISE_THRESHOLD)
+    ]
+
+
+def _keywords(
+    transcripts: list[dict[str, Any]],
+    *,
+    limit: int,
+    background: _TokenBackground | None = None,
+) -> list[str]:
     counts: Counter[str] = Counter()
     proper_nouns: Counter[str] = Counter()
-    for segment in transcripts:
-        text = str(segment.get("text") or "")
+    for text in _unique_texts(transcripts, drop_noise=True):
         for match in _KEYWORD_PATTERN.finditer(text):
             token = match.group(0)
             lowered = token.lower()
@@ -279,9 +362,10 @@ def _keywords(transcripts: list[dict[str, Any]], *, limit: int) -> list[str]:
             if token[:1].isupper() and match.start() > 0 and text[match.start() - 1] not in ".!?\n":
                 proper_nouns[lowered] += 1
 
-    scored = Counter()
+    scored: Counter[str] = Counter()
     for token, count in counts.items():
-        scored[token] = count + 2 * proper_nouns.get(token, 0)
+        weight = background.idf(token) if background is not None else 1.0
+        scored[token] = (count + 2 * proper_nouns.get(token, 0)) * weight
     return [token for token, _ in scored.most_common(limit)]
 
 

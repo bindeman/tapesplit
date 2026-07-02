@@ -174,3 +174,85 @@ def test_stitching_uses_heuristic_events_only_for_uncovered_sources(tmp_path):
     canonical = read_jsonl(project / "canonical_events.jsonl")
     titles = {event["title"] for event in canonical}
     assert titles == {"School play in spring", "Lake trip talk"}
+
+
+def test_keywords_downweight_tape_wide_background_text(tmp_path):
+    project = _make_project(tmp_path, tapes=[_tape("video_000001", 300.0)])
+    append_jsonl(
+        project / "scenes.jsonl",
+        {"source_video_id": "video_000001", "scene_type": "content", "start_s": 0.0, "end_s": 100.0},
+    )
+    append_jsonl(
+        project / "scenes.jsonl",
+        {"source_video_id": "video_000001", "scene_type": "non_content", "start_s": 100.0, "end_s": 200.0},
+    )
+    append_jsonl(
+        project / "scenes.jsonl",
+        {"source_video_id": "video_000001", "scene_type": "content", "start_s": 200.0, "end_s": 300.0},
+    )
+    # A recurring announcement pollutes the whole tape (both events).
+    for start in (10.0, 40.0, 210.0, 240.0, 270.0):
+        append_jsonl(
+            project / "transcript_segments.jsonl",
+            {
+                "source_video_id": "video_000001",
+                "start_s": start,
+                "end_s": start + 5.0,
+                "text": f"attention parents please leave the playground area now {start}",
+            },
+        )
+    # Event-specific content appears only within the first event.
+    append_jsonl(
+        project / "transcript_segments.jsonl",
+        {
+            "source_video_id": "video_000001",
+            "start_s": 20.0,
+            "end_s": 25.0,
+            "text": "the graduation ceremony diploma for Anna begins",
+        },
+    )
+    append_jsonl(
+        project / "transcript_segments.jsonl",
+        {
+            "source_video_id": "video_000001",
+            "start_s": 30.0,
+            "end_s": 35.0,
+            "text": "graduation diploma handed to Anna on stage",
+        },
+    )
+
+    build_heuristic_events(project)
+    events = read_jsonl(project / "heuristic_events.jsonl")
+    first = next(e for e in events if e["start_s"] == 0.0)
+    title = first["title"].lower()
+    assert "graduation" in title or "diploma" in title or "anna" in title
+    assert "playground" not in title
+
+
+def test_whisper_repetition_loops_collapse(tmp_path):
+    project = _make_project(tmp_path, tapes=[_tape("video_000001", 60.0)])
+    # Whisper hallucination: same text repeated across many segments.
+    for start in range(0, 40, 5):
+        append_jsonl(
+            project / "transcript_segments.jsonl",
+            {
+                "source_video_id": "video_000001",
+                "start_s": float(start),
+                "end_s": float(start + 5),
+                "text": "music playing music playing music playing",
+            },
+        )
+    append_jsonl(
+        project / "transcript_segments.jsonl",
+        {
+            "source_video_id": "video_000001",
+            "start_s": 42.0,
+            "end_s": 48.0,
+            "text": "welcome to the wedding reception for Ekaterina and Peter",
+        },
+    )
+
+    build_heuristic_events(project)
+    events = read_jsonl(project / "heuristic_events.jsonl")
+    title = events[0]["title"].lower()
+    assert "wedding" in title or "ekaterina" in title or "peter" in title
