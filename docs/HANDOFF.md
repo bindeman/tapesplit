@@ -88,7 +88,7 @@ npm --prefix apps/review-ui run build
 git diff --check
 ```
 
-Expected at this handoff: `157 passed`, UI build passes, and `git diff --check`
+Expected at this handoff: `166 passed`, UI build passes, and `git diff --check`
 has no output.
 
 ## Current Sample Project Snapshot
