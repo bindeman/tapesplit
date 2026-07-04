@@ -35,8 +35,11 @@ def export_visualization_data(
     dates = _visible_rows(read_jsonl(project / "date_groups.jsonl"), visibility, evidence_by_id)
     context_edges = _visible_rows(read_jsonl(project / "context_edges.jsonl"), visibility, evidence_by_id)
     edge_metrics = _visible_rows(read_jsonl(project / "edge_metrics.jsonl"), visibility, evidence_by_id)
-    event_alignments = _visible_rows(read_jsonl(project / "event_alignments.jsonl"), visibility, evidence_by_id)
-    event_reconciliations = _visible_rows(read_jsonl(project / "event_reconciliations.jsonl"), visibility, evidence_by_id)
+    # Alignment/reconciliation rows are diagnostics attached to events by id;
+    # they inherit their event's visibility rather than being range-filtered
+    # themselves (their intervals overlap coarse exclusion ranges by nature).
+    event_alignments = read_jsonl(project / "event_alignments.jsonl")
+    event_reconciliations = read_jsonl(project / "event_reconciliations.jsonl")
     relationships = _visible_rows(read_jsonl(project / "relationship_candidates.jsonl"), visibility, evidence_by_id)
     place_roles = read_jsonl(project / "event_place_roles.jsonl")
     event_continuity_contexts = read_jsonl(project / "event_continuity_contexts.jsonl")
