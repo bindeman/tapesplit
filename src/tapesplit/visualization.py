@@ -85,6 +85,7 @@ def export_visualization_data(
         speaker_identity_candidates=speaker_identity_candidates,
         assets_by_subject=assets_by_subject,
         video_offsets=video_offsets,
+        event_alignments_by_event=event_alignments_by_event,
     )
     review_queue = review_queues["review_queue"]
     review_backlog = review_queues["review_backlog"]
@@ -702,8 +703,10 @@ def _review_queues(
     speaker_identity_candidates: list[dict[str, Any]],
     assets_by_subject: dict[str, list[dict[str, Any]]],
     video_offsets: dict[str, float],
+    event_alignments_by_event: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    event_alignments_by_event = event_alignments_by_event or {}
     role_identity_options_by_person = _role_identity_options_by_person(people, relationship_candidates, events_by_id)
 
     for cluster_id, candidates in _face_identity_candidates_by_cluster(face_identity_candidates).items():
@@ -938,20 +941,31 @@ def _review_queues(
         )
 
     for event in events:
-        if not _needs_review(event):
-            continue
         event_id = str(event.get("id") or "")
+        unverified = _description_unverified(event_alignments_by_event.get(event_id))
+        if not _needs_review(event) and not (unverified and not _review_closed(event)):
+            continue
         metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
         items.append(
             {
                 "task_type": "review_event",
                 "source_record_type": "event",
                 "source_id": event_id,
-                "title": f"Review event: {event.get('title')}",
-                "prompt": "Confirm the event label, relatedness, people, place, and date before customer-facing export.",
-                "priority": 58,
+                "title": (
+                    f"Verify footage matches: {event.get('title')}"
+                    if unverified
+                    else f"Review event: {event.get('title')}"
+                ),
+                "prompt": (
+                    "The tape's own transcript does not support this description — the model may have "
+                    "mislabeled this footage. Play the range and rename or confirm."
+                    if unverified
+                    else "Confirm the event label, relatedness, people, place, and date before customer-facing export."
+                ),
+                "priority": 75 if unverified else 58,
                 "confidence": event.get("confidence"),
                 "review_status": event.get("review_status") or "needs_review",
+                "review_reason": "description not supported by transcript" if unverified else None,
                 "related_event_ids": [event_id] if event_id else [],
                 "events": _event_entries([event_id], events_by_id),
                 "thumbnail_path": _first_path(assets_by_subject.get(f"event:{event_id}", []), "thumbnail_path"),
@@ -959,6 +973,7 @@ def _review_queues(
                     "title": event.get("title"),
                     "event_type": metadata.get("event_type"),
                     "relatedness": event.get("relatedness") or metadata.get("relatedness"),
+                    "unverified_description": unverified,
                 },
                 "actions": ["confirm_event", "rename_event", "split_event", "mark_unrelated"],
             }
@@ -1327,6 +1342,10 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
         )
 
     if task_type == "review_event":
+        if candidate.get("unverified_description"):
+            # No safe automatic resolution exists for a description the
+            # transcript contradicts — a human must watch the footage.
+            return {}
         title = str(candidate.get("title") or item.get("title") or "").removeprefix("Review event: ").strip()
         relatedness = str(candidate.get("relatedness") or "")
         if "unrelated" in relatedness.casefold():
@@ -1875,6 +1894,28 @@ def _string_list(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values if value not in (None, "")]
+
+
+def _description_unverified(alignment: dict[str, Any] | None) -> bool:
+    """True when the event's description lacks transcript support.
+
+    Video models occasionally confabulate a description for a stretch of
+    footage (a 'lab tour' over ski footage). The alignment stage already
+    scores each event against the tape-absolute transcript; a weakly aligned
+    event whose nearby-transcript support is near zero should be verified by
+    a human and must never be auto-accepted.
+    """
+
+    if not isinstance(alignment, dict):
+        return False
+    timing = str(alignment.get("timing_status") or "")
+    if timing not in {"weakly_aligned", "unaligned", "unsupported"}:
+        return False
+    support = _number_or_none(alignment.get("support_score"))
+    if support is not None and support > 0.45:
+        return False
+    warnings = " ".join(str(w) for w in alignment.get("warnings") or [])
+    return "transcript" in warnings.casefold()
 
 
 def _needs_review(row: dict[str, Any]) -> bool:
