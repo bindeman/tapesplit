@@ -128,3 +128,40 @@ def test_vision_rect_to_pixel_bbox_flips_normalized_y_axis():
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+
+
+def test_transcript_anchor_picks_matching_moment():
+    from tapesplit.visual_assets import _transcript_anchor_time
+
+    event = {
+        "title": "Filip Loses a Tooth",
+        "summary": "The loose tooth finally comes out during the walk.",
+        "evidence_ids": [],
+    }
+    source_range = {"source_video_id": "video_000001", "start_s": 0.0, "end_s": 600.0}
+    transcripts = [
+        {"source_video_id": "video_000001", "start_s": 30.0, "end_s": 35.0, "text": "look at the trees on this trail"},
+        {"source_video_id": "video_000001", "start_s": 410.0, "end_s": 416.0, "text": "the tooth is loose, wiggle it, the tooth came out"},
+        {"source_video_id": "video_000001", "start_s": 500.0, "end_s": 505.0, "text": "time to head back to the car"},
+    ]
+    anchored = _transcript_anchor_time(event, source_range, transcripts, {})
+    assert anchored is not None
+    assert 410.0 <= anchored <= 416.0
+
+    # No lexical overlap → falls back (returns None).
+    event_ru = {"title": "Case with no overlap", "summary": "unrelated words entirely", "evidence_ids": []}
+    assert _transcript_anchor_time(event_ru, source_range, transcripts[:1], {}) is None
+
+    # Evidence quotes bridge languages.
+    event_bridge = {
+        "title": "Different language title",
+        "summary": "",
+        "evidence_ids": ["ev_1"],
+    }
+    evidence = {"ev_1": {"text": "зуб шатается совсем зуб выпал сейчас"}}
+    transcripts_ru = [
+        {"source_video_id": "video_000001", "start_s": 200.0, "end_s": 206.0, "text": "смотри как красиво здесь очень"},
+        {"source_video_id": "video_000001", "start_s": 300.0, "end_s": 306.0, "text": "зуб шатается ой зуб выпал"},
+    ]
+    anchored = _transcript_anchor_time(event_bridge, source_range, transcripts_ru, evidence)
+    assert anchored is not None and 300.0 <= anchored <= 306.0

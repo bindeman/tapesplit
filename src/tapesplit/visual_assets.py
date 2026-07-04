@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -166,6 +167,11 @@ def _event_asset_candidates(
     events = read_jsonl(project / "canonical_events.jsonl") or (
         read_jsonl(project / "events.jsonl") + read_jsonl(project / "gemini_events.jsonl")
     )
+    transcripts_by_source: dict[str, list[dict[str, Any]]] = {}
+    for segment in read_jsonl(project / "transcript_segments.jsonl"):
+        segment_source = str(segment.get("source_video_id") or "")
+        if segment_source:
+            transcripts_by_source.setdefault(segment_source, []).append(segment)
     for event in events:
         if visibility.excluded_row(event, evidence_by_id=evidence_by_id):
             continue
@@ -174,6 +180,12 @@ def _event_asset_candidates(
             continue
         if source_video_id and source_range["source_video_id"] != source_video_id:
             continue
+        anchored = _transcript_anchor_time(
+            event,
+            source_range,
+            transcripts_by_source.get(source_range["source_video_id"], []),
+            evidence_by_id,
+        )
         candidates.append(
             {
                 "subject_type": "event",
@@ -181,11 +193,60 @@ def _event_asset_candidates(
                 "source_video_id": source_range["source_video_id"],
                 "start_s": source_range["start_s"],
                 "end_s": source_range.get("end_s"),
-                "time_s": _representative_time(source_range["start_s"], source_range.get("end_s")),
+                "time_s": anchored
+                if anchored is not None
+                else _representative_time(source_range["start_s"], source_range.get("end_s")),
                 "label": str(event.get("title") or "event"),
             }
         )
     return [candidate for candidate in candidates if candidate["subject_id"]]
+
+
+_ANCHOR_TOKEN_PATTERN = re.compile(r"[^\W\d_]{4,}", re.UNICODE)
+
+
+def _transcript_anchor_time(
+    event: dict[str, Any],
+    source_range: dict[str, Any],
+    transcripts: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+) -> float | None:
+    """Time of the transcript moment that best matches the event's story.
+
+    The cover frame should show what the title describes, not the range's
+    opening or its geometric middle. Event evidence quotes carry the source
+    language, so an English title still anchors to the Russian sentence it
+    was derived from.
+    """
+
+    start_s = _number_or_none(source_range.get("start_s"))
+    end_s = _number_or_none(source_range.get("end_s"))
+    if start_s is None or end_s is None or end_s - start_s < 30 or not transcripts:
+        return None
+
+    query_parts = [str(event.get("title") or ""), str(event.get("summary") or "")]
+    for evidence_id in (event.get("evidence_ids") or [])[:12]:
+        evidence = evidence_by_id.get(str(evidence_id)) or {}
+        for key in ("text", "quote", "summary"):
+            if evidence.get(key):
+                query_parts.append(str(evidence[key]))
+    query_tokens = {match.group(0).lower() for part in query_parts for match in _ANCHOR_TOKEN_PATTERN.finditer(part)}
+    if len(query_tokens) < 3:
+        return None
+
+    best_time: float | None = None
+    best_score = 1  # require at least 2 overlapping tokens to trust an anchor
+    for segment in transcripts:
+        seg_start = _number_or_none(segment.get("start_s"))
+        if seg_start is None or seg_start < start_s or seg_start > end_s:
+            continue
+        seg_tokens = {match.group(0).lower() for match in _ANCHOR_TOKEN_PATTERN.finditer(str(segment.get("text") or ""))}
+        score = len(seg_tokens & query_tokens)
+        if score > best_score:
+            best_score = score
+            seg_end = _number_or_none(segment.get("end_s")) or seg_start
+            best_time = round(min(max((seg_start + seg_end) / 2.0, start_s), end_s), 3)
+    return best_time
 
 
 def _source_range_for_event(
