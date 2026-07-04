@@ -1512,9 +1512,24 @@ def _place_scope_label(
     event_contexts: dict[str, dict[str, Any]],
 ) -> str:
     scope = _place_scope_metadata(events, evidence_by_id, event_contexts)
-    admin_labels = scope.get("admin_context_labels") or []
+    admin_labels = list(scope.get("admin_context_labels") or [])
     if admin_labels:
-        return f"{', '.join(admin_labels[:2])} context"
+        admin_keys = [str(key) for key in scope.get("admin_context_keys") or []]
+        key_sources = scope.get("admin_key_sources") if isinstance(scope.get("admin_key_sources"), dict) else {}
+        direct_keys = {
+            key
+            for key, sources in key_sources.items()
+            if any("direct" in str((source or {}).get("basis") or "") for source in sources or [])
+        }
+        direct_labels = [
+            label
+            for key, label in zip(admin_keys, admin_labels, strict=False)
+            if key in direct_keys
+        ]
+        inherited_labels = [label for label in admin_labels if label not in direct_labels]
+        composed = _scoped_place_label(direct_labels, inherited_labels, "")
+        if composed:
+            return composed
     parts = []
     source_video_ids = scope.get("source_video_ids") or []
     if source_video_ids:
@@ -1643,12 +1658,35 @@ def _attach_place_context_candidates(
 
         parent_list = _place_context_candidate_list(parent_candidates)
         nearby_list = _place_context_candidate_list(nearby_candidates)
-        group["parent_place_labels"] = _unique_items(candidate["label"] for candidate in parent_list[:6])
+        # Geographic containment (direct evidence) and era/continuity
+        # inheritance are different kinds of context: a beach is IN Hawaii,
+        # while "Moscow" may only mean "filmed during the Moscow years".
+        # Direct geography leads; inherited era labels never mix into it.
+        direct_parent_labels = _unique_items(
+            candidate["label"] for candidate in parent_list if "direct" in str(candidate.get("basis") or "")
+        )
+        inherited_parent_labels = _unique_items(
+            candidate["label"] for candidate in parent_list if "direct" not in str(candidate.get("basis") or "")
+        )
+        group["parent_place_labels"] = _unique_items([*direct_parent_labels, *inherited_parent_labels])[:6]
         group["nearby_place_labels"] = _unique_items(candidate["label"] for candidate in nearby_list[:6])
         group["metadata"]["parent_place_candidates"] = parent_list
         group["metadata"]["nearby_place_candidates"] = nearby_list
         if parent_list:
-            group["scope_label"] = f"{', '.join(group['parent_place_labels'][:2])} context"
+            named_place = group.get("kind") == "named_place_candidate"
+            group["scope_label"] = _scoped_place_label(
+                direct_parent_labels,
+                # A named institution ("Maplewood Learning Community") is
+                # locatable on its own; era inheritance must not tag it with
+                # a residence it may not belong to.
+                [] if named_place else inherited_parent_labels,
+                _place_source_scope_label(group.get("metadata", {}).get("scope", {})),
+            )
+            if not direct_parent_labels and len(inherited_parent_labels) > 1:
+                group["metadata"]["scope_conflict"] = inherited_parent_labels
+                group["notes"] = _unique_items(
+                    [*group.get("notes", []), "Era contexts disagree; needs a human to place this."]
+                )
         elif group.get("kind") == "named_place_candidate" and group.get("place_type") != "region":
             group["scope_label"] = _place_source_scope_label(group.get("metadata", {}).get("scope", {}))
             group["metadata"]["scope"]["admin_context_keys"] = []
@@ -1659,6 +1697,23 @@ def _attach_place_context_candidates(
             group["notes"] = _unique_items([*group.get("notes", []), "Has reviewable same-area/nearby-place context."])
 
     return groups
+
+
+def _scoped_place_label(direct_labels: list[str], inherited_labels: list[str], fallback: str) -> str:
+    """Compose a scope label without conflating geography and era.
+
+    Direct geographic evidence wins outright ("Hawaii"). A single
+    inherited continuity label is shown honestly as an era ("Moscow era").
+    Conflicting inherited labels assert nothing — the tape/year fallback
+    is shown instead and the conflict is left for review.
+    """
+
+    if direct_labels:
+        return direct_labels[0]
+    distinct = _unique_items(inherited_labels)
+    if len(distinct) == 1:
+        return f"{distinct[0]} era"
+    return fallback
 
 
 def _place_source_scope_label(scope: dict[str, Any]) -> str:

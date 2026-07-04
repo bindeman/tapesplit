@@ -1635,7 +1635,7 @@ def _date_ref(row: dict[str, Any]) -> dict[str, Any]:
 
 def _place_display_label(place: dict[str, Any]) -> str:
     label = str(place.get("label") or "Unknown place")
-    scope = str(place.get("scope_label") or "").strip()
+    scope = _humanize_scope(str(place.get("scope_label") or "").strip())
     parent_labels = [str(item) for item in place.get("parent_place_labels") or [] if item]
     nearby_labels = [str(item) for item in place.get("nearby_place_labels") or [] if item]
     if scope and scope.casefold() != label.casefold() and not scope.casefold().startswith(label.casefold()):
@@ -1645,6 +1645,23 @@ def _place_display_label(place: dict[str, Any]) -> str:
     if nearby_labels and not _label_contains_any(label, nearby_labels):
         return f"{label} (near {nearby_labels[0]})"
     return label
+
+
+def _humanize_scope(scope: str) -> str:
+    """Turn mechanical tape-fallback scopes into reader-facing phrasing.
+
+    "video_000003, 2006 context" → "2006, unplaced"; a scope that is only
+    tape ids becomes empty (the bare label is better than machinery).
+    """
+
+    if "video_" not in scope:
+        return scope
+    import re
+
+    years = re.findall(r"(?:19|20)\d{2}(?:-(?:19|20)\d{2})?", scope)
+    if years:
+        return f"{years[0]}, unplaced"
+    return ""
 
 
 def _place_evidence_basis(place: dict[str, Any]) -> dict[str, Any]:

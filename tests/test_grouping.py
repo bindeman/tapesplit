@@ -435,8 +435,8 @@ def test_build_project_groups_merges_place_admin_aliases_and_scopes_generic_plac
     home_groups = [group for group in places if group["label"] == "home"]
     assert len(home_groups) == 2
     assert sorted(group["scope_label"] for group in home_groups) == [
-        "Eugene, Oregon, USA context",
-        "Madison, Wisconsin, USA context",
+        "Eugene, Oregon, USA",
+        "Madison, Wisconsin, USA",
     ]
 
 
@@ -488,7 +488,7 @@ def test_build_project_groups_carries_place_context_across_strong_tape_continuit
 
     assert result["event_continuity_contexts"] == 1
     classroom = next(group for group in places if group["label"] == "classroom")
-    assert classroom["scope_label"] == "Madison, Wisconsin, USA context"
+    assert classroom["scope_label"] == "Madison, Wisconsin, USA era"
     assert "Madison, Wisconsin, USA" in classroom["parent_place_labels"]
     parent_candidate = classroom["metadata"]["parent_place_candidates"][0]
     assert parent_candidate["basis"] == ["continuity_admin_context"]
