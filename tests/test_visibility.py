@@ -218,3 +218,23 @@ def test_report_counts_visible_claims_and_evidence_only(tmp_path: Path):
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8")
+
+
+def test_family_events_outrank_coarse_exclusion_ranges():
+    from tapesplit.visibility import ExclusionRange, VisibilityFilter
+
+    coarse = VisibilityFilter(
+        [ExclusionRange(source_video_id="video_000001", start_s=0.0, end_s=5000.0, reason="unrelated", source_id="x")]
+    )
+    family_event = {
+        "id": "e1",
+        "relatedness": "likely_family",
+        "metadata": {"source_ranges": [{"source_video_id": "video_000001", "start_s": 1235.0, "end_s": 1840.0}]},
+    }
+    unrelated_event = {
+        "id": "e2",
+        "relatedness": "likely_unrelated",
+        "metadata": {"source_ranges": [{"source_video_id": "video_000001", "start_s": 1235.0, "end_s": 1840.0}]},
+    }
+    assert coarse.excluded_row(family_event) is False
+    assert coarse.excluded_row(unrelated_event) is True

@@ -8,6 +8,7 @@ from tapesplit.storage import read_jsonl
 
 
 EXCLUDED_RELATEDNESS = {"likely_unrelated", "unrelated", "non_content"}
+FAMILY_RELATEDNESS = {"likely_family", "family", "likely_related", "related"}
 EXCLUDED_ALBUM_TYPES = {"unrelated_content", "non_content"}
 
 
@@ -30,6 +31,11 @@ class VisibilityFilter:
     def excluded_row(self, row: dict[str, Any], evidence_by_id: dict[str, dict[str, Any]] | None = None) -> bool:
         if _row_is_marked_excluded(row):
             return True
+        # A row positively classified as family footage outranks the coarse
+        # exclusion ranges aggregated from range-level guesses — otherwise a
+        # broad "unrelated" span swallows specific family events inside it.
+        if _event_relatedness(row) in FAMILY_RELATEDNESS:
+            return False
         intervals = _row_intervals(row)
         if intervals and all(_interval_excluded(interval, self.ranges) for interval in intervals):
             return True
