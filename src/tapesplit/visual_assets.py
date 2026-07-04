@@ -319,7 +319,9 @@ def _singular_subject(subject: str) -> str:
 def _representative_time(start_s: float, end_s: float | None) -> float:
     if end_s is None or end_s <= start_s:
         return round(start_s, 3)
-    return round(start_s + min((end_s - start_s) / 2.0, 5.0), 3)
+    # True midpoint: the first seconds of a range are its establishing shot
+    # (or the tail of the previous recording); the middle shows the subject.
+    return round(start_s + (end_s - start_s) / 2.0, 3)
 
 
 def _number_or_none(value: Any) -> float | None:
