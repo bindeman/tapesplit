@@ -1930,10 +1930,7 @@ def _description_unverified(alignment: dict[str, Any] | None) -> bool:
     if timing not in {"weakly_aligned", "unaligned", "unsupported", "model_only"}:
         return False
     support = _number_or_none(alignment.get("support_score"))
-    if support is not None and support > 0.45:
-        return False
-    warnings = " ".join(str(w) for w in alignment.get("warnings") or [])
-    return "transcript" in warnings.casefold()
+    return support is None or support <= 0.45
 
 
 def _needs_review(row: dict[str, Any]) -> bool:
