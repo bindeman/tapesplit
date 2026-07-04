@@ -1630,6 +1630,7 @@ def _date_ref(row: dict[str, Any]) -> dict[str, Any]:
         "label": str(row.get("label") or row.get("date_value") or ""),
         "date_value": row.get("date_value"),
         "precision": row.get("precision"),
+        "excluded_as_event_date": bool(row.get("excluded_as_event_date")),
     }
 
 

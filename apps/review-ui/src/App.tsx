@@ -943,10 +943,22 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
   });
 }
 
+// Camcorders don't predate ~1970; narrated years older than that (volcano
+// eruptions, building cornerstones) are historical context, not event dates.
+const EARLIEST_PLAUSIBLE_YEAR = 1970;
+const LATEST_PLAUSIBLE_YEAR = new Date().getFullYear();
+
 function eventYear(event: EventRecord): string {
   for (const date of event.dates ?? []) {
+    if (date.excluded_as_event_date) {
+      continue;
+    }
     const match = /(19|20)\d{2}/.exec(date.date_value ?? date.label ?? "");
-    if (match) {
+    if (!match) {
+      continue;
+    }
+    const year = Number(match[0]);
+    if (year >= EARLIEST_PLAUSIBLE_YEAR && year <= LATEST_PLAUSIBLE_YEAR) {
       return match[0];
     }
   }

@@ -175,6 +175,7 @@ export interface EntityRef {
 export interface DateRef extends EntityRef {
   date_value?: string;
   precision?: string;
+  excluded_as_event_date?: boolean;
 }
 
 export interface PersonRecord {
