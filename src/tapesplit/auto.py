@@ -542,6 +542,14 @@ def _run_face_cluster(context: StageContext) -> dict[str, Any]:
     return cluster_faces_for_project(context.project, embedding_backend="auto")
 
 
+def _run_reground(context: StageContext) -> dict[str, Any]:
+    from tapesplit.regrounding import build_event_regroundings
+
+    if not read_jsonl(context.project / "canonical_events.jsonl"):
+        raise StageSkipped("no canonical events yet")
+    return build_event_regroundings(context.project)
+
+
 def _run_finalize(context: StageContext) -> dict[str, Any]:
     from tapesplit.pipeline import rebuild_project_outputs
 
@@ -799,6 +807,19 @@ def build_stages() -> list[Stage]:
             run=_run_face_cluster,
         ),
         Stage(
+            name="reground",
+            title="Re-ground mislocated events",
+            kind=KIND_LOCAL_ML,
+            requires=("visual-embed",),
+            after=("core-build", "visual-similarity"),
+            always_run=True,
+            availability=_available_backend(
+                "visual_embedding_default_backend",
+                "re-grounding needs the visual embedding backend (.[visual-ai])",
+            ),
+            run=_run_reground,
+        ),
+        Stage(
             name="finalize",
             title="Build archive (groups, search, story, report, viz)",
             kind=KIND_DERIVED,
@@ -809,6 +830,7 @@ def build_stages() -> list[Stage]:
                 "captions",
                 "visual-similarity",
                 "face-cluster",
+                "reground",
                 "diarize",
             ),
             always_run=True,

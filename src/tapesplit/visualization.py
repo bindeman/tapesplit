@@ -89,6 +89,11 @@ def export_visualization_data(
         assets_by_subject=assets_by_subject,
         video_offsets=video_offsets,
         event_alignments_by_event=event_alignments_by_event,
+        regroundings_by_event={
+            str(row.get("canonical_event_id")): row
+            for row in read_jsonl(project / "event_regroundings.jsonl")
+            if row.get("canonical_event_id")
+        },
     )
     review_queue = review_queues["review_queue"]
     review_backlog = review_queues["review_backlog"]
@@ -707,9 +712,11 @@ def _review_queues(
     assets_by_subject: dict[str, list[dict[str, Any]]],
     video_offsets: dict[str, float],
     event_alignments_by_event: dict[str, dict[str, Any]] | None = None,
+    regroundings_by_event: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     event_alignments_by_event = event_alignments_by_event or {}
+    regroundings_by_event = regroundings_by_event or {}
     role_identity_options_by_person = _role_identity_options_by_person(people, relationship_candidates, events_by_id)
 
     for cluster_id, candidates in _face_identity_candidates_by_cluster(face_identity_candidates).items():
@@ -949,8 +956,29 @@ def _review_queues(
         if not _needs_review(event) and not (unverified and not _review_closed(event)):
             continue
         metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        regrounding = regroundings_by_event.get(event_id) if unverified else None
+        item_extra: dict[str, Any] = {}
+        if regrounding:
+            item_extra["suggested_action"] = _suggestion(
+                action="move_event_range",
+                target_id=event_id,
+                target_type="event",
+                label=(
+                    f"Appears to actually be at "
+                    f"{_clock(regrounding.get('proposed_start_s'))}–{_clock(regrounding.get('proposed_end_s'))}"
+                ),
+                rationale="; ".join(str(s) for s in regrounding.get("signals") or []),
+                confidence=_number_or_none(regrounding.get("confidence")),
+                payload={
+                    "source_video_id": regrounding.get("source_video_id"),
+                    "start_s": regrounding.get("proposed_start_s"),
+                    "end_s": regrounding.get("proposed_end_s"),
+                    "basis": "visual_regrounding",
+                },
+            )
         items.append(
             {
+                **item_extra,
                 "task_type": "review_event",
                 "source_record_type": "event",
                 "source_id": event_id,
@@ -1915,6 +1943,15 @@ def _string_list(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value) for value in values if value not in (None, "")]
+
+
+def _clock(value: Any) -> str:
+    seconds = _number_or_none(value) or 0.0
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
 
 
 def _description_unverified(alignment: dict[str, Any] | None) -> bool:

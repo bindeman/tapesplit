@@ -233,6 +233,17 @@ def _build_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
     ui_parser.add_argument("--port", type=int, help="Preferred dev server port (default 5173).")
 
+    reground_parser = subparsers.add_parser(
+        "reground-events",
+        help="Find where mislocated events actually live on the tape via CLIP search.",
+    )
+    reground_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    reground_parser.add_argument(
+        "--all-events",
+        action="store_true",
+        help="Score every family event, not only unverified ones.",
+    )
+
     synth_parser = subparsers.add_parser(
         "synthesize-events",
         help="Synthesize low-confidence local events for tapes without cloud analysis.",
@@ -1436,6 +1447,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "ui":
             return _run_ui(args.project, port=args.port)
+        if args.command == "reground-events":
+            from tapesplit.regrounding import build_event_regroundings
+
+            print(
+                json.dumps(
+                    build_event_regroundings(args.project, only_unverified=not args.all_events),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
         if args.command == "synthesize-events":
             print(
                 json.dumps(

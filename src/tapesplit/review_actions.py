@@ -29,6 +29,7 @@ SUPPORTED_REVIEW_ACTIONS = {
     "reject_relationship",
     "edit_relationship",
     "confirm_event",
+    "move_event_range",
     "rename_event",
     "split_event",
     "mark_unrelated",
@@ -56,6 +57,7 @@ SAFE_AUTO_ACCEPT_MIN_CONFIDENCE: dict[str, float | None] = {
     "confirm_geocode_later": None,
     "confirm_relationship": 0.75,
     "confirm_event": 0.55,
+    "move_event_range": 0.85,
     "mark_unrelated": 0.7,
     "confirm_event_date": 0.65,
     "mark_historical_context": None,
@@ -257,6 +259,7 @@ def _apply_action(state: _ProjectReviewState, correction: dict[str, Any]) -> lis
         "reject_relationship": _reject_relationship,
         "edit_relationship": _edit_relationship,
         "confirm_event": _confirm_event,
+        "move_event_range": _move_event_range,
         "rename_event": _rename_event,
         "split_event": _request_manual_split,
         "mark_unrelated": _mark_unrelated,
@@ -280,6 +283,37 @@ def _label_face_cluster(state: _ProjectReviewState, correction: dict[str, Any]) 
         cluster["linked_person_group_id"] = str(payload["person_group_id"])
     _mark_reviewed(cluster, "confirmed", correction)
     return [_effect("face_clusters.jsonl", cluster, f"named face cluster {label}")]
+
+
+def _move_event_range(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Snap an event to the tape range where its content actually lives."""
+
+    event = _require_target(state, "canonical_events.jsonl", correction)
+    payload = correction["payload"]
+    source_video_id = str(payload.get("source_video_id") or "")
+    start_s = payload.get("start_s")
+    end_s = payload.get("end_s")
+    if not source_video_id or start_s is None or end_s is None:
+        raise ValueError("move_event_range requires source_video_id, start_s, and end_s")
+    start_s = float(start_s)
+    end_s = float(end_s)
+
+    new_range = {"source_video_id": source_video_id, "start_s": round(start_s, 3), "end_s": round(end_s, 3)}
+    metadata = _metadata(event)
+    previous = metadata.get("source_ranges")
+    if previous:
+        metadata["pre_regrounding_source_ranges"] = previous
+    metadata["source_ranges"] = [new_range]
+    metadata["source_video_ids"] = [source_video_id]
+    metadata["regrounded"] = True
+    event["source_ranges"] = [new_range]
+    event["source_video_ids"] = [source_video_id]
+    # Timeline seconds shift with the range; stitch offsets are re-derived on
+    # the next rebuild, so store per-video seconds here.
+    event["start_s"] = round(start_s, 3)
+    event["end_s"] = round(end_s, 3)
+    _mark_reviewed(event, "confirmed", correction)
+    return [_effect("canonical_events.jsonl", event, f"moved event to {source_video_id} {start_s:.0f}-{end_s:.0f}s")]
 
 
 def _confirm_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
