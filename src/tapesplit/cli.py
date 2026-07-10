@@ -1232,6 +1232,47 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     review_list.add_argument("project", type=Path, help="TapeSplit project directory.")
 
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Blind-verify sampled pipeline claims against short footage clips.",
+    )
+    verify_subparsers = verify_parser.add_subparsers(dest="verify_command", required=True)
+    verify_run = verify_subparsers.add_parser(
+        "run",
+        help="Sample claims, extract clips, blind-describe, and adjudicate.",
+    )
+    verify_run.add_argument("project", type=Path, help="TapeSplit project directory.")
+    verify_run.add_argument(
+        "--sample-size",
+        type=int,
+        default=None,
+        help="Claims to sample. Default: 40.",
+    )
+    verify_run.add_argument("--seed", type=int, default=0, help="Sampling seed. Default: 0.")
+    verify_run.add_argument(
+        "--types",
+        help="Comma-separated claim types (event_content,event_place,event_date,person_presence).",
+    )
+    verify_run.add_argument(
+        "--backend",
+        help="Verifier backend name (azure). Default: TAPESPLIT_VERIFIER_BACKEND.",
+    )
+    verify_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the sampled claim/clip plan without extracting or verifying.",
+    )
+    verify_run.add_argument(
+        "--force-clips",
+        action="store_true",
+        help="Re-extract clips even when they already exist.",
+    )
+    verify_report = verify_subparsers.add_parser(
+        "report",
+        help="Grounded-precision metrics from verifications.jsonl.",
+    )
+    verify_report.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
@@ -2188,6 +2229,44 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.review_command == "list":
                 print(json.dumps(list_review_corrections(args.project), indent=2, sort_keys=True))
+                return 0
+        if args.command == "verify":
+            from tapesplit.verification import (
+                DEFAULT_SAMPLE_SIZE,
+                resolve_verifier_backend,
+                run_verification,
+                verification_report,
+            )
+
+            if args.verify_command == "run":
+                types = (
+                    tuple(t.strip() for t in args.types.split(",") if t.strip())
+                    if args.types
+                    else None
+                )
+                backend = None if args.dry_run else resolve_verifier_backend(args.backend)
+                print(
+                    json.dumps(
+                        run_verification(
+                            args.project,
+                            backend=backend,
+                            sample_size=(
+                                args.sample_size
+                                if args.sample_size is not None
+                                else DEFAULT_SAMPLE_SIZE
+                            ),
+                            seed=args.seed,
+                            types=types,
+                            dry_run=args.dry_run,
+                            force_clips=args.force_clips,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.verify_command == "report":
+                print(json.dumps(verification_report(args.project), indent=2, sort_keys=True))
                 return 0
         if args.command == "export-report":
             print(json.dumps(export_review_report(args.project), indent=2, sort_keys=True))

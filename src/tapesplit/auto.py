@@ -155,6 +155,12 @@ def gather_capabilities() -> dict[str, Any]:
         caps.update(check_gemini_config())
     except Exception as exc:  # config parsing should never block local stages
         caps.update({"gemini_configured": False, "gemini_adc": False, "gemini_error": str(exc)})
+    try:
+        from tapesplit.verification import check_verification_config
+
+        caps.update(check_verification_config())
+    except Exception as exc:
+        caps.update({"verification_backend": "unavailable", "verification_error": str(exc)})
     return caps
 
 
@@ -204,6 +210,14 @@ def _available_gemini(caps: dict[str, Any]) -> tuple[bool, str]:
         return False, "GEMINI_GCS_BUCKET not configured"
     if not caps.get("ffmpeg"):
         return False, "ffmpeg required for upload proxies"
+    return True, ""
+
+
+def _available_verification(caps: dict[str, Any]) -> tuple[bool, str]:
+    if not caps.get("ffmpeg"):
+        return False, "ffmpeg required for verification clips"
+    if str(caps.get("verification_backend") or "unavailable") == "unavailable":
+        return False, "no verifier backend (TAPESPLIT_VERIFIER_BACKEND=azure + Azure OpenAI config)"
     return True, ""
 
 
@@ -627,6 +641,39 @@ def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
     }
 
 
+VERIFY_SAMPLE_SIZE = 40
+VERIFY_EST_USD_PER_CLIP = 0.05
+
+
+def _run_verify(context: StageContext) -> dict[str, Any]:
+    from tapesplit.verification import resolve_verifier_backend, run_verification
+
+    backend = resolve_verifier_backend()
+    if backend is None:
+        raise StageSkipped(
+            "no verifier backend (set TAPESPLIT_VERIFIER_BACKEND=azure with Azure OpenAI config)"
+        )
+    estimate = VERIFY_SAMPLE_SIZE * VERIFY_EST_USD_PER_CLIP
+    cap = context.options.max_cloud_usd
+    if cap is not None and estimate > cap:
+        raise StageSkipped(
+            f"verification estimated at ~${estimate:.2f} exceeds --max-cloud-usd {cap:.2f}"
+        )
+    result = run_verification(
+        context.project,
+        backend=backend,
+        sample_size=VERIFY_SAMPLE_SIZE,
+        seed=0,
+    )
+    return {
+        "sampled": result.get("sampled"),
+        "verified": result.get("verified"),
+        "verdicts": result.get("verdicts"),
+        "grounded_precision": result.get("grounded_precision"),
+        "errors": len(result.get("errors") or []) or None,
+    }
+
+
 def _compact_rebuild_summary(result: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     steps = [step.get("step") for step in result.get("steps", [])]
     summary = {"steps": steps}
@@ -843,6 +890,16 @@ def build_stages() -> list[Stage]:
             requires=("finalize",),
             always_run=True,
             run=_run_apply_suggestions,
+        ),
+        Stage(
+            name="verify",
+            title="Blind-verify sampled claims against footage",
+            kind=KIND_CLOUD,
+            requires=("finalize",),
+            after=("apply-suggestions",),
+            produces=("verifications.jsonl",),
+            availability=_available_verification,
+            run=_run_verify,
         ),
     ]
 

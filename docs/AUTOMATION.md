@@ -50,6 +50,7 @@ Current order:
 | 10–15 | ocr, captions, visual-embed, visual-similarity, faces, face-cluster | local-ml | per-backend |
 | 16 | finalize | derived | full rebuild: groups, place roles, alignments, reconciliation, relationships, speaker identities, context graph, search, story, report, visualization |
 | 17 | apply-suggestions | derived | safe-policy auto-acceptance + output refresh |
+| 18 | verify | cloud | blind clip verification of sampled claims (`TAPESPLIT_VERIFIER_BACKEND`) |
 
 ## State and resume
 
@@ -135,6 +136,42 @@ Every review decision is ground truth about the system's suggestions, and
 
 After acceptance mutates artifacts, the stage re-runs the derived rebuild so
 exports, search, and the review queue reflect the accepted guesses.
+
+## Verification loop
+
+`src/tapesplit/verification.py` closes a second, human-free loop by checking
+the pipeline's claims against the footage itself. Generating claims over
+hours of tape is hard; checking one claim against a short clip is nearly
+trivial for a multimodal model — verification exploits that asymmetry.
+
+- **Sampling.** Every claim is an assertion tied to a time range: event
+  content (`confirm_event`), visible places (`confirm_place`), dated years
+  (`confirm_event_date`), person presence (`confirm_identity`). Sampling is
+  stratified by tape × claim type and deterministic per seed, oversampling
+  low-confidence claims, chunk-boundary events, auto-accepted targets, and
+  high-blast-radius places.
+- **Blind protocol.** The verifier backend receives only a short local clip
+  (ffmpeg, ≤120 s, 480p, under `verification_clips/`) and returns a
+  structured description — it never sees the claim, so it cannot be led. A
+  separate adjudicator compares description to claim and issues
+  `SUPPORTED` / `CONTRADICTED` / `UNDECIDABLE`. The offline baseline is
+  keyword overlap; an LLM adjudicator plugs into the same interface.
+- **Consequences.** Verdicts append to `verifications.jsonl`; contradictions
+  are digested (never deleted) into `verification_flags.jsonl` for the review
+  surface. In calibration, machine verdicts count for/against the claim's
+  originating action type as reviewer `clip-verifier` at reduced weight
+  (0.5× a human decision), and human-only precision is always reported
+  alongside the blended figure.
+- **Metrics.** `tapesplit verify report` computes grounded precision per
+  claim type and per tape, with a first-class chunked-vs-whole-tape
+  comparison — the instrument for proving fixes like the chunk-timestamp
+  repair actually moved the needle.
+
+The `verify` stage runs after `apply-suggestions` when a backend is
+configured (`TAPESPLIT_VERIFIER_BACKEND=azure` plus Azure OpenAI env;
+deployment via `TAPESPLIT_VERIFIER_DEPLOYMENT`, default `gpt-5.6-sol`) and is
+cost-gated like the gemini stage. `tapesplit verify run --dry-run` prints the
+sampled plan without extracting anything.
 
 ## Extending
 

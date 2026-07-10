@@ -15,6 +15,13 @@ therefore ``tapesplit auto`` and the UI's bulk accept) reads that file, so
 each project's acceptance thresholds tighten or relax based on how its own
 reviewers have corrected the machine — a per-archive learning loop that needs
 no model retraining.
+
+Machine verdicts from the blind clip-verification loop (``verification.py``,
+reviewer identity ``clip-verifier``) flow into the same precision estimates
+at reduced weight: a SUPPORTED verdict counts for the claim's originating
+action type, CONTRADICTED against it. Human-only precision is always
+reported alongside the blended figure so machine verdicts can never mask
+human signal.
 """
 
 from __future__ import annotations
@@ -31,6 +38,16 @@ REVIEW_POLICY_SCHEMA_VERSION = 1
 
 # Reviewers whose corrections were produced by automation, not a human.
 AUTO_REVIEWERS = {"auto-pipeline", "bulk-suggestion", "review-ui-bulk"}
+
+# Machine reviewer identity used by the clip-verification loop.
+MACHINE_REVIEWER = "clip-verifier"
+
+# Observation weights. A human decision is the unit; automation confidently
+# asserting something a human had to undo weighs double against; a blind
+# machine verdict is real but weaker evidence than a human decision.
+HUMAN_OBSERVATION_WEIGHT = 1.0
+AUTO_OVERRIDE_OBSERVATION_WEIGHT = 2.0
+MACHINE_OBSERVATION_WEIGHT = 0.5
 
 # Rejection/edit actions mapped to the confirm action they refute.
 REFUTES: dict[str, str] = {
@@ -89,7 +106,14 @@ def analyze_review_outcomes(project_dir: Path) -> dict[str, dict[str, int]]:
     def bucket(action: str) -> dict[str, int]:
         return outcomes.setdefault(
             action,
-            {"human_confirmed": 0, "human_rejected": 0, "auto_accepted": 0, "auto_overridden": 0},
+            {
+                "human_confirmed": 0,
+                "human_rejected": 0,
+                "auto_accepted": 0,
+                "auto_overridden": 0,
+                "machine_supported": 0,
+                "machine_contradicted": 0,
+            },
         )
 
     auto_confirmed_targets: dict[str, str] = {}  # target_id -> confirm action
@@ -119,22 +143,51 @@ def analyze_review_outcomes(project_dir: Path) -> dict[str, dict[str, int]]:
         else:
             bucket(refuted)["human_rejected"] += 1
 
+    # Blind clip-verification verdicts count toward the claim's originating
+    # action type at reduced weight (applied in observed_precision).
+    for row in read_jsonl(project / "verifications.jsonl"):
+        action = str(row.get("action") or "")
+        if action not in CONFIRM_ACTIONS:
+            continue
+        verdict = str(row.get("verdict") or "")
+        if verdict == "SUPPORTED":
+            bucket(action)["machine_supported"] += 1
+        elif verdict == "CONTRADICTED":
+            bucket(action)["machine_contradicted"] += 1
+
     return outcomes
 
 
-def observed_precision(counts: dict[str, int]) -> tuple[float, int]:
-    """Laplace-smoothed precision and the observation count it rests on.
+def observed_precision(
+    counts: dict[str, int], *, include_machine: bool = True
+) -> tuple[float, float]:
+    """Laplace-smoothed precision and the weighted observation count under it.
 
     Auto-overrides are weighted double: automation confidently asserting
     something a human had to undo is worse than offering a candidate a human
-    declines.
+    declines. Machine (clip-verifier) verdicts blend in at reduced weight;
+    pass ``include_machine=False`` for the human-only figure.
     """
 
-    positive = counts.get("human_confirmed", 0)
-    negative = counts.get("human_rejected", 0) + 2 * counts.get("auto_overridden", 0)
-    observations = positive + counts.get("human_rejected", 0) + counts.get("auto_overridden", 0)
+    machine_weight = MACHINE_OBSERVATION_WEIGHT if include_machine else 0.0
+    positive = (
+        HUMAN_OBSERVATION_WEIGHT * counts.get("human_confirmed", 0)
+        + machine_weight * counts.get("machine_supported", 0)
+    )
+    negative = (
+        HUMAN_OBSERVATION_WEIGHT * counts.get("human_rejected", 0)
+        + AUTO_OVERRIDE_OBSERVATION_WEIGHT * counts.get("auto_overridden", 0)
+        + machine_weight * counts.get("machine_contradicted", 0)
+    )
+    observations = (
+        counts.get("human_confirmed", 0)
+        + counts.get("human_rejected", 0)
+        + counts.get("auto_overridden", 0)
+        + machine_weight
+        * (counts.get("machine_supported", 0) + counts.get("machine_contradicted", 0))
+    )
     precision = (positive + 1) / (positive + negative + 2)
-    return round(precision, 4), observations
+    return round(precision, 4), round(observations, 2)
 
 
 def calibrate_review_policy(project_dir: Path, *, write: bool = True) -> dict[str, Any]:
@@ -153,6 +206,7 @@ def calibrate_review_policy(project_dir: Path, *, write: bool = True) -> dict[st
             continue
         counts = outcomes.get(action, {})
         precision, observations = observed_precision(counts)
+        human_precision, human_observations = observed_precision(counts, include_machine=False)
         floor = float(base)
         adjustment = "insufficient-data"
         if observations >= MIN_OBSERVATIONS:
@@ -168,6 +222,8 @@ def calibrate_review_policy(project_dir: Path, *, write: bool = True) -> dict[st
             "tuned_floor": floors[action],
             "observed_precision": precision,
             "observations": observations,
+            "human_precision": human_precision,
+            "human_observations": human_observations,
             "adjustment": adjustment,
             "counts": counts,
         }
