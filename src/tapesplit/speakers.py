@@ -342,71 +342,15 @@ def _diarize_project_speakers_azure_openai(
     all_segments: list[dict[str, Any]] = []
     part_counts: dict[str, int] = {}
     for item in audio["audio_files"]:
-        current_source_id = item["source_video_id"]
-        audio_path = Path(item["audio_path"])
-        duration = _audio_duration_s(audio_path)
-        parts = _plan_audio_parts(
-            duration,
-            part_s=AZURE_DIARIZE_PART_SECONDS,
-            overlap_s=AZURE_DIARIZE_OVERLAP_SECONDS,
+        segments, parts = _azure_segments_for_audio_item(
+            project,
+            item,
+            deployment=selected_deployment,
+            reference_clips=reference_clips,
+            run_id=run_id,
         )
-        part_counts[current_source_id] = len(parts)
-        raw_by_part: list[list[dict[str, Any]]] = []
-        for part_index, (part_start, part_end) in enumerate(parts):
-            part_path = _extract_audio_part_mp3(audio_path, part_start, part_end - part_start)
-            try:
-                response = azure_openai_adapter.transcribe_diarize(
-                    audio_path=part_path,
-                    deployment=selected_deployment,
-                    known_speakers=reference_clips or None,
-                    project_dir=project,
-                )
-            finally:
-                part_path.unlink(missing_ok=True)
-            rows = []
-            for segment in response.get("segments") or []:
-                start = _number_or_none(segment.get("start"))
-                end = _number_or_none(segment.get("end"))
-                if start is None or end is None or end <= start:
-                    continue
-                rows.append(
-                    {
-                        "part_index": part_index,
-                        "start_s": round(start + part_start, 3),
-                        "end_s": round(end + part_start, 3),
-                        "raw_speaker": str(segment.get("speaker") or ""),
-                        "text": segment.get("text") or "",
-                    }
-                )
-            raw_by_part.append(rows)
-
-        kept = _reconcile_azure_parts(raw_by_part, parts)
-        label_map = _unify_unnamed_azure_labels(
-            kept,
-            known_names=set(reference_clips),
-            embed_fn=_azure_segment_embed_fn(project, current_source_id, audio_path),
-        )
-        for row in kept:
-            key = (row["part_index"], row["raw_speaker"])
-            label = label_map.get(key, row["raw_speaker"])
-            all_segments.append(
-                {
-                    "source_video_id": current_source_id,
-                    "start_s": row["start_s"],
-                    "end_s": row["end_s"],
-                    "speaker_label": label,
-                    "confidence": None,
-                    "provider": "azure_openai",
-                    "model": selected_deployment,
-                    "metadata": {
-                        "run_id": run_id,
-                        "part_index": row["part_index"],
-                        "raw_speaker": row["raw_speaker"],
-                        "known_speaker": row["raw_speaker"] in reference_clips,
-                        "transcript_text": row["text"],
-                    },
-                }
-            )
+        part_counts[item["source_video_id"]] = parts
+        all_segments.extend(segments)
 
     written = write_speaker_segments(project, all_segments, force=force, source_video_id=source_video_id)
     append_jsonl(
@@ -434,6 +378,86 @@ def _diarize_project_speakers_azure_openai(
         "speaker_segments": written,
         "output": str(project / "speaker_segments.jsonl"),
     }
+
+
+def _azure_segments_for_audio_item(
+    project: Path,
+    item: dict[str, Any],
+    *,
+    deployment: str,
+    reference_clips: dict[str, bytes],
+    run_id: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Diarize one tape's audio (network + CPU only, no project writes), so
+    callers may fan tapes out across workers and serialize the write."""
+    from tapesplit import azure_openai_adapter
+
+    current_source_id = item["source_video_id"]
+    audio_path = Path(item["audio_path"])
+    duration = _audio_duration_s(audio_path)
+    parts = _plan_audio_parts(
+        duration,
+        part_s=AZURE_DIARIZE_PART_SECONDS,
+        overlap_s=AZURE_DIARIZE_OVERLAP_SECONDS,
+    )
+    raw_by_part: list[list[dict[str, Any]]] = []
+    for part_index, (part_start, part_end) in enumerate(parts):
+        part_path = _extract_audio_part_mp3(audio_path, part_start, part_end - part_start)
+        try:
+            response = azure_openai_adapter.transcribe_diarize(
+                audio_path=part_path,
+                deployment=deployment,
+                known_speakers=reference_clips or None,
+                project_dir=project,
+            )
+        finally:
+            part_path.unlink(missing_ok=True)
+        rows = []
+        for segment in response.get("segments") or []:
+            start = _number_or_none(segment.get("start"))
+            end = _number_or_none(segment.get("end"))
+            if start is None or end is None or end <= start:
+                continue
+            rows.append(
+                {
+                    "part_index": part_index,
+                    "start_s": round(start + part_start, 3),
+                    "end_s": round(end + part_start, 3),
+                    "raw_speaker": str(segment.get("speaker") or ""),
+                    "text": segment.get("text") or "",
+                }
+            )
+        raw_by_part.append(rows)
+
+    kept = _reconcile_azure_parts(raw_by_part, parts)
+    label_map = _unify_unnamed_azure_labels(
+        kept,
+        known_names=set(reference_clips),
+        embed_fn=_azure_segment_embed_fn(project, current_source_id, audio_path),
+    )
+    segments = []
+    for row in kept:
+        key = (row["part_index"], row["raw_speaker"])
+        label = label_map.get(key, row["raw_speaker"])
+        segments.append(
+            {
+                "source_video_id": current_source_id,
+                "start_s": row["start_s"],
+                "end_s": row["end_s"],
+                "speaker_label": label,
+                "confidence": None,
+                "provider": "azure_openai",
+                "model": deployment,
+                "metadata": {
+                    "run_id": run_id,
+                    "part_index": row["part_index"],
+                    "raw_speaker": row["raw_speaker"],
+                    "known_speaker": row["raw_speaker"] in reference_clips,
+                    "transcript_text": row["text"],
+                },
+            }
+        )
+    return segments, len(parts)
 
 
 def _plan_audio_parts(
