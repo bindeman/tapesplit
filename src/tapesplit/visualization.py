@@ -49,6 +49,7 @@ def export_visualization_data(
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
     speaker_segments = read_jsonl(project / "speaker_segments.jsonl")
     speaker_identity_candidates = read_jsonl(project / "speaker_identity_candidates.jsonl")
+    person_merge_candidates = read_jsonl(project / "person_merge_candidates.jsonl")
 
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     event_alignments_by_event = {
@@ -86,6 +87,7 @@ def export_visualization_data(
         people_by_id=people_by_id,
         face_clusters_by_id=face_clusters_by_id,
         speaker_identity_candidates=speaker_identity_candidates,
+        person_merge_candidates=person_merge_candidates,
         assets_by_subject=assets_by_subject,
         video_offsets=video_offsets,
         event_alignments_by_event=event_alignments_by_event,
@@ -713,8 +715,10 @@ def _review_queues(
     video_offsets: dict[str, float],
     event_alignments_by_event: dict[str, dict[str, Any]] | None = None,
     regroundings_by_event: dict[str, dict[str, Any]] | None = None,
+    person_merge_candidates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
+    person_merge_candidates = person_merge_candidates or []
     event_alignments_by_event = event_alignments_by_event or {}
     regroundings_by_event = regroundings_by_event or {}
     role_identity_options_by_person = _role_identity_options_by_person(people, relationship_candidates, events_by_id)
@@ -793,6 +797,50 @@ def _review_queues(
                     ],
                 },
                 "actions": ["confirm_speaker_identity", "reject_speaker_identity"],
+            }
+        )
+
+    for candidate in person_merge_candidates:
+        if not isinstance(candidate, dict) or _review_closed(candidate):
+            continue
+        person_a = people_by_id.get(str(candidate.get("person_group_id_a")) or "") or {}
+        person_b = people_by_id.get(str(candidate.get("person_group_id_b")) or "") or {}
+        if not person_a or not person_b:
+            continue
+        event_ids = _unique_items(
+            [
+                str(event_id)
+                for person in (person_a, person_b)
+                for event_id in person.get("canonical_event_ids") or []
+            ]
+        )
+        label_a = str(candidate.get("label_a") or person_a.get("label") or "")
+        label_b = str(candidate.get("label_b") or person_b.get("label") or "")
+        items.append(
+            {
+                "task_type": "resolve_duplicate_person",
+                "source_record_type": "people_group",
+                "source_id": str(candidate.get("person_group_id_a") or ""),
+                "title": f"Same person? {label_a} + {label_b}",
+                "prompt": "These two profiles look like the same person. Merge them, or keep them separate?",
+                "priority": 76,
+                "confidence": candidate.get("confidence"),
+                "review_status": candidate.get("review_status") or "needs_review",
+                "related_event_ids": event_ids,
+                "events": _event_entries(event_ids, events_by_id),
+                "thumbnail_path": _event_thumbnail_path(event_ids, assets_by_subject),
+                "candidate": {
+                    "person_merge_candidate_id": str(candidate.get("id") or ""),
+                    "person_group_id_a": str(candidate.get("person_group_id_a") or ""),
+                    "person_group_id_b": str(candidate.get("person_group_id_b") or ""),
+                    "label_a": label_a,
+                    "label_b": label_b,
+                    "blocked": bool(candidate.get("blocked")),
+                    "blocked_reason": str(candidate.get("blocked_reason") or ""),
+                    "dimensions": candidate.get("dimensions") or [],
+                    "fired_dimensions": candidate.get("fired_dimensions") or [],
+                },
+                "actions": ["merge_person", "confirm_person"],
             }
         )
 
@@ -1079,6 +1127,16 @@ def _review_item_tier(item: dict[str, Any]) -> tuple[str, str]:
         return _place_review_tier(candidate)
     if task_type == "resolve_person":
         return _person_review_tier(candidate)
+    if task_type == "resolve_duplicate_person":
+        if candidate.get("blocked"):
+            return (
+                "backlog",
+                "Fusion found contradicting evidence (both faces in one frame); kept only for audit.",
+            )
+        return (
+            "primary",
+            "Duplicate profiles split one person's story; merging is high-leverage for the people graph.",
+        )
     if task_type == "review_event":
         return _event_review_tier(item, candidate)
     if task_type == "resolve_date":
@@ -1330,6 +1388,35 @@ def _suggested_review_action(item: dict[str, Any]) -> dict[str, Any]:
                 "selected_location_option_id": (selected or {}).get("id") or "selected",
                 "selected_location_option": selected or {},
                 "exportable_as_gps": exportable_as_gps,
+            },
+        )
+
+    if task_type == "resolve_duplicate_person":
+        if candidate.get("blocked"):
+            # Contradicting evidence (same-frame co-presence): no safe
+            # automatic resolution exists; a human must look.
+            return {}
+        merge_from = str(candidate.get("person_group_id_b") or "")
+        label_a = str(candidate.get("label_a") or "this person")
+        label_b = str(candidate.get("label_b") or "the duplicate")
+        fired = [str(name) for name in candidate.get("fired_dimensions") or []]
+        if not merge_from:
+            return {}
+        return _suggestion(
+            action="merge_person",
+            target_id=merge_from,
+            target_type="people_group",
+            label=f"Merge {label_b} into {label_a}",
+            rationale=(
+                "Independent identity signals agree ("
+                + (", ".join(fired) if fired else "name only")
+                + "); merging keeps one person's story in one profile."
+            ),
+            confidence=confidence,
+            payload={
+                "merge_with_person_group_id": str(candidate.get("person_group_id_a") or ""),
+                "person_merge_candidate_id": str(candidate.get("person_merge_candidate_id") or ""),
+                "fused_dimensions": candidate.get("dimensions") or [],
             },
         )
 
