@@ -1,14 +1,31 @@
 import json
 
 from tapesplit.gemini_adapter import (
+    GeminiChunk,
     estimate_chunked_video_analysis,
     estimate_project_videos,
     estimate_video_token_units,
     parse_json_object,
     plan_video_chunks,
+    _analysis_prompt,
+    _chunk_prompt,
     _proxy_encoding_profile,
     usage_units_from_response,
 )
+
+
+def test_chunk_prompt_uses_excerpt_duration_and_never_names_source_seconds():
+    # The prompt announcing the full tape's duration is what licensed chunk
+    # timelines to overrun the 900s excerpt (bug #13).
+    chunk = GeminiChunk(index=8, start_s=6195.0, end_s=7095.0)
+    prompt = _chunk_prompt(_analysis_prompt(duration_s=chunk.duration_s), chunk)
+
+    assert "Uploaded video duration: 900.000 seconds" in prompt
+    assert "may exceed 900" in prompt
+    assert "6195" not in prompt
+    assert "7095" not in prompt
+    assert "maps to source seconds" not in prompt
+    assert "1515" not in prompt
 
 
 def test_estimate_video_token_units_low_resolution():

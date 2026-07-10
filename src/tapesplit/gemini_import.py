@@ -5,6 +5,26 @@ from typing import Any
 
 from tapesplit.storage import append_jsonl, read_jsonl
 
+TIMED_ANALYSIS_FIELDS = [
+    "event_candidates",
+    "scene_candidates",
+    "person_mentions",
+    "place_candidates",
+    "date_candidates",
+    "language_segments",
+    "non_content_ranges",
+    "unrelated_ranges",
+    "followup_segments",
+]
+
+# Chunk timelines that overrun the excerpt by more than this ratio get
+# linearly rescaled onto the excerpt instead of clamped/dropped.
+TIMELINE_OVERRUN_TOLERANCE = 1.05
+# Events narrower than this after normalization are noise (clamp slivers,
+# unit confusion), never real footage ranges.
+MIN_EVENT_SPAN_S = 5.0
+MINUTES_MODE_MIN_EVENTS = 3
+
 
 def import_gemini_analysis(
     project_dir: Path,
@@ -42,6 +62,11 @@ def import_gemini_analysis(
     claim_count = 0
     event_count = 0
     skipped = []
+    chunks_rescaled = 0
+    chunks_minutes_rescaled = 0
+    events_resurrected = 0
+    events_dropped_sliver = 0
+    events_dropped_unreliable = 0
 
     def add_evidence(record: dict[str, Any], source_video_id: str | None) -> str:
         nonlocal evidence_count
@@ -84,6 +109,10 @@ def import_gemini_analysis(
         if chunk_end_s is not None:
             local_duration_s = max(0.0, chunk_end_s - source_offset_s)
         chunk_metadata = _chunk_metadata(latest)
+        timeline_notes, timeline_stats = _corrected_chunk_timeline(analysis, local_duration_s)
+        chunks_rescaled += 1 if timeline_stats["rescaled"] else 0
+        chunks_minutes_rescaled += 1 if timeline_stats["minutes_rescaled"] else 0
+        events_resurrected += timeline_stats["resurrected_events"]
 
         summary_text = analysis.get("tape_summary")
         if summary_text:
@@ -115,6 +144,12 @@ def import_gemini_analysis(
             )
 
         for item in analysis.get("event_candidates") or []:
+            if item.get("_time_unreliable"):
+                events_dropped_unreliable += 1
+                skipped.append(
+                    {"kind": "event_candidate", "reason": "time_unreliable", "item": item, "chunk": chunk_metadata}
+                )
+                continue
             normalized = _normalize_interval(
                 item,
                 duration_s,
@@ -126,6 +161,13 @@ def import_gemini_analysis(
                 skipped.append({"kind": "event_candidate", "item": item, "chunk": chunk_metadata})
                 continue
             start_s, end_s, validation_notes = normalized
+            validation_notes = [*timeline_notes, *validation_notes]
+            if "missing_time_range" not in validation_notes and end_s - start_s < MIN_EVENT_SPAN_S:
+                events_dropped_sliver += 1
+                skipped.append(
+                    {"kind": "event_candidate", "reason": "sliver_span", "item": item, "chunk": chunk_metadata}
+                )
+                continue
             local_start_s, local_end_s = _local_interval(item)
             event_metadata = {
                 "title": item.get("title"),
@@ -211,6 +253,7 @@ def import_gemini_analysis(
                     skipped.append({"kind": key, "item": item, "chunk": chunk_metadata})
                     continue
                 start_s, end_s, validation_notes = normalized
+                validation_notes = [*timeline_notes, *validation_notes]
                 local_start_s, local_end_s = _local_interval(item)
                 value = item.get("name") or item.get("value") or item.get("evidence_text") or ""
                 evidence_id = add_evidence(
@@ -255,7 +298,89 @@ def import_gemini_analysis(
         "claims": claim_count,
         "events": event_count,
         "skipped": len(skipped),
+        "chunks_rescaled": chunks_rescaled,
+        "chunks_minutes_rescaled": chunks_minutes_rescaled,
+        "events_resurrected": events_resurrected,
+        "events_dropped_sliver": events_dropped_sliver,
+        "events_dropped_unreliable": events_dropped_unreliable,
     }
+
+
+def _corrected_chunk_timeline(
+    analysis: dict[str, Any],
+    local_duration_s: float | None,
+) -> tuple[list[str], dict[str, Any]]:
+    """Repair chunk timelines that drifted past the excerpt duration.
+
+    Chunk prompts historically announced the full tape's duration while asking
+    for excerpt-relative seconds, so models emitted timelines overrunning the
+    excerpt (or, rarely, whole timelines in minutes). Overrun timelines are
+    linearly rescaled onto the excerpt — recovering events the old clamp/drop
+    path pinned to chunk tails or deleted — and minutes-mode timelines are
+    multiplied back into seconds. Mutates the analysis in place; returns notes
+    to attach to every imported item plus per-chunk stats.
+    """
+    stats = {
+        "rescaled": False,
+        "minutes_rescaled": False,
+        "resurrected_events": 0,
+    }
+    if not local_duration_s or local_duration_s <= 0:
+        return [], stats
+    max_end = _max_timeline_end(analysis)
+    if max_end is None or max_end <= 0:
+        return [], stats
+
+    notes: list[str] = []
+    events = [item for item in analysis.get("event_candidates") or [] if isinstance(item, dict)]
+    event_ends = [end for end in (_number_or_none(event.get("end_s")) for event in events) if end is not None]
+    if len(event_ends) >= MINUTES_MODE_MIN_EVENTS and max(event_ends) < local_duration_s / 10:
+        if max_end * 60 <= local_duration_s * TIMELINE_OVERRUN_TOLERANCE:
+            _scale_timeline(analysis, 60.0)
+            max_end *= 60
+            notes.append("chunk_timeline_minutes_rescaled")
+            stats["minutes_rescaled"] = True
+        else:
+            # Events sit in the first tenth of the excerpt while other items
+            # span it: units are untrustworthy either way.
+            for event in events:
+                event["_time_unreliable"] = True
+
+    if max_end > local_duration_s * TIMELINE_OVERRUN_TOLERANCE:
+        stats["resurrected_events"] = sum(
+            1
+            for event in events
+            if not event.get("_time_unreliable")
+            and (_number_or_none(event.get("start_s")) or 0.0) >= local_duration_s
+        )
+        _scale_timeline(analysis, local_duration_s / max_end)
+        notes.append("chunk_timeline_rescaled")
+        stats["rescaled"] = True
+    return notes, stats
+
+
+def _max_timeline_end(analysis: dict[str, Any]) -> float | None:
+    max_end: float | None = None
+    for field in TIMED_ANALYSIS_FIELDS:
+        for item in analysis.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("start_s", "end_s"):
+                value = _number_or_none(item.get(key))
+                if value is not None and (max_end is None or value > max_end):
+                    max_end = value
+    return max_end
+
+
+def _scale_timeline(analysis: dict[str, Any], scale: float) -> None:
+    for field in TIMED_ANALYSIS_FIELDS:
+        for item in analysis.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in ("start_s", "end_s"):
+                value = _number_or_none(item.get(key))
+                if value is not None:
+                    item[key] = round(value * scale, 3)
 
 
 def _normalize_interval(

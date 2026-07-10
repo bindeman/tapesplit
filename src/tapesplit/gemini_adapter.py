@@ -909,10 +909,13 @@ def analyze_project_video_chunks(
     analysis_run_id = run_id or f"gem_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
     raw_dir = project / "gemini_raw" / analysis_run_id
     raw_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _analysis_prompt(duration_s=duration_s)
     results = []
     for chunk in chunks:
         chunk_id = _chunk_id(chunk.index)
+        # The uploaded file is the excerpt, so the prompt must describe the
+        # excerpt's duration; announcing the full tape length here licenses
+        # timelines that overrun the clip.
+        chunk_prompt = _chunk_prompt(_analysis_prompt(duration_s=chunk.duration_s), chunk)
         clip_path = create_video_chunk(
             project_dir=project,
             video_path=video_path,
@@ -949,7 +952,7 @@ def analyze_project_video_chunks(
                             },
                             "videoMetadata": {"fps": resolved_fps},
                         },
-                        {"text": _chunk_prompt(prompt, chunk)},
+                        {"text": chunk_prompt},
                     ],
                 }
             ],
@@ -1415,7 +1418,7 @@ def _analysis_prompt(*, duration_s: float | None = None) -> str:
             f"\nUploaded video duration: {duration_s:.3f} seconds "
             f"({_format_seconds(duration_s)}). All start_s and end_s values must be true "
             "elapsed seconds from the beginning of this uploaded video. For example, "
-            "00:25:15 must be 1515, not 25 or 151."
+            "00:05:15 must be 315, not 5 or 51."
         )
     return (
         """
@@ -1523,13 +1526,15 @@ Return this JSON shape:
 
 
 def _chunk_prompt(base_prompt: str, chunk: GeminiChunk) -> str:
+    # The excerpt-to-source mapping stays in request metadata only: naming
+    # source seconds inside timestamp instructions is what taught models to
+    # emit source-global (overrunning) timelines.
     return (
         f"{base_prompt}\n\n"
         "Chunk-specific instruction: analyze only this uploaded excerpt. "
         "All JSON start_s and end_s values must be seconds relative to the beginning "
-        f"of this excerpt, not the original tape. This excerpt maps to source seconds "
-        f"{chunk.start_s:.3f} through {chunk.end_s:.3f}; do not output source-global "
-        "timestamps. Use stricter chunk limits: scene_candidates max 6, "
+        "of this excerpt, not the original tape. No start_s or end_s value may "
+        f"exceed {chunk.duration_s:.0f}. Use stricter chunk limits: scene_candidates max 6, "
         "event_candidates max 4, person_mentions max 8, place_candidates max 6, "
         "date_candidates max 6, followup_segments max 4. Keep evidence_text arrays "
         "to at most 3 short snippets per event. Do not include transcript blocks, "

@@ -2,6 +2,22 @@ from tapesplit.gemini_import import import_gemini_analysis, _normalize_interval
 from tapesplit.storage import read_jsonl
 
 
+def _write_single_chunk_project(tmp_path, events_json: str, extra_fields: str = "") -> None:
+    (tmp_path / "tapes.jsonl").write_text(
+        '{"id":"video_000001","probe":{"duration_s":7095}}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "gemini_analyses.jsonl").write_text(
+        (
+            '{"analysis_run_id":"run_a","source_video_id":"video_000001",'
+            '"chunk_id":"chunk_0008","chunk_index":8,"chunk_start_s":6195,'
+            '"chunk_end_s":7095,"chunk_duration_s":900,"time_basis":"chunk",'
+            f'"analysis":{{"event_candidates":[{events_json}]{extra_fields}}}}}\n'
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_normalize_interval_drops_ranges_after_source_duration():
     assert _normalize_interval({"start_s": 120, "end_s": 130}, 100, []) is None
 
@@ -110,6 +126,116 @@ def test_import_chunked_gemini_analysis_offsets_all_selected_chunks(tmp_path):
     assert events[1]["review_status"] == "needs_review"
     assert events[0]["metadata"]["chunk_id"] == "chunk_0001"
     assert evidence[0]["kind"] == "gemini_chunk_summary"
+
+
+def test_overrun_chunk_timeline_rescaled_and_dropped_events_resurrected(tmp_path):
+    # Mirrors the real video_000018 chunk_0008 failure: a 900s excerpt whose
+    # model timeline ran to 1499s. The old path clamped "Lab" onto skiing
+    # footage at the chunk tail and silently deleted "Ski".
+    _write_single_chunk_project(
+        tmp_path,
+        ",".join(
+            [
+                '{"title":"Drive","start_s":0,"end_s":431,"summary":"drive","confidence":0.8}',
+                '{"title":"Campus","start_s":431,"end_s":848,"summary":"campus","confidence":0.8}',
+                '{"title":"Lab","start_s":848,"end_s":1199,"summary":"lab","confidence":0.8}',
+                '{"title":"Ski","start_s":1199,"end_s":1499,"summary":"ski","confidence":0.8}',
+            ]
+        ),
+    )
+
+    result = import_gemini_analysis(tmp_path)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert result["chunks_rescaled"] == 1
+    assert result["events_resurrected"] == 1
+    assert result["skipped"] == 0
+    assert [event["title"] for event in events] == ["Drive", "Campus", "Lab", "Ski"]
+    scale = 900 / 1499
+    lab = events[2]
+    assert abs(lab["start_s"] - (6195 + 848 * scale)) < 1
+    assert abs(lab["end_s"] - (6195 + 1199 * scale)) < 1
+    ski = events[3]
+    assert abs(ski["end_s"] - 7095) < 1
+    for event in events:
+        assert "chunk_timeline_rescaled" in event["metadata"]["validation_notes"]
+        assert event["review_status"] == "needs_review"
+
+
+def test_minutes_as_seconds_chunk_timeline_multiplied(tmp_path):
+    # video_000018 chunk_0002 mode: events at 10-15 "seconds" for content
+    # spread over a 900s excerpt are minutes.
+    _write_single_chunk_project(
+        tmp_path,
+        ",".join(
+            [
+                '{"title":"Halloween","start_s":10,"end_s":12,"summary":"a","confidence":0.8}',
+                '{"title":"Cartoon","start_s":12,"end_s":13,"summary":"b","confidence":0.8}',
+                '{"title":"Birthday","start_s":13,"end_s":15,"summary":"c","confidence":0.8}',
+            ]
+        ),
+    )
+
+    result = import_gemini_analysis(tmp_path)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert result["chunks_minutes_rescaled"] == 1
+    assert result["events_dropped_sliver"] == 0
+    assert [(event["title"], event["start_s"], event["end_s"]) for event in events] == [
+        ("Halloween", 6795, 6915),
+        ("Cartoon", 6915, 6975),
+        ("Birthday", 6975, 7095),
+    ]
+    for event in events:
+        assert "chunk_timeline_minutes_rescaled" in event["metadata"]["validation_notes"]
+
+
+def test_minutes_mode_with_full_span_scenes_marks_events_unreliable(tmp_path):
+    # Events crammed into the first tenth while scenes span the excerpt:
+    # multiplying by 60 would blow past the excerpt, so units are
+    # untrustworthy and the events are excluded rather than guessed at.
+    _write_single_chunk_project(
+        tmp_path,
+        ",".join(
+            [
+                '{"title":"A","start_s":10,"end_s":12,"summary":"a","confidence":0.8}',
+                '{"title":"B","start_s":12,"end_s":13,"summary":"b","confidence":0.8}',
+                '{"title":"C","start_s":13,"end_s":15,"summary":"c","confidence":0.8}',
+            ]
+        ),
+        extra_fields=',"scene_candidates":[{"start_s":0,"end_s":880}]',
+    )
+
+    result = import_gemini_analysis(tmp_path)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert events == []
+    assert result["events_dropped_unreliable"] == 3
+    assert result["chunks_minutes_rescaled"] == 0
+    assert result["chunks_rescaled"] == 0
+    assert result["skipped"] == 3
+
+
+def test_sliver_events_dropped_but_untimed_events_kept(tmp_path):
+    _write_single_chunk_project(
+        tmp_path,
+        ",".join(
+            [
+                '{"title":"Sliver","start_s":100,"end_s":102,"summary":"blip","confidence":0.8}',
+                '{"title":"Real","start_s":100,"end_s":200,"summary":"real","confidence":0.8}',
+                '{"title":"Untimed","summary":"no clock","confidence":0.5}',
+            ]
+        ),
+    )
+
+    result = import_gemini_analysis(tmp_path)
+    events = read_jsonl(tmp_path / "gemini_events.jsonl")
+
+    assert result["events_dropped_sliver"] == 1
+    assert [event["title"] for event in events] == ["Real", "Untimed"]
+    untimed = events[1]
+    assert untimed["start_s"] == untimed["end_s"] == 6195
+    assert "missing_time_range" in untimed["metadata"]["validation_notes"]
 
 
 def test_import_all_gemini_analysis_runs_keeps_source_videos(tmp_path):
