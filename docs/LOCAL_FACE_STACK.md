@@ -33,14 +33,33 @@ events, lighting changes, and moderate age changes.
 
 ## Pipeline Shape
 
-1. Detect faces from event and scene keyframes.
-2. Save detector metadata on every `face_observations.jsonl` row.
-3. Run quality checks and discard or downgrade blurry crops.
-4. Embed usable crops with ArcFace.
-5. Cluster embeddings conservatively.
-6. Score identity candidates with visual similarity plus event co-occurrence,
+1. Extract keyframes with deinterlacing (`bwdif`) so 480i field-combing never
+   reaches detection or embeddings.
+2. Detect faces from event and scene keyframes.
+3. Save detector metadata on every `face_observations.jsonl` row.
+4. Score quality as a continuous weight (size, sharpness, brightness — the old
+   Haar eye-count hard gate is gone; on the reference haul it false-rejected
+   496 real faces and manufactured 71% of all clusters as singletons).
+   Quality informs weights and confidence, never exclusion.
+5. Embed every crop the embedder can read; persist embeddings once to
+   `face_embeddings.npz` + `face_embeddings.jsonl` (vector dimensions, model,
+   content hash, and the free same-pass attributes: det_score, age, pose).
+   Re-cluster runs read persisted vectors instead of re-running the model.
+6. Cluster with constrained average-linkage agglomerative clustering:
+   same-keyframe faces carry a cannot-link constraint (two faces in one frame
+   are different people), and low-weight faces may join clusters but never
+   seed them. Cluster ids survive re-clustering via anchor succession
+   (max-Jaccard overlap of member media-span anchors); a human-labeled
+   cluster that splits below the floor becomes a loud review item.
+7. Score identity candidates with visual similarity plus event co-occurrence,
    transcript name mentions, role mentions, and relationship context.
-7. Show the best guess by default in the UI, with alternates and source evidence.
+8. Show the best guess by default in the UI, with alternates and source evidence.
+
+Every human face decision (label, confirm, detach, reassign, unknown) is
+stamped with `payload.anchors` — `{media_id, span, bbox}` per involved face —
+and replay resolves anchors by time + bbox IoU, so corrections survive both
+observation-id renumbering (re-detection) and cluster-id renumbering
+(re-clustering).
 
 ## Cross-Platform Policy
 
@@ -64,11 +83,19 @@ tapesplit detect-faces --backend apple-vision
 tapesplit detect-faces --backend opencv
 tapesplit cluster-faces --embedding-backend auto
 tapesplit cluster-faces --embedding-backend arcface-insightface
+tapesplit cluster-faces --embedding-backend cvlface-kprpe
 tapesplit cluster-faces --embedding-backend opencv-gray
 ```
 
-`face_clusters.jsonl` stores the feature model and clustering threshold. When we
-persist embeddings instead of recomputing them, also store vector dimensions and
-embedding artifact references. This lets us evaluate whether better embeddings
-reduce review burden for duplicated people such as `Ekaterina / Katya / Mom` and
-translated or nicknamed names such as `Filip / Filya / Phillip`.
+Embedding persistence is implemented: `face_embeddings.jsonl` records the
+model, vector dimensions, content hash, and span/bbox anchor per observation,
+with vectors in `face_embeddings.npz`. Swapping embedders is now a cheap,
+measurable experiment (recompute once, sweep thresholds offline).
+
+`cvlface-kprpe` (AdaFace ViT-B KP-RPE, WebFace12M) is the low-resolution
+upgrade path — TinyFace Rank-1 76.1 vs ~72.3 for AdaFace IR101, and buffalo_l
+sits well below both in the 40–100px regime this archive lives in. Weights
+(~1.8GB) load from the local Hugging Face cache only; set
+`TAPESPLIT_FACE_ALLOW_DOWNLOAD=1` to permit the download. buffalo_l stays the
+default and fallback, and its cosine threshold (0.65) does not transfer —
+recalibrate with a sweep when enabling KP-RPE.

@@ -291,8 +291,14 @@ def _source_range_for_event(
     return None
 
 
-def _extract_frame(video_path: Path, time_s: float, output_path: Path, *, width: int) -> None:
-    cmd = [
+# Deinterlace before scaling: the tapes are 480i captures, and any subject
+# motion leaves field-combing in extracted frames, corrupting face crops and
+# embeddings downstream. bwdif reconstructs a clean progressive frame.
+FRAME_EXTRACT_FILTERS = "bwdif=mode=send_frame"
+
+
+def _frame_extract_command(video_path: Path, time_s: float, output_path: Path, *, width: int) -> list[str]:
+    return [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
@@ -304,12 +310,16 @@ def _extract_frame(video_path: Path, time_s: float, output_path: Path, *, width:
         "-frames:v",
         "1",
         "-vf",
-        f"scale={width}:-2",
+        f"{FRAME_EXTRACT_FILTERS},scale={width}:-2",
         "-q:v",
         "3",
         str(output_path),
         "-y",
     ]
+
+
+def _extract_frame(video_path: Path, time_s: float, output_path: Path, *, width: int) -> None:
+    cmd = _frame_extract_command(video_path, time_s, output_path, width=width)
     try:
         subprocess.run(cmd, check=True)
     except FileNotFoundError as exc:

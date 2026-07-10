@@ -195,7 +195,7 @@ def test_cluster_faces_excludes_roles_and_boosts_direct_name_context(
     assert all("Russians" not in candidate["person_label"] for candidate in candidates)
 
 
-def test_cluster_faces_keeps_low_quality_faces_as_review_only_candidates(
+def test_cluster_faces_clusters_low_quality_faces_with_weight_instead_of_gating(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -237,16 +237,19 @@ def test_cluster_faces_keeps_low_quality_faces_as_review_only_candidates(
             }
         ],
     )
+    # Low quality no longer excludes: the crop is embedded and clustered with
+    # a low weight instead of becoming a review-only singleton factory row.
     monkeypatch.setattr(
         "tapesplit.face_clustering._face_feature",
-        lambda _project, _face: (_ for _ in ()).throw(AssertionError("low-quality face should not be feature-clustered")),
+        lambda _project, _face: [1.0, 0.0],
     )
     monkeypatch.setattr(
         "tapesplit.face_clustering.analyze_face_quality",
         lambda _path: {
-            "usable": False,
+            "usable": True,
             "status": "low_quality",
-            "notes": ["Small crop has no detected eyes; likely unreliable or a false positive."],
+            "quality_weight": 0.4,
+            "notes": ["Face crop is small; identity signal is weak."],
         },
     )
 
@@ -255,9 +258,10 @@ def test_cluster_faces_keeps_low_quality_faces_as_review_only_candidates(
     clusters = read_jsonl(tmp_path / "face_clusters.jsonl")
     candidates = read_jsonl(tmp_path / "face_identity_candidates.jsonl")
 
-    assert result["faces_review_only_low_quality"] == 1
+    assert result["faces_clustered"] == 1
+    assert result["faces_unclustered"] == 0
     assert faces[0]["face_cluster_id"] == "face_cluster_000001"
-    assert clusters[0]["review_only"] is True
+    assert clusters[0]["review_only"] is False
     assert clusters[0]["quality_status"] == "low_quality"
     assert clusters[0]["candidate_people"][0]["person_label"] == "Ekaterina / Katya"
     assert clusters[0]["candidate_people"][0]["face_quality_status"] == "low_quality"

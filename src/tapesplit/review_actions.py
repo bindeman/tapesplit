@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from tapesplit.claim_store import DualWriter
+from tapesplit.face_embeddings import face_anchor
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -80,6 +81,17 @@ HUMAN_ONLY_REVIEW_ACTIONS = {
     "mark_face_unknown",
 }
 
+# Face decisions bind to media spans, not just to cluster/observation ids:
+# cluster ids renumber on re-cluster and observation ids on re-detection, so
+# every face correction carries payload.anchors {media_id, span, bbox} and the
+# replay path resolves anchors back to current rows by time + bbox IoU.
+FACE_ANCHOR_TARGET_FILES = {"face_clusters.jsonl", "face_identity_candidates.jsonl"}
+FACE_ANCHOR_TIME_TOLERANCE_S = 0.5
+FACE_ANCHOR_MIN_IOU = 0.5
+# An anchored cluster reference resolves only when at least half of its
+# resolvable anchors agree on one current cluster.
+FACE_ANCHOR_MIN_CLUSTER_FRACTION = 0.5
+
 
 def apply_review_actions(
     project_dir: Path,
@@ -100,6 +112,7 @@ def apply_review_actions(
 
     for offset, action in enumerate(pending_actions):
         correction = _normalize_action(action, correction_index=next_index + offset)
+        _attach_face_anchors(state, correction)
         effects = _apply_action(state, correction)
         correction["applied_effects"] = effects
         corrections.append(correction)
@@ -415,6 +428,26 @@ def _requested_cluster_faces(
         if str(face.get("id") or "") in wanted
         and (not require_membership or str(face.get("face_cluster_id") or "") == cluster_id)
     ]
+    if not faces:
+        # Observation ids renumber on re-detection; fall back to the span
+        # anchors stamped when the human made the call.
+        anchors = [
+            anchor
+            for anchor in correction["payload"].get("anchors") or []
+            if str(anchor.get("face_observation_id") or "") in wanted
+        ]
+        seen: set[str] = set()
+        for anchor in anchors:
+            observation = _resolve_face_observation_by_anchor(state, anchor)
+            if not observation:
+                continue
+            face_id = str(observation.get("id") or "")
+            if face_id in seen:
+                continue
+            if require_membership and str(observation.get("face_cluster_id") or "") != cluster_id:
+                continue
+            seen.add(face_id)
+            faces.append(observation)
     if not faces:
         raise ValueError(f"none of the requested face observations belong to {cluster_id}")
     return faces
@@ -891,9 +924,173 @@ def _sync_edge_metric_status(
 def _require_target(state: _ProjectReviewState, filename: str, correction: dict[str, Any]) -> dict[str, Any]:
     target_id = str(correction.get("target_id") or "")
     row = state.row_by_id(filename, target_id)
+    if not row and filename in FACE_ANCHOR_TARGET_FILES:
+        row = _resolve_face_target_by_anchors(state, filename, correction)
     if not row:
         raise ValueError(f"{target_id} not found in {filename}")
     return row
+
+
+def _attach_face_anchors(state: _ProjectReviewState, correction: dict[str, Any]) -> None:
+    """Stamp face corrections with media-span anchors at decision time."""
+
+    filename = _target_filename(correction)
+    if filename not in FACE_ANCHOR_TARGET_FILES:
+        return
+    payload = correction["payload"]
+    if payload.get("anchors"):
+        return
+    cluster_id = ""
+    if filename == "face_identity_candidates.jsonl":
+        candidate = state.row_by_id(filename, str(correction.get("target_id") or ""))
+        if candidate:
+            cluster_id = str(candidate.get("face_cluster_id") or "")
+    if not cluster_id:
+        cluster_id = str(payload.get("face_cluster_id") or "")
+    if not cluster_id and filename == "face_clusters.jsonl":
+        cluster_id = str(correction.get("target_id") or "")
+
+    requested_ids = {str(value) for value in payload.get("face_observation_ids") or [] if value}
+    observations = []
+    for face in state.rows("face_observations.jsonl"):
+        face_id = str(face.get("id") or "")
+        if requested_ids:
+            if face_id in requested_ids:
+                observations.append(face)
+        elif cluster_id and str(face.get("face_cluster_id") or "") == cluster_id:
+            observations.append(face)
+    anchors = [face_anchor(face) for face in observations]
+    anchors = [anchor for anchor in anchors if anchor.get("media_id")]
+    if anchors:
+        payload["anchors"] = anchors
+        if cluster_id:
+            payload.setdefault("anchor_cluster_id", cluster_id)
+
+
+def _resolve_face_target_by_anchors(
+    state: _ProjectReviewState, filename: str, correction: dict[str, Any]
+) -> dict[str, Any] | None:
+    anchors = correction.get("payload", {}).get("anchors") or []
+    if not anchors:
+        return None
+    cluster = _cluster_from_anchors(state, anchors)
+    if not cluster:
+        return None
+    if filename == "face_clusters.jsonl":
+        return cluster
+    if filename == "face_identity_candidates.jsonl":
+        cluster_id = str(cluster.get("id") or "")
+        person_group_id = str(correction.get("payload", {}).get("person_group_id") or "")
+        candidates = [
+            row
+            for row in state.rows("face_identity_candidates.jsonl")
+            if str(row.get("face_cluster_id") or "") == cluster_id
+        ]
+        if person_group_id:
+            candidates = [
+                row for row in candidates if str(row.get("person_group_id") or "") == person_group_id
+            ] or candidates
+        return candidates[0] if candidates else None
+    return None
+
+
+def _cluster_from_anchors(state: _ProjectReviewState, anchors: list[dict[str, Any]]) -> dict[str, Any] | None:
+    votes: dict[str, int] = {}
+    resolved = 0
+    for anchor in anchors:
+        observation = _resolve_face_observation_by_anchor(state, anchor)
+        if not observation:
+            continue
+        resolved += 1
+        cluster_id = str(observation.get("face_cluster_id") or "")
+        if cluster_id:
+            votes[cluster_id] = votes.get(cluster_id, 0) + 1
+    if not votes or not resolved:
+        return None
+    cluster_id, count = max(votes.items(), key=lambda item: (item[1], item[0]))
+    if count / resolved < FACE_ANCHOR_MIN_CLUSTER_FRACTION:
+        return None
+    return state.row_by_id("face_clusters.jsonl", cluster_id)
+
+
+def _resolve_face_observation_by_anchor(
+    state: _ProjectReviewState, anchor: dict[str, Any]
+) -> dict[str, Any] | None:
+    media_id = str(anchor.get("media_id") or "")
+    span = anchor.get("span") or {}
+    anchor_time = _float_or_none(span.get("start_s"))
+    anchor_bbox = anchor.get("bbox") or {}
+    if not media_id or anchor_time is None:
+        return None
+    best = None
+    best_iou = 0.0
+    for face in state.rows("face_observations.jsonl"):
+        if str(face.get("source_video_id") or "") != media_id:
+            continue
+        face_time = _float_or_none(face.get("time_s"))
+        if face_time is None:
+            face_time = _float_or_none(face.get("start_s"))
+        if face_time is None or abs(face_time - anchor_time) > FACE_ANCHOR_TIME_TOLERANCE_S:
+            continue
+        iou = _bbox_iou(anchor_bbox, face.get("bbox") or {})
+        if iou >= FACE_ANCHOR_MIN_IOU and iou > best_iou:
+            best = face
+            best_iou = iou
+    return best
+
+
+def _bbox_iou(left: dict[str, Any], right: dict[str, Any]) -> float:
+    try:
+        lx, ly = float(left.get("x") or 0), float(left.get("y") or 0)
+        lw, lh = float(left.get("width") or 0), float(left.get("height") or 0)
+        rx, ry = float(right.get("x") or 0), float(right.get("y") or 0)
+        rw, rh = float(right.get("width") or 0), float(right.get("height") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if lw <= 0 or lh <= 0 or rw <= 0 or rh <= 0:
+        return 0.0
+    inter_w = min(lx + lw, rx + rw) - max(lx, rx)
+    inter_h = min(ly + lh, ry + rh) - max(ly, ry)
+    if inter_w <= 0 or inter_h <= 0:
+        return 0.0
+    intersection = inter_w * inter_h
+    union = lw * lh + rw * rh - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def annotate_face_corrections_with_anchors(project_dir: Path) -> dict[str, Any]:
+    """One-shot migration: stamp existing face corrections with span anchors.
+
+    Free while corrections are machine-made; run before re-clustering so
+    replay survives the id churn. Idempotent.
+    """
+
+    project = project_dir.expanduser().resolve()
+    corrections = read_jsonl(project / "corrections.jsonl")
+    if not corrections:
+        return {"project": str(project), "corrections": 0, "annotated": 0}
+    state = _ProjectReviewState(project)
+    annotated = 0
+    for correction in corrections:
+        payload = correction.setdefault("payload", {})
+        if payload.get("anchors"):
+            continue
+        before = bool(payload.get("anchors"))
+        _attach_face_anchors(state, correction)
+        if not before and payload.get("anchors"):
+            annotated += 1
+    if annotated:
+        _write_jsonl(project / "corrections.jsonl", corrections)
+    return {"project": str(project), "corrections": len(corrections), "annotated": annotated}
 
 
 def _is_missing_target_error(exc: ValueError) -> bool:

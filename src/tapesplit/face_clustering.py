@@ -10,15 +10,39 @@ import re
 from typing import Any
 import warnings
 
+from tapesplit.face_embeddings import anchor_key, ensure_face_embeddings
 from tapesplit.face_quality import analyze_face_quality
 from tapesplit.storage import append_jsonl, read_jsonl
 from tapesplit.visibility import build_visibility_filter
 
 
 DEFAULT_FACE_CLUSTER_DISTANCE = 0.28
+# Average-linkage sweep on the family haul (buffalo_l embeddings, 1,120 faces,
+# scoring same-keyframe wrong-merges + integrity of the human-linked clusters):
+#   0.55 -> many splits, 0 violations;  0.60 -> 0 violations;
+#   0.65 -> minimal violations, best cluster count;  0.70/0.75 -> mega-cluster
+#   chaining returns. Cannot-link constraints block same-frame merges outright,
+# so 0.65 keeps the measured sweet spot from the research audit.
 DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE = 0.65
+# KP-RPE cosine scale differs from buffalo_l; recalibrate with the closed-loop
+# sweep once weights are cached locally. Placeholder until measured.
+DEFAULT_CVLFACE_FACE_CLUSTER_DISTANCE = 0.7
 DEFAULT_FACE_EMBEDDING_BACKEND = "auto"
-FACE_EMBEDDING_BACKENDS = {"auto", "opencv-gray", "arcface-insightface"}
+FACE_EMBEDDING_BACKENDS = {"auto", "opencv-gray", "arcface-insightface", "cvlface-kprpe"}
+
+# Faces below this quality weight may JOIN a cluster but never SEED one: a
+# blurry 40px crop can inherit an identity from clean crops it matches, but it
+# cannot found a cluster other faces get pulled into.
+FACE_CLUSTER_SEED_MIN_WEIGHT = 0.18
+
+# Cluster-id succession across re-cluster runs: a new cluster inherits a
+# previous cluster's id when their member-anchor sets overlap at or above this
+# Jaccard. Human-labeled clusters that fail the floor become review items.
+SUCCESSION_MIN_JACCARD = 0.5
+
+CVLFACE_MODEL_REPO = "minchul/cvlface_adaface_vit_base_kprpe_webface12m"
+CVLFACE_ALIGNER_REPO = "minchul/cvlface_DFA_mobilenet"
+CVLFACE_DOWNLOAD_ENV = "TAPESPLIT_FACE_ALLOW_DOWNLOAD"
 
 FACE_IDENTITY_EXCLUDED_KINDS = {
     "role_candidate",
@@ -43,6 +67,7 @@ def check_face_embedding_config() -> dict[str, Any]:
     resolved = _resolve_face_embedding_backend("auto")
     return {
         "face_embedding_arcface": _arcface_available(),
+        "face_embedding_cvlface": _cvlface_available(),
         "face_embedding_default_backend": resolved,
         "face_embedding_default_max_distance": _default_face_cluster_distance(resolved),
     }
@@ -85,43 +110,72 @@ def cluster_faces_for_project(
         if visibility.visible_row(person, evidence_by_id=evidence_by_id)
     ]
 
+    # Previous run's clusters/observations, read before anything is
+    # overwritten: cluster ids survive re-clustering via anchor succession.
+    previous_clusters = read_jsonl(project / "face_clusters.jsonl")
+    previous_observations = {
+        str(row.get("id") or ""): row for row in read_jsonl(project / "face_observations.jsonl")
+    }
+
     prepared_faces = []
-    feature_rows = []
     embedder = _create_face_embedder(resolved_embedding_backend)
-    skipped = 0
-    skipped_low_quality = 0
-    review_only_faces = []
     for face in sorted(faces, key=_face_sort_key):
         quality = analyze_face_quality(project / str(face.get("face_thumbnail_path") or ""))
-        prepared_face = {
-            **face,
-            "face_quality": quality,
-            "face_quality_status": quality.get("status"),
-            "face_quality_notes": quality.get("notes") or [],
-        }
-        prepared_faces.append(prepared_face)
-        if not quality.get("usable"):
-            skipped_low_quality += 1
-            review_only_faces.append(prepared_face)
-            continue
-        try:
-            feature = embedder.feature(project, prepared_face)
-        except RuntimeError:
-            raise
-        except Exception:
-            feature = []
-        if not feature:
+        prepared_faces.append(
+            {
+                **face,
+                "face_quality": quality,
+                "face_quality_status": quality.get("status"),
+                "face_quality_notes": quality.get("notes") or [],
+                "face_quality_weight": quality.get("quality_weight", 1.0 if quality.get("usable") else 0.0),
+            }
+        )
+
+    # One embedding pass, persisted: quality no longer excludes anyone. The
+    # old Haar-eye gate manufactured 508 singleton "review-only" clusters on
+    # the reference haul (71% of all clusters); now every crop the embedder
+    # can read participates, weighted by quality.
+    embedding_result = ensure_face_embeddings(
+        project,
+        prepared_faces,
+        feature_model=embedder.feature_model,
+        describe=lambda face: embedder.describe(project, face),
+    )
+    embedding_records = embedding_result["records"]
+
+    feature_rows = []
+    skipped = 0
+    for prepared_face in prepared_faces:
+        record = embedding_records.get(str(prepared_face.get("id") or "")) or {}
+        vector = record.get("vector")
+        if not vector:
             skipped += 1
             continue
-        feature_rows.append({"face": prepared_face, "feature": feature})
+        det_score = _number_or_none(record.get("det_score"))
+        weight = float(prepared_face.get("face_quality_weight") or 0.0)
+        if det_score is not None:
+            weight *= max(0.2, min(1.0, det_score / 0.72))
+        feature_rows.append(
+            {
+                "face": prepared_face,
+                "feature": [float(value) for value in vector],
+                "weight": round(max(0.01, weight), 4),
+                "frame_key": _frame_key(prepared_face),
+                "seed": weight >= FACE_CLUSTER_SEED_MIN_WEIGHT,
+            }
+        )
 
-    clusters = _cluster_feature_rows(feature_rows, max_distance=resolved_max_distance)
-    clusters = [cluster for cluster in clusters if len(cluster["faces"]) >= min_cluster_size]
-    if min_cluster_size <= 1:
-        clusters.extend(_review_only_face_clusters(review_only_faces))
+    hac = _cluster_feature_rows(feature_rows, max_distance=resolved_max_distance)
+    clusters = [cluster for cluster in hac["clusters"] if len(cluster["faces"]) >= min_cluster_size]
+
+    succession = _assign_cluster_ids(
+        clusters,
+        previous_clusters=previous_clusters,
+        previous_observations=previous_observations,
+    )
     face_to_cluster_id = {
-        str(face.get("id")): f"face_cluster_{index:06d}"
-        for index, cluster in enumerate(clusters, start=1)
+        str(face.get("id")): cluster["cluster_id"]
+        for cluster in clusters
         for face in cluster["faces"]
         if face.get("id")
     }
@@ -139,8 +193,8 @@ def cluster_faces_for_project(
     cluster_records = []
     candidate_records = []
     candidate_index = 1
-    for index, cluster in enumerate(clusters, start=1):
-        cluster_id = f"face_cluster_{index:06d}"
+    for cluster in clusters:
+        cluster_id = cluster["cluster_id"]
         faces_for_cluster = cluster["faces"]
         candidates = _candidate_people_for_cluster(
             faces_for_cluster,
@@ -155,6 +209,14 @@ def cluster_faces_for_project(
             method=embedder.method,
             feature_model=embedder.feature_model,
         )
+        inherited = cluster.get("inherited_fields") or {}
+        for key, value in inherited.items():
+            if key == "notes":
+                for note in value:
+                    if note not in cluster_record["notes"]:
+                        cluster_record["notes"].append(note)
+            elif value not in (None, "", []):
+                cluster_record[key] = value
         cluster_records.append(cluster_record)
         for candidate in candidates:
             candidate_records.append(
@@ -175,11 +237,15 @@ def cluster_faces_for_project(
         "face_observations": len(faces),
         "faces_clustered": len(face_to_cluster_id),
         "faces_skipped": skipped,
-        "faces_skipped_from_similarity": skipped + skipped_low_quality,
-        "faces_skipped_low_quality": skipped_low_quality,
-        "faces_review_only_low_quality": len(review_only_faces) if min_cluster_size <= 1 else 0,
+        "faces_unclustered": len(prepared_faces) - len(face_to_cluster_id),
+        "faces_joined_without_seeding": hac["joined_without_seeding"],
+        "cannot_link_merges_blocked": hac["cannot_link_merges_blocked"],
         "face_clusters": len(cluster_records),
+        "clusters_inherited": succession["inherited"],
+        "clusters_new": succession["created"],
+        "succession_conflicts": succession["conflicts"],
         "identity_candidates": len(candidate_records),
+        "embeddings": embedding_result["summary"],
         "requested_embedding_backend": _normalize_face_embedding_backend(embedding_backend),
         "resolved_embedding_backend": resolved_embedding_backend,
         "feature_model": embedder.feature_model,
@@ -189,6 +255,7 @@ def cluster_faces_for_project(
             "face_observations": str(project / "face_observations.jsonl"),
             "face_clusters": str(project / "face_clusters.jsonl"),
             "face_identity_candidates": str(project / "face_identity_candidates.jsonl"),
+            "face_embeddings": str(project / "face_embeddings.jsonl"),
         },
     }
 
@@ -200,6 +267,10 @@ class _OpenCVGrayEmbedder:
     def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
         return _face_feature(project, face)
 
+    def describe(self, project: Path, face: dict[str, Any]) -> dict[str, Any] | None:
+        vector = self.feature(project, face)
+        return {"vector": vector} if vector else None
+
 
 class _ArcFaceInsightFaceEmbedder:
     method = "local_face_embedding_similarity"
@@ -210,23 +281,46 @@ class _ArcFaceInsightFaceEmbedder:
         self._providers = _onnxruntime_providers()
 
     def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
+        described = self.describe(project, face)
+        return described["vector"] if described else []
+
+    def describe(self, project: Path, face: dict[str, Any]) -> dict[str, Any] | None:
+        """One pass over the crop: embedding plus the free buffalo_l attributes.
+
+        Age, gender, pose, and det_score ride along with the recognition
+        embedding at zero extra model cost; they persist into
+        face_embeddings.jsonl for quality weighting and the age dimension.
+        """
+
         cv2 = _load_cv2()
         image_path = project / str(face.get("face_thumbnail_path") or "")
         image = cv2.imread(str(image_path))
         if image is None:
-            return []
+            return None
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FutureWarning)
             observations = self._face_app().get(image)
         if not observations:
-            return []
+            return None
         observation = max(observations, key=_insightface_observation_score)
         embedding = getattr(observation, "normed_embedding", None)
         if embedding is None:
             embedding = getattr(observation, "embedding", None)
         if embedding is None:
-            return []
-        return _normalized_vector(embedding)
+            return None
+        pose = getattr(observation, "pose", None)
+        pose_values = list(pose) if pose is not None else []
+        return {
+            "vector": _normalized_vector(embedding),
+            "det_score": float(getattr(observation, "det_score", 0.0) or 0.0),
+            "age_raw": getattr(observation, "age", None),
+            "gender_raw": str(getattr(observation, "sex", "") or ""),
+            "pose": {
+                "pitch": round(float(pose_values[0]), 2) if len(pose_values) > 0 else None,
+                "yaw": round(float(pose_values[1]), 2) if len(pose_values) > 1 else None,
+                "roll": round(float(pose_values[2]), 2) if len(pose_values) > 2 else None,
+            },
+        }
 
     def _face_app(self) -> Any:
         if self._app is not None:
@@ -246,9 +340,86 @@ class _ArcFaceInsightFaceEmbedder:
         return app
 
 
+class _CVLFaceKPRPEEmbedder:
+    """CVLFace AdaFace ViT-B KP-RPE: low-resolution-robust upgrade over buffalo_l.
+
+    TinyFace Rank-1 76.1 vs ~72.3 for AdaFace IR101 (and buffalo_l well below
+    both) — exactly the 40-100px regime this archive's crops live in. Weights
+    load from the local HF cache only unless TAPESPLIT_FACE_ALLOW_DOWNLOAD=1
+    (the pair is ~1.8GB). buffalo_l remains the default/fallback backend.
+    """
+
+    method = "local_face_embedding_similarity"
+    feature_model = "cvlface_adaface_vit_base_kprpe_webface12m_512"
+
+    def __init__(self) -> None:
+        self._model: Any | None = None
+        self._aligner: Any | None = None
+        self._torch: Any | None = None
+
+    def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
+        described = self.describe(project, face)
+        return described["vector"] if described else []
+
+    def describe(self, project: Path, face: dict[str, Any]) -> dict[str, Any] | None:
+        cv2 = _load_cv2()
+        image_path = project / str(face.get("face_thumbnail_path") or "")
+        image = cv2.imread(str(image_path))
+        if image is None:
+            return None
+        torch, model, aligner = self._load()
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().unsqueeze(0)
+        tensor = tensor / 127.5 - 1.0
+        with torch.no_grad():
+            # CVLFace wrapper API: the DFA aligner returns the aligned face
+            # plus landmarks; KP-RPE recognition consumes both.
+            aligned_x, _orig_ldmks, aligned_ldmks, score, _thetas, _bbox = aligner(tensor)
+            embedding = model(aligned_x, aligned_ldmks)
+        vector = embedding.squeeze(0).detach().cpu().tolist()
+        if not vector:
+            return None
+        alignment_score = float(score.squeeze().item()) if hasattr(score, "squeeze") else None
+        return {
+            "vector": _normalized_vector(vector),
+            "det_score": alignment_score,
+        }
+
+    def _load(self) -> tuple[Any, Any, Any]:
+        if self._model is not None and self._aligner is not None:
+            return self._torch, self._model, self._aligner
+        if not _cvlface_available():
+            raise RuntimeError(
+                "CVLFace KP-RPE weights are not in the local Hugging Face cache. "
+                f"Set {CVLFACE_DOWNLOAD_ENV}=1 to allow the ~1.8GB download, or use "
+                "the arcface-insightface backend."
+            )
+        try:
+            import torch  # type: ignore
+            from transformers import AutoModel  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "transformers and torch are required for the cvlface-kprpe backend."
+            ) from exc
+        local_only = not _truthy_env(CVLFACE_DOWNLOAD_ENV)
+        model = AutoModel.from_pretrained(
+            CVLFACE_MODEL_REPO, trust_remote_code=True, local_files_only=local_only
+        )
+        aligner = AutoModel.from_pretrained(
+            CVLFACE_ALIGNER_REPO, trust_remote_code=True, local_files_only=local_only
+        )
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        model = model.to(device).eval()
+        aligner = aligner.to(device).eval()
+        self._torch, self._model, self._aligner = torch, model, aligner
+        return torch, model, aligner
+
+
 def _create_face_embedder(embedding_backend: str) -> Any:
     if embedding_backend == "arcface-insightface":
         return _ArcFaceInsightFaceEmbedder()
+    if embedding_backend == "cvlface-kprpe":
+        return _CVLFaceKPRPEEmbedder()
     if embedding_backend == "opencv-gray":
         return _OpenCVGrayEmbedder()
     raise ValueError(f"unsupported face embedding backend: {embedding_backend}")
@@ -262,10 +433,14 @@ def _normalize_face_embedding_backend(value: str) -> str:
         "buffalo-l": "arcface-insightface",
         "opencv": "opencv-gray",
         "opencv-equalized-gray-32": "opencv-gray",
+        "cvlface": "cvlface-kprpe",
+        "kprpe": "cvlface-kprpe",
     }
     backend = aliases.get(backend, backend)
     if backend not in FACE_EMBEDDING_BACKENDS:
-        raise ValueError("face embedding backend must be auto, opencv-gray, or arcface-insightface")
+        raise ValueError(
+            "face embedding backend must be auto, opencv-gray, arcface-insightface, or cvlface-kprpe"
+        )
     return backend
 
 
@@ -279,7 +454,33 @@ def _resolve_face_embedding_backend(value: str) -> str:
 def _default_face_cluster_distance(embedding_backend: str) -> float:
     if embedding_backend == "arcface-insightface":
         return DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE
+    if embedding_backend == "cvlface-kprpe":
+        return DEFAULT_CVLFACE_FACE_CLUSTER_DISTANCE
     return DEFAULT_FACE_CLUSTER_DISTANCE
+
+
+def _cvlface_available() -> bool:
+    try:
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+    except ImportError:
+        return False
+    if _truthy_env(CVLFACE_DOWNLOAD_ENV):
+        return True
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+
+        for repo in [CVLFACE_MODEL_REPO, CVLFACE_ALIGNER_REPO]:
+            snapshot_download(repo, local_files_only=True)
+    except Exception:
+        return False
+    return True
+
+
+def _truthy_env(name: str) -> bool:
+    import os
+
+    return str(os.environ.get(name) or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _arcface_available() -> bool:
@@ -340,44 +541,313 @@ def _face_feature(project: Path, face: dict[str, Any]) -> list[float]:
     return [value / norm for value in values]
 
 
-def _cluster_feature_rows(rows: list[dict[str, Any]], *, max_distance: float) -> list[dict[str, Any]]:
-    clusters: list[dict[str, Any]] = []
+def _cluster_feature_rows(rows: list[dict[str, Any]], *, max_distance: float) -> dict[str, Any]:
+    """Constrained average-linkage over seed faces, then join-only attachment.
+
+    Replaces the order-dependent greedy centroid pass: agglomerative
+    average-linkage is deterministic, repairs the old never-merge/centroid-
+    drift pathologies, and honors cannot-link constraints (two faces sharing a
+    keyframe are different people, so their clusters may never merge). Faces
+    below the seed weight join the nearest compatible cluster or stay
+    unclustered — they can inherit an identity but never found one.
+    """
+
     for row in rows:
-        best_cluster = None
-        best_distance = None
-        for cluster in clusters:
-            distance = _cosine_distance(row["feature"], cluster["centroid"])
-            if best_distance is None or distance < best_distance:
-                best_cluster = cluster
-                best_distance = distance
-        if best_cluster is not None and best_distance is not None and best_distance <= max_distance:
-            best_cluster["faces"].append(row["face"])
-            best_cluster["features"].append(row["feature"])
-            best_cluster["centroid"] = _centroid(best_cluster["features"])
-            best_cluster["max_observed_distance"] = max(best_cluster["max_observed_distance"], best_distance)
-        else:
-            clusters.append(
-                {
-                    "faces": [row["face"]],
-                    "features": [row["feature"]],
-                    "centroid": row["feature"],
-                    "max_observed_distance": 0.0,
-                }
-            )
-    return clusters
+        row.setdefault("weight", 1.0)
+        row.setdefault("frame_key", None)
+        row.setdefault("seed", True)
+    seeds = [row for row in rows if row["seed"]]
+    joiners = [row for row in rows if not row["seed"]]
+
+    clusters, blocked = _constrained_average_linkage(seeds, max_distance=max_distance)
+
+    joined = 0
+    for row in joiners:
+        target = _best_join_cluster(row, clusters, max_distance=max_distance)
+        if target is None:
+            continue
+        target["faces"].append(row["face"])
+        target["features"].append(row["feature"])
+        target["weights"].append(row["weight"])
+        if row["frame_key"]:
+            target["frame_keys"].add(row["frame_key"])
+        target["centroid"] = _weighted_centroid(target["features"], target["weights"])
+        joined += 1
+
+    return {
+        "clusters": clusters,
+        "joined_without_seeding": joined,
+        "cannot_link_merges_blocked": blocked,
+    }
 
 
-def _review_only_face_clusters(faces: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "faces": [face],
-            "features": [],
-            "centroid": [],
-            "max_observed_distance": None,
-            "review_only": True,
-        }
-        for face in faces
+def _constrained_average_linkage(
+    rows: list[dict[str, Any]], *, max_distance: float
+) -> tuple[list[dict[str, Any]], int]:
+    if not rows:
+        return [], 0
+    try:
+        import numpy as np  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "NumPy is required for face clustering. Install with "
+            "`python -m pip install -e '.[vision]'`."
+        ) from exc
+
+    count = len(rows)
+    vectors = np.asarray([row["feature"] for row in rows], dtype=np.float64)
+    distances = 1.0 - vectors @ vectors.T
+    np.clip(distances, 0.0, 2.0, out=distances)
+
+    members: list[list[int] | None] = [[index] for index in range(count)]
+    frame_keys: list[set | None] = [
+        {rows[index]["frame_key"]} if rows[index]["frame_key"] else set() for index in range(count)
     ]
+    sizes = np.ones(count)
+    working = distances.copy()
+    np.fill_diagonal(working, np.inf)
+
+    blocked = 0
+    for left in range(count):
+        for right in range(left + 1, count):
+            if frame_keys[left] & frame_keys[right]:  # type: ignore[operator]
+                if working[left, right] <= max_distance:
+                    blocked += 1
+                working[left, right] = np.inf
+                working[right, left] = np.inf
+
+    while True:
+        flat_index = int(np.argmin(working))
+        left, right = divmod(flat_index, count)
+        if not np.isfinite(working[left, right]) or working[left, right] > max_distance:
+            break
+        if right < left:
+            left, right = right, left
+        # Lance-Williams average-linkage update of `left`; retire `right`.
+        size_left, size_right = sizes[left], sizes[right]
+        merged_row = (size_left * working[left, :] + size_right * working[right, :]) / (
+            size_left + size_right
+        )
+        merged_row[left] = np.inf
+        working[left, :] = merged_row
+        working[:, left] = merged_row
+        working[right, :] = np.inf
+        working[:, right] = np.inf
+        sizes[left] = size_left + size_right
+        members[left].extend(members[right])  # type: ignore[union-attr]
+        members[right] = None
+        frame_keys[left] |= frame_keys[right]  # type: ignore[operator]
+        frame_keys[right] = None
+        for other in range(count):
+            if members[other] is None or other == left:
+                continue
+            if frame_keys[left] & frame_keys[other]:  # type: ignore[operator]
+                if np.isfinite(working[left, other]) and working[left, other] <= max_distance:
+                    blocked += 1
+                working[left, other] = np.inf
+                working[other, left] = np.inf
+
+    clusters = []
+    for index in range(count):
+        member_indices = members[index]
+        if member_indices is None:
+            continue
+        ordered = sorted(member_indices)
+        max_internal = 0.0
+        for position, left in enumerate(ordered):
+            for right in ordered[position + 1 :]:
+                max_internal = max(max_internal, float(distances[left, right]))
+        cluster_rows = [rows[i] for i in ordered]
+        features = [row["feature"] for row in cluster_rows]
+        weights = [row["weight"] for row in cluster_rows]
+        clusters.append(
+            {
+                "faces": [row["face"] for row in cluster_rows],
+                "features": features,
+                "weights": weights,
+                "frame_keys": set(frame_keys[index] or set()),
+                "centroid": _weighted_centroid(features, weights),
+                "max_observed_distance": round(max_internal, 4),
+                "_order": ordered[0],
+            }
+        )
+    clusters.sort(key=lambda cluster: cluster["_order"])
+    for cluster in clusters:
+        cluster.pop("_order", None)
+    return clusters, blocked
+
+
+def _best_join_cluster(
+    row: dict[str, Any], clusters: list[dict[str, Any]], *, max_distance: float
+) -> dict[str, Any] | None:
+    best = None
+    best_distance = None
+    for cluster in clusters:
+        if row["frame_key"] and row["frame_key"] in cluster["frame_keys"]:
+            continue
+        distance = _cosine_distance(row["feature"], cluster["centroid"])
+        if distance > max_distance:
+            continue
+        if best_distance is None or distance < best_distance:
+            best = cluster
+            best_distance = distance
+    return best
+
+
+def _frame_key(face: dict[str, Any]) -> str | None:
+    subject_id = str(face.get("source_subject_id") or "")
+    subject_type = str(face.get("source_subject_type") or "")
+    if not subject_id:
+        return None
+    return f"{subject_type}:{subject_id}"
+
+
+def _weighted_centroid(features: list[list[float]], weights: list[float]) -> list[float]:
+    if not features:
+        return []
+    dims = len(features[0])
+    total = sum(weights) or 1.0
+    values = [
+        sum(feature[index] * weight for feature, weight in zip(features, weights, strict=False)) / total
+        for index in range(dims)
+    ]
+    norm = math.sqrt(sum(value * value for value in values)) or 1.0
+    return [value / norm for value in values]
+
+
+_DEFAULT_CLUSTER_LABEL = re.compile(r"^Face cluster \d+$")
+
+
+def _assign_cluster_ids(
+    clusters: list[dict[str, Any]],
+    *,
+    previous_clusters: list[dict[str, Any]],
+    previous_observations: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Cluster-id succession: inherit the previous id with max anchor Jaccard.
+
+    Anchor keys (media + time + bbox bucket) survive both re-clustering and
+    re-detection, so human decisions bound to a cluster id keep pointing at
+    the same people. A human-labeled cluster whose members scatter below the
+    Jaccard floor is a loud succession conflict — the closest new cluster is
+    flagged needs_review instead of silently renumbering.
+    """
+
+    previous_keys: dict[str, set] = {}
+    previous_meta: dict[str, dict[str, Any]] = {}
+    for previous in previous_clusters:
+        previous_id = str(previous.get("id") or "")
+        if not previous_id:
+            continue
+        keys = set()
+        for face_id in previous.get("face_observation_ids") or []:
+            observation = previous_observations.get(str(face_id))
+            if observation:
+                key = anchor_key(observation)
+                if key:
+                    keys.add(key)
+        previous_meta[previous_id] = previous
+        if keys:
+            previous_keys[previous_id] = keys
+
+    new_keys: list[set] = []
+    for cluster in clusters:
+        keys = set()
+        for face in cluster["faces"]:
+            key = anchor_key(face)
+            if key:
+                keys.add(key)
+        new_keys.append(keys)
+
+    pairs = []
+    for cluster_index, keys in enumerate(new_keys):
+        if not keys:
+            continue
+        for previous_id, keys_before in previous_keys.items():
+            intersection = len(keys & keys_before)
+            if not intersection:
+                continue
+            jaccard = intersection / len(keys | keys_before)
+            pairs.append((jaccard, intersection, previous_id, cluster_index))
+    pairs.sort(key=lambda item: (-item[0], -item[1], item[2], item[3]))
+
+    best_for_previous: dict[str, tuple[float, int]] = {}
+    assigned_previous: set[str] = set()
+    assigned_new: dict[int, str] = {}
+    for jaccard, _intersection, previous_id, cluster_index in pairs:
+        best_for_previous.setdefault(previous_id, (jaccard, cluster_index))
+        if previous_id in assigned_previous or cluster_index in assigned_new:
+            continue
+        if jaccard >= SUCCESSION_MIN_JACCARD:
+            assigned_previous.add(previous_id)
+            assigned_new[cluster_index] = previous_id
+
+    used_indices = [0]
+    for previous_id in previous_meta:
+        try:
+            used_indices.append(int(previous_id.rsplit("_", 1)[-1]))
+        except ValueError:
+            continue
+    next_index = max(used_indices) + 1
+
+    inherited = 0
+    created = 0
+    for cluster_index, cluster in enumerate(clusters):
+        previous_id = assigned_new.get(cluster_index)
+        if previous_id:
+            cluster["cluster_id"] = previous_id
+            inherited += 1
+            previous = previous_meta[previous_id]
+            fields: dict[str, Any] = {}
+            label = str(previous.get("label") or "")
+            if label and not _DEFAULT_CLUSTER_LABEL.match(label):
+                fields["label"] = label
+            if previous.get("linked_person_group_id"):
+                fields["linked_person_group_id"] = previous["linked_person_group_id"]
+                fields["review_status"] = "confirmed"
+            if previous.get("review_correction_ids"):
+                fields["review_correction_ids"] = list(previous["review_correction_ids"])
+            cluster["inherited_fields"] = fields
+        else:
+            cluster["cluster_id"] = f"face_cluster_{next_index:06d}"
+            next_index += 1
+            created += 1
+
+    conflicts = []
+    for previous_id, previous in previous_meta.items():
+        if previous_id in assigned_previous:
+            continue
+        if not _human_labeled_cluster(previous):
+            continue
+        best = best_for_previous.get(previous_id)
+        conflict = {
+            "previous_cluster_id": previous_id,
+            "label": str(previous.get("label") or ""),
+            "linked_person_group_id": str(previous.get("linked_person_group_id") or ""),
+            "best_jaccard": round(best[0], 3) if best else 0.0,
+            "best_new_cluster_id": clusters[best[1]]["cluster_id"] if best else "",
+        }
+        conflicts.append(conflict)
+        if best:
+            target = clusters[best[1]]
+            fields = target.setdefault("inherited_fields", {})
+            fields["review_status"] = "needs_review"
+            notes = fields.setdefault("notes", [])
+            notes.append(
+                f"human-labeled cluster '{conflict['label'] or previous_id}' split during "
+                "re-cluster; re-confirm identity"
+            )
+
+    return {"inherited": inherited, "created": created, "conflicts": conflicts}
+
+
+def _human_labeled_cluster(cluster: dict[str, Any]) -> bool:
+    if cluster.get("linked_person_group_id"):
+        return True
+    if str(cluster.get("review_status") or "") == "confirmed":
+        return True
+    label = str(cluster.get("label") or "")
+    return bool(label) and not _DEFAULT_CLUSTER_LABEL.match(label)
 
 
 def _cluster_record(
@@ -395,17 +865,17 @@ def _cluster_record(
     ends = [_number_or_none(face.get("end_s") or face.get("time_s")) for face in faces]
     first_start = min([value for value in starts if value is not None], default=None)
     last_end = max([value for value in ends if value is not None], default=None)
-    representative = faces[0] if faces else {}
+    representative = _representative_face(faces)
     review_status = "needs_review" if candidate_people or len(faces) > 1 else "unreviewed"
     quality = _cluster_quality(faces)
-    review_only = bool(faces) and not any(face.get("face_quality_status") == "usable" for face in faces)
+    # The review-only singleton factory is gone: every embeddable face
+    # participates in similarity clustering, weighted by quality. The field
+    # remains for schema compatibility (detach can empty a cluster).
+    review_only = False
     notes = [
         "Face clusters are visual similarity candidates, not confirmed identities.",
         "Candidate people are inferred from event co-occurrence and require review.",
     ]
-    if review_only:
-        review_status = "needs_review"
-        notes.append("This is a review-only low-quality face crop; it was not used for visual similarity matching.")
     return {
         "id": cluster_id,
         "label": f"Face cluster {int(cluster_id.rsplit('_', 1)[-1])}",
@@ -716,13 +1186,12 @@ def _people_by_event(people: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     return dict(grouped)
 
 
-def _centroid(features: list[list[float]]) -> list[float]:
-    if not features:
-        return []
-    dims = len(features[0])
-    values = [sum(feature[index] for feature in features) / len(features) for index in range(dims)]
-    norm = math.sqrt(sum(value * value for value in values)) or 1.0
-    return [value / norm for value in values]
+def _representative_face(faces: list[dict[str, Any]]) -> dict[str, Any]:
+    """Best-quality member represents the cluster (thumbnail, review surfaces)."""
+
+    if not faces:
+        return {}
+    return max(faces, key=lambda face: float(face.get("face_quality_weight") or 0.0))
 
 
 def _cosine_distance(left: list[float], right: list[float]) -> float:
