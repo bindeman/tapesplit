@@ -101,11 +101,16 @@ def build_face_tracks_for_project(
     if force and partial_path.exists():
         partial_path.unlink()
     if not force:
-        for row in read_jsonl(partial_path):
-            if row.get("scene_id"):
+        # A killed run may truncate its final line. Track rows are written
+        # BEFORE the scene_done marker, so only marker-confirmed scenes count
+        # as done; anything after the last marker simply recomputes.
+        recovered = _read_partial_rows(partial_path)
+        for row in recovered:
+            if row.get("kind") == "scene_done" and row.get("scene_id"):
                 done_scene_ids.add(str(row["scene_id"]))
-                if row.get("kind") == "track":
-                    partial_rows.append(row)
+        for row in recovered:
+            if row.get("kind") == "track" and str(row.get("scene_id") or "") in done_scene_ids:
+                partial_rows.append(row)
 
     (project / TRACK_THUMBNAIL_DIR).mkdir(parents=True, exist_ok=True)
     obs_by_scene = _observations_by_scene(observations)
@@ -137,12 +142,19 @@ def build_face_tracks_for_project(
                 track, obs_by_scene.get(scene_id, []), tape=tape
             )
         rows = [_track_row(track) for track in tracks]
-        # Checkpoint the scene even when it yielded no tracks, so resume skips it.
-        append_jsonl(partial_path, {"kind": "scene_done", "scene_id": scene_id})
+        # Rows first, marker last: the scene_done line commits the scene, so a
+        # kill mid-checkpoint can never mark a scene done with missing tracks.
         for row in rows:
             append_jsonl(partial_path, {"kind": "track", "scene_id": scene_id, **row})
+        append_jsonl(partial_path, {"kind": "scene_done", "scene_id": scene_id})
         new_rows.extend(rows)
         scenes_processed += 1
+        if scenes_processed % 20 == 0:
+            print(
+                f"[face-tracks] {scenes_processed + scenes_skipped_done}/{len(scenes)} scenes "
+                f"({len(partial_rows) + len(new_rows)} tracks, {frames_processed} frames)",
+                flush=True,
+            )
 
     all_rows = _dedupe_tracks(partial_rows + new_rows)
     for row in all_rows:
@@ -537,6 +549,27 @@ def _track_row(track: dict[str, Any]) -> dict[str, Any]:
     )
     row.pop("members", None)
     return row
+
+
+def _read_partial_rows(path: Path) -> list[dict[str, Any]]:
+    """Checkpoint reader that survives a truncated final line from a killed run."""
+
+    import json
+
+    if not path.exists():
+        return []
+    rows = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
 
 
 def _dedupe_tracks(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

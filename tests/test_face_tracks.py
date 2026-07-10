@@ -313,6 +313,83 @@ def test_dedupe_tracks_keeps_last_by_id():
     assert deduped[0]["face_cluster_id"] == "fc"
 
 
+def test_resume_survives_truncated_checkpoint_tail(tmp_path: Path):
+    project = tmp_path / "p.tapesplit"
+    project.mkdir()
+    (project / "tapes.jsonl").write_text(
+        json.dumps(
+            {"id": "video_000001", "path": str(tmp_path / "missing.mp4"), "probe": {"duration_s": 100.0}}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scenes = [
+        {
+            "id": f"video_000001_scene_{index:06d}",
+            "source_video_id": "video_000001",
+            "scene_type": "content",
+            "start_s": float(index),
+            "end_s": float(index) + 0.5,
+        }
+        for index in (1, 2)
+    ]
+    (project / "scenes.jsonl").write_text(
+        "".join(json.dumps(scene) + "\n" for scene in scenes), encoding="utf-8"
+    )
+    (project / "face_observations.jsonl").write_text(
+        "".join(
+            json.dumps(
+                {
+                    "id": f"face_observation_{index:06d}",
+                    "source_subject_type": "scene",
+                    "source_subject_id": scene["id"],
+                    "source_video_id": "video_000001",
+                    "time_s": scene["start_s"],
+                    "bbox": {"x": 1, "y": 1, "width": 50, "height": 50},
+                }
+            )
+            + "\n"
+            for index, scene in enumerate(scenes, start=1)
+        ),
+        encoding="utf-8",
+    )
+    track_row = {
+        "kind": "track",
+        "scene_id": scenes[0]["id"],
+        "id": "track_survivor0001",
+        "media_id": "video_000001",
+        "span": {"clock": "source", "start_s": 1.0, "end_s": 1.4},
+        "frame_count": 3,
+        "frame_samples": [],
+        "top_frames": [],
+        "representative": {"t": 1.2, "bbox": {}, "thumbnail_path": ""},
+        "quality": {"mean_w": 0.5, "max_w": 0.6, "n_effective": 1.5},
+        "member_face_observation_ids": [],
+        "co_occurring_track_ids": [],
+        "face_cluster_id": "",
+        "feature_model": "m",
+    }
+    # Scene 1 fully committed (rows then marker); scene 2's checkpoint was
+    # killed mid-write: an orphan track row with no marker, truncated mid-line.
+    partial = project / "face_tracks.partial.jsonl"
+    partial.write_text(
+        json.dumps(track_row)
+        + "\n"
+        + json.dumps({"kind": "scene_done", "scene_id": scenes[0]["id"]})
+        + "\n"
+        + '{"kind": "track", "scene_id": "video_000001_scene_000002", "id": "track_lost", "span": {"clock": "sou',
+        encoding="utf-8",
+    )
+
+    # The malformed tail must not raise; scene 2 has no marker so it is not
+    # "done" (here its source file is missing, so it skips at the tape check),
+    # and the orphan unmarked track row never reaches the output.
+    summary = build_face_tracks_for_project(project)
+    assert summary["scenes_resumed"] == 1
+    rows = [json.loads(line) for line in (project / "face_tracks.jsonl").read_text().splitlines()]
+    assert [row["id"] for row in rows] == ["track_survivor0001"]
+
+
 def test_bbox_iou():
     assert _bbox_iou(_bbox(0, 0, 100), _bbox(0, 0, 100)) == pytest.approx(1.0)
     assert _bbox_iou(_bbox(0, 0, 100), _bbox(200, 200, 100)) == 0.0
