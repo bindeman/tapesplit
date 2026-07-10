@@ -779,6 +779,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     faces_parser.add_argument("--force", action="store_true", help="Overwrite existing face thumbnails.")
 
+    face_tracks_parser = subparsers.add_parser(
+        "face-tracks",
+        help="Track faces through scenes (frames at a few fps) so clustering works on tracks.",
+    )
+    face_tracks_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    face_tracks_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
+    face_tracks_parser.add_argument(
+        "--fps", type=float, default=5.0, help="Frames per second to decode within scenes. Default: 5."
+    )
+    face_tracks_parser.add_argument(
+        "--scene-scope",
+        choices=["face-bearing", "content"],
+        default="face-bearing",
+        help="Which scenes to track: face-bearing (has a keyframe face) or all content scenes.",
+    )
+    face_tracks_parser.add_argument(
+        "--force", action="store_true", help="Recompute all scenes, ignoring the resume checkpoint."
+    )
+
+    age_models_parser = subparsers.add_parser(
+        "age-models",
+        help="Build per-person birth-year posteriors from face ages in dated footage.",
+    )
+    age_models_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     cluster_faces_parser = subparsers.add_parser(
         "cluster-faces",
         help="Cluster face thumbnails and create reviewable person identity candidates.",
@@ -795,7 +820,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cluster_faces_parser.add_argument(
         "--embedding-backend",
-        choices=["auto", "opencv-gray", "arcface-insightface"],
+        choices=["auto", "opencv-gray", "arcface-insightface", "cvlface-kprpe"],
         default=DEFAULT_FACE_EMBEDDING_BACKEND,
         help="Face embedding backend. auto uses ArcFace/InsightFace when installed, else OpenCV grayscale.",
     )
@@ -1963,6 +1988,28 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
+            return 0
+        if args.command == "face-tracks":
+            from tapesplit.face_tracks import build_face_tracks_for_project
+
+            print(
+                json.dumps(
+                    build_face_tracks_for_project(
+                        args.project,
+                        fps=args.fps,
+                        source_video_id=args.source_video_id,
+                        scene_scope=args.scene_scope,
+                        force=args.force,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if args.command == "age-models":
+            from tapesplit.age_timeline import build_person_age_models
+
+            print(json.dumps(build_person_age_models(args.project), indent=2, sort_keys=True))
             return 0
         if args.command == "cluster-faces":
             print(

@@ -56,6 +56,7 @@ DEFAULT_FUSION_WEIGHTS = {
     "face_embedding": 0.9,
     "voice": 0.8,
     "co_occurrence": 0.4,
+    "age_trajectory": 0.7,
 }
 
 # Base rate: most person-group pairs are different people.
@@ -81,6 +82,15 @@ VOICE_MIN_SEGMENT_S = 2.5
 VOICE_MAX_SEGMENT_S = 15.0
 # Cheap-signal threshold that unlocks the expensive dimensions.
 HEAVY_DIMENSION_GATE = 0.4
+
+# Age-trajectory dimension: both groups need this many dated age samples
+# before their birth-year posteriors say anything.
+AGE_TRAJECTORY_MIN_SAMPLES = 3
+# Incompatibility veto (a child and an adult sharing an era can never be one
+# person) fires only on an extreme, well-supported gap — VHS age estimates
+# are noisy, so anything short of extreme just scores low instead.
+AGE_VETO_MIN_BIRTH_YEAR_GAP = 15.0
+AGE_VETO_MAX_SIGMA = 4.0
 
 # Russian hypocorism suffixes, longest first; stems must stay >= 3 chars.
 DIMINUTIVE_SUFFIXES = (
@@ -153,6 +163,7 @@ def build_person_merge_candidates(
     labse = _LabseScorer(enabled=use_labse)
     face_embedder = _FaceCentroidScorer(project, obs_by_cluster, enabled=use_face_embeddings)
     voice = _VoiceCentroidScorer(project, speaker_segments, enabled=use_voice)
+    age_models = _load_age_models(project)
 
     scored: list[dict[str, Any]] = []
     for index_a in range(len(persons)):
@@ -166,6 +177,7 @@ def build_person_merge_candidates(
                 labse=labse,
                 face_embedder=face_embedder,
                 voice=voice,
+                age_models=age_models,
                 weights=weights,
             )
             if result is None:
@@ -204,15 +216,17 @@ def _score_pair(
     labse: "_LabseScorer",
     face_embedder: "_FaceCentroidScorer",
     voice: "_VoiceCentroidScorer",
+    age_models: dict[str, dict[str, Any]] | None = None,
     weights: dict[str, float],
 ) -> FusionResult | None:
     name = _name_dimension(group_a, group_b, labse)
     shared = _shared_cluster_dimension(group_a, group_b, cluster_links)
     co_presence = _co_presence_block(group_a, group_b, cluster_links, obs_by_cluster)
     co_occurrence = _co_occurrence_dimension(group_a, group_b)
+    age = _age_trajectory_dimension(group_a, group_b, age_models or {})
 
     cheap_signal = max(name.score or 0.0, shared.score or 0.0)
-    dimensions = [name, shared, co_occurrence]
+    dimensions = [name, shared, co_occurrence, age]
     if co_presence is not None:
         dimensions.append(co_presence)
 
@@ -559,6 +573,68 @@ def _co_occurrence_dimension(group_a: dict[str, Any], group_b: dict[str, Any]) -
     score = min(0.85, 0.5 + jaccard)
     detail = f"{len(shared)} shared event(s), jaccard {jaccard:.2f}"
     return _Dimension("co_occurrence", round(score, 4), detail)
+
+
+# --- age trajectory dimension ----------------------------------------------
+
+
+def _load_age_models(project: Path) -> dict[str, dict[str, Any]]:
+    try:
+        from tapesplit.age_timeline import load_person_age_models
+
+        return load_person_age_models(project)
+    except Exception:
+        return {}
+
+
+def _age_trajectory_dimension(
+    group_a: dict[str, Any], group_b: dict[str, Any], age_models: dict[str, dict[str, Any]]
+) -> _Dimension:
+    """Birth-year consistency: one aging person leaves one trajectory.
+
+    A 4-year-old on the 1998 tapes and a 10-year-old on the 2004 tapes imply
+    the same birth year — merge evidence face embeddings cannot provide across
+    that gap. A child and an adult whose eras overlap imply birth years ~20+
+    years apart — with enough well-dated samples that is a physical veto.
+    """
+
+    model_a = age_models.get(str(group_a.get("id") or ""))
+    model_b = age_models.get(str(group_b.get("id") or ""))
+    if not model_a or not model_b:
+        return _Dimension("age_trajectory", None, "no age model for one or both people")
+    if (
+        int(model_a.get("sample_count") or 0) < AGE_TRAJECTORY_MIN_SAMPLES
+        or int(model_b.get("sample_count") or 0) < AGE_TRAJECTORY_MIN_SAMPLES
+    ):
+        return _Dimension("age_trajectory", None, "too few dated age samples")
+
+    birth_a, birth_b = float(model_a["birth_year"]), float(model_b["birth_year"])
+    sigma_a, sigma_b = float(model_a.get("sigma") or 3.0), float(model_b.get("sigma") or 3.0)
+    delta = abs(birth_a - birth_b)
+    combined_sigma = max(1.0, math.sqrt(sigma_a**2 + sigma_b**2))
+    z = delta / combined_sigma
+
+    eras_overlap = bool(
+        set(model_a.get("observed_years") or []) & set(model_b.get("observed_years") or [])
+    )
+    if (
+        delta >= AGE_VETO_MIN_BIRTH_YEAR_GAP
+        and sigma_a <= AGE_VETO_MAX_SIGMA
+        and sigma_b <= AGE_VETO_MAX_SIGMA
+        and eras_overlap
+    ):
+        detail = (
+            f"birth years ~{birth_a:.0f} vs ~{birth_b:.0f} with overlapping eras — "
+            "a child and an adult cannot be the same person"
+        )
+        return _Dimension("age_trajectory", 0.02, detail, blocking=True)
+
+    score = max(0.05, min(0.95, math.exp(-0.5 * z * z)))
+    detail = (
+        f"birth-year posteriors {birth_a:.0f}±{sigma_a:.1f} vs {birth_b:.0f}±{sigma_b:.1f} "
+        f"(z={z:.2f}, {model_a['sample_count']}+{model_b['sample_count']} samples)"
+    )
+    return _Dimension("age_trajectory", round(score, 4), detail)
 
 
 # --- gated heavy scorers --------------------------------------------------

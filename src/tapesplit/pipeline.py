@@ -11,6 +11,7 @@ from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.gemini_import import import_gemini_analysis
 from tapesplit.grouping import build_project_groups
+from tapesplit.age_timeline import build_person_age_models
 from tapesplit.heuristic_events import build_heuristic_events
 from tapesplit.identity_fusion import build_person_merge_candidates
 from tapesplit.place_roles import build_place_roles_for_project
@@ -83,6 +84,13 @@ def rebuild_project_outputs(
         }
     steps.append({"step": "build_groups", "result": build_project_groups(project, prefer_canonical=True)})
     _append_reapply_step(steps, project, "review_reapply_after_groups")
+    if (project / "face_clusters.jsonl").exists():
+        steps.append(
+            {
+                "step": "build_person_age_models",
+                "result": build_person_age_models(project),
+            }
+        )
     steps.append(
         {
             "step": "build_person_merge_candidates",

@@ -148,6 +148,9 @@ def gather_capabilities() -> dict[str, Any]:
     caps.update(check_speaker_diarization_config())
     caps.update(check_face_detection_config())
     caps.update(check_face_embedding_config())
+    from tapesplit.face_tracks import face_tracks_available
+
+    caps["face_tracks_backend"] = "insightface" if face_tracks_available() else "unavailable"
     caps.update(check_visual_text_config())
     caps.update(check_visual_embedding_config())
     caps.update(check_visual_caption_config())
@@ -553,6 +556,14 @@ def _run_faces(context: StageContext) -> dict[str, Any]:
     return detect_face_thumbnails_for_project(context.project, backend="auto")
 
 
+def _run_face_tracks(context: StageContext) -> dict[str, Any]:
+    from tapesplit.face_tracks import build_face_tracks_for_project
+
+    if not read_jsonl(context.project / "face_observations.jsonl"):
+        raise StageSkipped("no face observations detected")
+    return build_face_tracks_for_project(context.project)
+
+
 def _run_face_cluster(context: StageContext) -> dict[str, Any]:
     from tapesplit.face_clustering import cluster_faces_for_project
 
@@ -863,10 +874,23 @@ def build_stages() -> list[Stage]:
             run=_run_faces,
         ),
         Stage(
+            name="face-tracks",
+            title="Track faces through scenes",
+            kind=KIND_LOCAL_ML,
+            requires=("faces",),
+            produces=("face_tracks.jsonl",),
+            availability=_available_backend(
+                "face_tracks_backend",
+                "face tracking needs InsightFace (install .[face-ai])",
+            ),
+            run=_run_face_tracks,
+        ),
+        Stage(
             name="face-cluster",
             title="Cluster faces",
             kind=KIND_LOCAL_ML,
             requires=("faces",),
+            after=("face-tracks",),
             produces=("face_clusters.jsonl",),
             availability=_available_backend(
                 "face_embedding_default_backend",

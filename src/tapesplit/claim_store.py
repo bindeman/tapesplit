@@ -34,6 +34,7 @@ CLAIM_KINDS = {
     "identity",
     "relationship",
     "presence",
+    "attribute",
     "human_action",
 }
 SPAN_CLOCKS = {"source", "chunk", "capture"}

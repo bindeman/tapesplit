@@ -12,6 +12,11 @@ import warnings
 
 from tapesplit.face_embeddings import anchor_key, ensure_face_embeddings
 from tapesplit.face_quality import analyze_face_quality
+from tapesplit.face_tracks import (
+    load_face_tracks,
+    track_vectors_for_model,
+    write_track_cluster_assignments,
+)
 from tapesplit.storage import append_jsonl, read_jsonl
 from tapesplit.visibility import build_visibility_filter
 
@@ -150,10 +155,25 @@ def cluster_faces_for_project(
     )
     embedding_records = embedding_result["records"]
 
+    # Tracks are the preferred clustering unit: one quality-weighted aggregate
+    # vector per shot-bounded track, with member keyframe observations riding
+    # along. Observations inside a track never appear as separate frame-units.
+    tracks = load_face_tracks(project)
+    track_vectors = track_vectors_for_model(project, tracks, embedder) if tracks else {}
+    tracked_member_ids = {
+        str(member_id)
+        for track in tracks
+        for member_id in track.get("member_face_observation_ids") or []
+    }
+    prepared_by_id = {str(face.get("id") or ""): face for face in prepared_faces}
+
     feature_rows = []
     skipped = 0
     for prepared_face in prepared_faces:
-        record = embedding_records.get(str(prepared_face.get("id") or "")) or {}
+        face_id = str(prepared_face.get("id") or "")
+        if face_id in tracked_member_ids:
+            continue
+        record = embedding_records.get(face_id) or {}
         vector = record.get("vector")
         if not vector:
             skipped += 1
@@ -162,18 +182,59 @@ def cluster_faces_for_project(
         weight = float(prepared_face.get("face_quality_weight") or 0.0)
         if det_score is not None:
             weight *= max(0.2, min(1.0, det_score / 0.72))
+        frame_key = _frame_key(prepared_face)
         feature_rows.append(
             {
                 "face": prepared_face,
+                "members": [prepared_face],
+                "track": None,
                 "feature": [float(value) for value in vector],
                 "weight": round(max(0.01, weight), 4),
-                "frame_key": _frame_key(prepared_face),
+                "frame_keys": {frame_key} if frame_key else set(),
                 "seed": weight >= FACE_CLUSTER_SEED_MIN_WEIGHT,
             }
         )
 
+    tracks_clustered = 0
+    for track in tracks:
+        vector = track_vectors.get(str(track.get("id") or ""))
+        if not vector:
+            continue
+        members = [
+            prepared_by_id[str(member_id)]
+            for member_id in track.get("member_face_observation_ids") or []
+            if str(member_id) in prepared_by_id
+        ]
+        weight = float((track.get("quality") or {}).get("max_w") or 0.3)
+        # Concurrent tracks share a synthetic key per pair, so the existing
+        # same-frame cannot-link machinery blocks their merge outright.
+        frame_keys = {
+            "cooc:" + ":".join(sorted([str(track["id"]), str(other_id)]))
+            for other_id in track.get("co_occurring_track_ids") or []
+        }
+        for member in members:
+            member_key = _frame_key(member)
+            if member_key:
+                frame_keys.add(member_key)
+        feature_rows.append(
+            {
+                "face": members[0] if members else _track_anchor_face(track),
+                "members": members,
+                "track": track,
+                "feature": [float(value) for value in vector],
+                "weight": round(max(0.01, weight), 4),
+                "frame_keys": frame_keys,
+                "seed": weight >= FACE_CLUSTER_SEED_MIN_WEIGHT,
+            }
+        )
+        tracks_clustered += 1
+
     hac = _cluster_feature_rows(feature_rows, max_distance=resolved_max_distance)
-    clusters = [cluster for cluster in hac["clusters"] if len(cluster["faces"]) >= min_cluster_size]
+    clusters = [
+        cluster
+        for cluster in hac["clusters"]
+        if len(cluster["faces"]) + len(cluster.get("tracks") or []) >= min_cluster_size
+    ]
 
     succession = _assign_cluster_ids(
         clusters,
@@ -186,6 +247,14 @@ def cluster_faces_for_project(
         for face in cluster["faces"]
         if face.get("id")
     }
+    track_assignments = {
+        str(track.get("id")): cluster["cluster_id"]
+        for cluster in clusters
+        for track in cluster.get("tracks") or []
+        if track.get("id")
+    }
+    if track_assignments:
+        write_track_cluster_assignments(project, tracks, track_assignments)
     enriched_faces = [
         {
             **face,
@@ -195,7 +264,27 @@ def cluster_faces_for_project(
     ]
     _write_jsonl(project / "face_observations.jsonl", enriched_faces)
 
-    context = _face_event_context(enriched_faces, events)
+    # Tracks participate in event-context identity candidates as face-shaped
+    # units (id = track id, time = span midpoint), so a cluster made entirely
+    # of new track coverage still gets people suggestions.
+    track_units_by_id = {}
+    for track in tracks:
+        span = track.get("span") or {}
+        start = _number_or_none(span.get("start_s"))
+        end = _number_or_none(span.get("end_s"))
+        if start is None:
+            continue
+        track_units_by_id[str(track.get("id") or "")] = {
+            "id": str(track.get("id") or ""),
+            "source_video_id": track.get("media_id"),
+            "time_s": (start + (end if end is not None else start)) / 2.0,
+            "face_quality_status": "usable",
+            "face_quality_notes": [],
+            "face_quality_weight": (track.get("quality") or {}).get("max_w", 0.5),
+        }
+    context = _face_event_context(
+        enriched_faces + list(track_units_by_id.values()), events
+    )
     people_by_event = _people_by_event(people)
     cluster_records = []
     candidate_records = []
@@ -203,14 +292,20 @@ def cluster_faces_for_project(
     for cluster in clusters:
         cluster_id = cluster["cluster_id"]
         faces_for_cluster = cluster["faces"]
+        candidate_units = faces_for_cluster + [
+            track_units_by_id[str(track.get("id") or "")]
+            for track in cluster.get("tracks") or []
+            if str(track.get("id") or "") in track_units_by_id
+        ]
         candidates = _candidate_people_for_cluster(
-            faces_for_cluster,
+            candidate_units,
             face_event_context=context,
             people_by_event=people_by_event,
         )
         cluster_record = _cluster_record(
             cluster_id,
             faces_for_cluster,
+            tracks=cluster.get("tracks") or [],
             max_distance=resolved_max_distance,
             candidate_people=candidates,
             method=embedder.method,
@@ -247,6 +342,9 @@ def cluster_faces_for_project(
         "faces_unclustered": len(prepared_faces) - len(face_to_cluster_id),
         "faces_joined_without_seeding": hac["joined_without_seeding"],
         "cannot_link_merges_blocked": hac["cannot_link_merges_blocked"],
+        "face_tracks": len(tracks),
+        "tracks_clustered": tracks_clustered,
+        "track_clusters": sum(1 for cluster in clusters if cluster.get("tracks")),
         "face_clusters": len(cluster_records),
         "clusters_inherited": succession["inherited"],
         "clusters_new": succession["created"],
@@ -549,20 +647,26 @@ def _face_feature(project: Path, face: dict[str, Any]) -> list[float]:
 
 
 def _cluster_feature_rows(rows: list[dict[str, Any]], *, max_distance: float) -> dict[str, Any]:
-    """Constrained average-linkage over seed faces, then join-only attachment.
+    """Constrained average-linkage over seed units, then join-only attachment.
 
     Replaces the order-dependent greedy centroid pass: agglomerative
     average-linkage is deterministic, repairs the old never-merge/centroid-
-    drift pathologies, and honors cannot-link constraints (two faces sharing a
-    keyframe are different people, so their clusters may never merge). Faces
-    below the seed weight join the nearest compatible cluster or stay
-    unclustered — they can inherit an identity but never found one.
+    drift pathologies, and honors cannot-link constraints. Units are either
+    single frame observations or whole face tracks; each carries a set of
+    frame keys — a shared key means the two units were on screen together and
+    can never be the same person. Units below the seed weight join the nearest
+    compatible cluster or stay unclustered — they can inherit an identity but
+    never found one.
     """
 
     for row in rows:
         row.setdefault("weight", 1.0)
-        row.setdefault("frame_key", None)
         row.setdefault("seed", True)
+        row.setdefault("members", [row["face"]] if row.get("face") else [])
+        row.setdefault("track", None)
+        if "frame_keys" not in row:
+            frame_key = row.get("frame_key")
+            row["frame_keys"] = {frame_key} if frame_key else set()
     seeds = [row for row in rows if row["seed"]]
     joiners = [row for row in rows if not row["seed"]]
 
@@ -573,11 +677,12 @@ def _cluster_feature_rows(rows: list[dict[str, Any]], *, max_distance: float) ->
         target = _best_join_cluster(row, clusters, max_distance=max_distance)
         if target is None:
             continue
-        target["faces"].append(row["face"])
+        target["faces"].extend(row["members"])
+        if row["track"] is not None:
+            target["tracks"].append(row["track"])
         target["features"].append(row["feature"])
         target["weights"].append(row["weight"])
-        if row["frame_key"]:
-            target["frame_keys"].add(row["frame_key"])
+        target["frame_keys"] |= row["frame_keys"]
         target["centroid"] = _weighted_centroid(target["features"], target["weights"])
         joined += 1
 
@@ -607,9 +712,7 @@ def _constrained_average_linkage(
     np.clip(distances, 0.0, 2.0, out=distances)
 
     members: list[list[int] | None] = [[index] for index in range(count)]
-    frame_keys: list[set | None] = [
-        {rows[index]["frame_key"]} if rows[index]["frame_key"] else set() for index in range(count)
-    ]
+    frame_keys: list[set | None] = [set(rows[index]["frame_keys"]) for index in range(count)]
     sizes = np.ones(count)
     working = distances.copy()
     np.fill_diagonal(working, np.inf)
@@ -669,7 +772,8 @@ def _constrained_average_linkage(
         weights = [row["weight"] for row in cluster_rows]
         clusters.append(
             {
-                "faces": [row["face"] for row in cluster_rows],
+                "faces": [face for row in cluster_rows for face in row["members"]],
+                "tracks": [row["track"] for row in cluster_rows if row["track"] is not None],
                 "features": features,
                 "weights": weights,
                 "frame_keys": set(frame_keys[index] or set()),
@@ -690,7 +794,7 @@ def _best_join_cluster(
     best = None
     best_distance = None
     for cluster in clusters:
-        if row["frame_key"] and row["frame_key"] in cluster["frame_keys"]:
+        if row["frame_keys"] & cluster["frame_keys"]:
             continue
         distance = _cosine_distance(row["feature"], cluster["centroid"])
         if distance > max_distance:
@@ -699,6 +803,20 @@ def _best_join_cluster(
             best = cluster
             best_distance = distance
     return best
+
+
+def _track_anchor_face(track: dict[str, Any]) -> dict[str, Any]:
+    """Face-shaped stand-in for a track with no keyframe-observation members."""
+
+    representative = track.get("representative") or {}
+    return {
+        "id": "",
+        "source_video_id": track.get("media_id"),
+        "time_s": representative.get("t"),
+        "bbox": representative.get("bbox") or {},
+        "face_thumbnail_path": representative.get("thumbnail_path") or "",
+        "face_quality_weight": (track.get("quality") or {}).get("max_w"),
+    }
 
 
 def _frame_key(face: dict[str, Any]) -> str | None:
@@ -753,6 +871,9 @@ def _assign_cluster_ids(
                 key = anchor_key(observation)
                 if key:
                     keys.add(key)
+        # Track ids are content-hashed (media/scene/start/bbox) — stable across
+        # runs, so they are anchor keys in their own right.
+        keys.update(str(track_id) for track_id in previous.get("face_track_ids") or [])
         previous_meta[previous_id] = previous
         if keys:
             previous_keys[previous_id] = keys
@@ -764,6 +885,9 @@ def _assign_cluster_ids(
             key = anchor_key(face)
             if key:
                 keys.add(key)
+        keys.update(
+            str(track.get("id")) for track in cluster.get("tracks") or [] if track.get("id")
+        )
         new_keys.append(keys)
 
     pairs = []
@@ -861,19 +985,45 @@ def _cluster_record(
     cluster_id: str,
     faces: list[dict[str, Any]],
     *,
+    tracks: list[dict[str, Any]] | None = None,
     max_distance: float,
     candidate_people: list[dict[str, Any]],
     method: str,
     feature_model: str,
 ) -> dict[str, Any]:
-    source_video_ids = _unique_items(str(face.get("source_video_id") or "") for face in faces)
+    tracks = tracks or []
+    source_video_ids = _unique_items(
+        [str(face.get("source_video_id") or "") for face in faces]
+        + [str(track.get("media_id") or "") for track in tracks]
+    )
     face_ids = [str(face.get("id")) for face in faces if face.get("id")]
     starts = [_number_or_none(face.get("start_s") or face.get("time_s")) for face in faces]
     ends = [_number_or_none(face.get("end_s") or face.get("time_s")) for face in faces]
+    for track in tracks:
+        span = track.get("span") or {}
+        starts.append(_number_or_none(span.get("start_s")))
+        ends.append(_number_or_none(span.get("end_s")))
     first_start = min([value for value in starts if value is not None], default=None)
     last_end = max([value for value in ends if value is not None], default=None)
     representative = _representative_face(faces)
-    review_status = "needs_review" if candidate_people or len(faces) > 1 else "unreviewed"
+    # A tracked cluster shows its best track frame: chosen from every decoded
+    # frame in the shot, not whichever keyframe crop got lucky.
+    best_track = max(
+        tracks,
+        key=lambda track: float((track.get("quality") or {}).get("max_w") or 0.0),
+        default=None,
+    )
+    thumbnail_path = str(representative.get("face_thumbnail_path") or "")
+    if best_track is not None:
+        track_thumbnail = str((best_track.get("representative") or {}).get("thumbnail_path") or "")
+        best_face_weight = float(representative.get("face_quality_weight") or 0.0) if faces else 0.0
+        if track_thumbnail and float(
+            (best_track.get("quality") or {}).get("max_w") or 0.0
+        ) >= best_face_weight:
+            thumbnail_path = track_thumbnail
+    review_status = (
+        "needs_review" if candidate_people or len(faces) > 1 or tracks else "unreviewed"
+    )
     quality = _cluster_quality(faces)
     # The review-only singleton factory is gone: every embeddable face
     # participates in similarity clustering, weighted by quality. The field
@@ -888,12 +1038,14 @@ def _cluster_record(
         "label": f"Face cluster {int(cluster_id.rsplit('_', 1)[-1])}",
         "face_observation_ids": face_ids,
         "face_count": len(face_ids),
+        "face_track_ids": [str(track.get("id")) for track in tracks if track.get("id")],
+        "track_frame_count": sum(int(track.get("frame_count") or 0) for track in tracks),
         "source_video_ids": source_video_ids,
         "source_subject_ids": _unique_items(str(face.get("source_subject_id") or "") for face in faces),
         "first_start_s": first_start,
         "last_end_s": last_end,
         "representative_face_observation_id": str(representative.get("id") or ""),
-        "thumbnail_path": str(representative.get("face_thumbnail_path") or ""),
+        "thumbnail_path": thumbnail_path,
         "candidate_people": candidate_people,
         "linked_person_group_id": "",
         "review_status": review_status,
@@ -985,7 +1137,10 @@ def _candidate_people_for_cluster(
             + direct_strength_rate * 0.07
         )
         if direct_support == 0:
-            confidence = min(confidence, 0.56)
+            # Event co-occurrence alone over-attributes badly (a costumed
+            # guest at two parties "matched" 20+ clusters on the haul): capped
+            # well below every identity floor, harder still on one event.
+            confidence = min(confidence, 0.45 if event_support >= 2 else 0.38)
         if avg_people_count >= 4 and direct_support == 0:
             confidence -= 0.08
         confidence *= quality_multiplier
