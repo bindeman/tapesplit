@@ -36,9 +36,19 @@ DEFAULT_FACE_CLUSTER_DISTANCE = 0.28
 # research audit measured as impure). Revisit 0.70 after face tracks (P1)
 # tighten same-person distances.
 DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE = 0.65
-# KP-RPE cosine scale differs from buffalo_l; recalibrate with the closed-loop
-# sweep once weights are cached locally. Placeholder until measured.
-DEFAULT_CVLFACE_FACE_CLUSTER_DISTANCE = 0.7
+# Measured KP-RPE sweep on the haul (5,412 units = 4,722 tracks + 690 frame
+# crops; "blocked" = cannot-link merges prevented, integrity = human-linked
+# clusters staying whole):
+#   thr   clusters  single  largest  blocked  integrity
+#   0.55     1594     596      172      686      1.00
+#   0.60     1271     405      260      866      1.00
+#   0.65     1008     271      280     1091      1.00
+#   0.70      797     173      471     1385      1.00
+#   0.75      597     100      544     1863      1.00
+#   0.85      234      17      584     3641      1.00
+# Same knee as buffalo_l: the largest cluster jumps 280 -> 471 past 0.65 (the
+# chaining regime; by 0.85 only cannot-links hold the graph apart).
+DEFAULT_CVLFACE_FACE_CLUSTER_DISTANCE = 0.65
 DEFAULT_FACE_EMBEDDING_BACKEND = "auto"
 FACE_EMBEDDING_BACKENDS = {"auto", "opencv-gray", "arcface-insightface", "cvlface-kprpe"}
 
@@ -461,6 +471,7 @@ class _CVLFaceKPRPEEmbedder:
         self._model: Any | None = None
         self._aligner: Any | None = None
         self._torch: Any | None = None
+        self._device: str = "cpu"
 
     def feature(self, project: Path, face: dict[str, Any]) -> list[float]:
         described = self.describe(project, face)
@@ -475,7 +486,7 @@ class _CVLFaceKPRPEEmbedder:
         torch, model, aligner = self._load()
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().unsqueeze(0)
-        tensor = tensor / 127.5 - 1.0
+        tensor = (tensor / 127.5 - 1.0).to(self._device)
         with torch.no_grad():
             # CVLFace wrapper API: the DFA aligner returns the aligned face
             # plus landmarks; KP-RPE recognition consumes both.
@@ -501,23 +512,89 @@ class _CVLFaceKPRPEEmbedder:
             )
         try:
             import torch  # type: ignore
-            from transformers import AutoModel  # type: ignore
         except ImportError as exc:
             raise RuntimeError(
                 "transformers and torch are required for the cvlface-kprpe backend."
             ) from exc
-        local_only = not _truthy_env(CVLFACE_DOWNLOAD_ENV)
-        model = AutoModel.from_pretrained(
-            CVLFACE_MODEL_REPO, trust_remote_code=True, local_files_only=local_only
-        )
-        aligner = AutoModel.from_pretrained(
-            CVLFACE_ALIGNER_REPO, trust_remote_code=True, local_files_only=local_only
-        )
+        model = _load_cvlface_repo(CVLFACE_MODEL_REPO)
+        aligner = _load_cvlface_repo(CVLFACE_ALIGNER_REPO)
         device = "mps" if torch.backends.mps.is_available() else "cpu"
         model = model.to(device).eval()
         aligner = aligner.to(device).eval()
+        self._device = device
         self._torch, self._model, self._aligner = torch, model, aligner
         return torch, model, aligner
+
+
+def _load_cvlface_repo(repo_id: str) -> Any:
+    """Load a CVLFace HF wrapper, working around its packaging warts.
+
+    The wrapper's modeling file imports the repo's own bundled package
+    (`models`/`aligners`) — which transformers' import check treats as a
+    missing pip dependency — and reads `pretrained_model/*.yaml` relative to
+    the current working directory. Loading with the snapshot directory on
+    sys.path and as the CWD satisfies both without installing anything.
+    """
+
+    import contextlib
+    import hashlib
+    import importlib.util
+    import os
+    import sys
+
+    from huggingface_hub import snapshot_download  # type: ignore
+    from transformers import PretrainedConfig, PreTrainedModel  # type: ignore
+
+    local_only = not _truthy_env(CVLFACE_DOWNLOAD_ENV)
+    snapshot = snapshot_download(repo_id, local_files_only=local_only)
+    previous_cwd = os.getcwd()
+    sys.path.insert(0, snapshot)
+    try:
+        os.chdir(snapshot)
+        module_name = "cvlface_wrapper_" + hashlib.sha1(snapshot.encode()).hexdigest()[:8]
+        spec = importlib.util.spec_from_file_location(module_name, Path(snapshot) / "wrapper.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            # The bundled RPE package attempts a C++ extension build at import
+            # time; when the compiler rejects it (e.g. -fopenmp on macOS) it
+            # falls back to pure torch but may leave the CWD moved. Imports
+            # are cached now, so re-assert and retry once.
+            os.chdir(snapshot)
+            spec.loader.exec_module(module)
+        os.chdir(snapshot)  # the RPE build attempt may have moved the CWD
+        config_cls = next(
+            value
+            for value in vars(module).values()
+            if isinstance(value, type)
+            and issubclass(value, PretrainedConfig)
+            and value is not PretrainedConfig
+        )
+        model_cls = next(
+            value
+            for value in vars(module).values()
+            if isinstance(value, type)
+            and issubclass(value, PreTrainedModel)
+            and value is not PreTrainedModel
+        )
+        # The wrapper's __init__ loads its own weights from
+        # pretrained_model/*.pt, so from_pretrained's post-processing (which
+        # varies across transformers versions) is deliberately bypassed.
+        try:
+            return model_cls(config_cls())
+        except FileNotFoundError:
+            # The bundled rpe_ops installer runs lazily during model
+            # construction, chdirs into its build directory, and never
+            # returns on compiler failure (it falls back to pure torch).
+            # The failed attempt is cached now; re-assert and retry.
+            os.chdir(snapshot)
+            return model_cls(config_cls())
+    finally:
+        with contextlib.suppress(ValueError):
+            sys.path.remove(snapshot)
+        os.chdir(previous_cwd)
 
 
 def _create_face_embedder(embedding_backend: str) -> Any:
@@ -553,6 +630,11 @@ def _resolve_face_embedding_backend(value: str) -> str:
     backend = _normalize_face_embedding_backend(value)
     if backend != "auto":
         return backend
+    # KP-RPE wins whenever its weights are cached: measured TinyFace-class
+    # advantage in exactly this archive's 40-100px crop regime, and its DFA
+    # aligner embeds crops SCRFD re-detection loses (0 failures vs 128).
+    if _cvlface_available():
+        return "cvlface-kprpe"
     return "arcface-insightface" if _arcface_available() else "opencv-gray"
 
 
@@ -1146,8 +1228,15 @@ def _candidate_people_for_cluster(
         confidence *= quality_multiplier
         if quality["status"] != "usable":
             confidence = min(confidence, 0.52 if direct_support else 0.38)
-        confidence = max(0.05, min(0.9, confidence))
         ambiguity = "low" if avg_people_count <= 1.5 else "medium" if avg_people_count <= 3 else "high"
+        if ambiguity != "low":
+            # Direct-name signal is event-scoped: "Snow Maiden performance"
+            # lifts every bystander cluster at the event, not just the person
+            # in the costume. Crowded-event attributions stay below the
+            # confirm_identity auto-accept floor until a human (or a
+            # cluster-specific signal) grounds them.
+            confidence = min(confidence, 0.7)
+        confidence = max(0.05, min(0.9, confidence))
         basis = [
             "candidate person appears in events overlapping this face cluster",
             *(

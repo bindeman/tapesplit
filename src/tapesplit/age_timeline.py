@@ -32,8 +32,13 @@ from tapesplit.storage import read_jsonl
 PERSON_AGE_MODELS_FILENAME = "person_age_models.jsonl"
 
 # Attribution: a cluster speaks for a person when a human linked it, or when
-# its top identity candidate is at least this confident.
+# its top identity candidate is confident AND unambiguous. The ambiguity gate
+# matters more than the floor: an adult filmed at "Filip's birthday" inherits
+# Filip's name through the event title, and without the gate the boy's
+# birth-year model averages over the party guests (measured: median apparent
+# age 33 across 1,127 polluted samples before the gate).
 CLUSTER_ATTRIBUTION_MIN_CONFIDENCE = 0.55
+CLUSTER_ATTRIBUTION_ALLOWED_AMBIGUITY = {"low"}
 HUMAN_LINK_CONFIDENCE = 0.95
 # Age sigma by apparent-age band (children estimate tighter than adults).
 CHILD_AGE_MAX = 14.0
@@ -305,6 +310,9 @@ def _cluster_attribution(
         person_id = str(candidate.get("person_group_id") or "")
         confidence = _number_or_none(candidate.get("confidence")) or 0.0
         if not cluster_id or not person_id:
+            continue
+        ambiguity = str(candidate.get("candidate_ambiguity") or "low")
+        if ambiguity not in CLUSTER_ATTRIBUTION_ALLOWED_AMBIGUITY:
             continue
         current = best_candidate.get(cluster_id)
         if current is None or confidence > current[1]:

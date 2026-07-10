@@ -47,7 +47,7 @@ Current order:
 | 7 | gemini | cloud | Vertex ADC + `GEMINI_GCS_BUCKET`; estimate gated by `--max-cloud-usd` |
 | 8 | core-build | derived | rebuild `core_only`: gemini import → evidence → heuristic events → stitch → classify |
 | 9 | visuals | local | keyframes/thumbnails for scenes + events (events exist after core-build) |
-| 10–15 | ocr, captions, visual-embed, visual-similarity, faces, face-cluster | local-ml | per-backend |
+| 10–15 | ocr, captions, visual-embed, visual-similarity, faces, face-tracks, face-cluster | local-ml | per-backend; face-tracks decodes face-bearing scenes at 5fps (deinterlaced), one InsightFace detect+embed pass per frame, shot-bounded association, per-scene resume checkpoints; face-cluster then clusters TRACK units (quality-weighted aggregate embeddings, concurrent tracks = cannot-links, KP-RPE preferred when cached) |
 | 16 | finalize | derived | full rebuild: groups, place roles, alignments, reconciliation, relationships, speaker identities, context graph, search, story, report, visualization |
 | 17 | apply-suggestions | derived | safe-policy auto-acceptance + output refresh |
 | 18 | semantic-embed | local-ml | dense multilingual + CLIP vectors for semantic search (incremental) |

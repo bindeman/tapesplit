@@ -603,6 +603,14 @@ def _age_trajectory_dimension(
     if not model_a or not model_b:
         return _Dimension("age_trajectory", None, "no age model for one or both people")
     if (
+        str(model_a.get("attribution_basis") or "confirmed") != "confirmed"
+        or str(model_b.get("attribution_basis") or "confirmed") != "confirmed"
+    ):
+        # Candidate-attributed models inherit event-co-occurrence pollution
+        # (an adult filmed at "Filip's birthday" reads as Filip); age evidence
+        # only fires once humans have confirmed cluster identities.
+        return _Dimension("age_trajectory", None, "age model not human-confirmed yet")
+    if (
         int(model_a.get("sample_count") or 0) < AGE_TRAJECTORY_MIN_SAMPLES
         or int(model_b.get("sample_count") or 0) < AGE_TRAJECTORY_MIN_SAMPLES
     ):
