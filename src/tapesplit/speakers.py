@@ -20,6 +20,15 @@ DEFAULT_TRANSCRIPT_EMBEDDING_MODEL = "speechbrain/spkrec-ecapa-voxceleb"
 TRANSCRIPT_EMBEDDING_BACKEND = "transcript-embedding"
 TRANSCRIPT_EMBEDDING_STRIDE_S = 10.0
 TRANSCRIPT_EMBEDDING_CLUSTER_DISTANCE = 0.9
+AZURE_OPENAI_DIARIZE_BACKEND = "azure-openai"
+# 20-minute parts stay well under the service's 25MB upload cap at 48kbps
+# mono mp3 (~7.2MB); 30s overlap lets the seam be reconciled by midpoint.
+AZURE_DIARIZE_PART_SECONDS = 1200.0
+AZURE_DIARIZE_OVERLAP_SECONDS = 30.0
+AZURE_DIARIZE_MAX_REFERENCES = 4
+AZURE_DIARIZE_REFERENCE_MIN_S = 2.5
+AZURE_DIARIZE_REFERENCE_MAX_S = 9.5
+AZURE_DIARIZE_REFERENCE_MIN_CONFIDENCE = 0.7
 
 _RTTM_RE = re.compile(r"\s+")
 
@@ -30,10 +39,22 @@ def check_speaker_diarization_config() -> dict[str, Any]:
         "speaker_diarization_pyannote": _pyannote_available(),
         "speaker_diarization_speechbrain": _speechbrain_available(),
         "speaker_diarization_hf_token": bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")),
+        "speaker_diarization_azure_openai": _azure_diarize_selected(),
         "speaker_diarization_default_backend": DEFAULT_SPEAKER_DIARIZATION_BACKEND,
         "speaker_diarization_default_model": DEFAULT_SPEAKER_DIARIZATION_MODEL,
         "speaker_diarization_transcript_embedding_model": DEFAULT_TRANSCRIPT_EMBEDDING_MODEL,
     }
+
+
+def _azure_diarize_selected() -> bool:
+    """Cloud diarization is opt-in: it spends credits, so `auto` only routes
+    to it when TAPESPLIT_DIARIZE_BACKEND explicitly selects it AND the Azure
+    OpenAI env is configured."""
+    if (os.environ.get("TAPESPLIT_DIARIZE_BACKEND") or "").strip() != AZURE_OPENAI_DIARIZE_BACKEND:
+        return False
+    from tapesplit.azure_openai_adapter import load_azure_openai_config
+
+    return load_azure_openai_config().configured
 
 
 def diarize_project_speakers(
@@ -46,6 +67,14 @@ def diarize_project_speakers(
 ) -> dict[str, Any]:
     load_dotenv()
     project = project_dir.expanduser().resolve()
+    if backend == "auto" and _azure_diarize_selected():
+        backend = AZURE_OPENAI_DIARIZE_BACKEND
+    if backend == AZURE_OPENAI_DIARIZE_BACKEND:
+        return _diarize_project_speakers_azure_openai(
+            project,
+            source_video_id=source_video_id,
+            force=force,
+        )
     if backend == "auto":
         pyannote_error: Exception | None = None
         token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
@@ -94,7 +123,9 @@ def diarize_project_speakers(
             model_name=selected_model,
             force=force,
         )
-    raise ValueError("speaker diarization backend must be one of: auto, pyannote, transcript-embedding")
+    raise ValueError(
+        "speaker diarization backend must be one of: auto, pyannote, transcript-embedding, azure-openai"
+    )
 
 
 def _diarize_project_speakers_pyannote(
@@ -280,6 +311,458 @@ def _diarize_project_speakers_transcript_embeddings(
         "speaker_segments": written,
         "output": str(project / "speaker_segments.jsonl"),
     }
+
+
+def _diarize_project_speakers_azure_openai(
+    project: Path,
+    *,
+    source_video_id: str | None,
+    force: bool,
+    deployment: str | None = None,
+) -> dict[str, Any]:
+    from tapesplit import azure_openai_adapter
+
+    config = azure_openai_adapter.load_azure_openai_config()
+    if not config.configured:
+        raise RuntimeError(
+            "azure-openai diarization needs AZURE_OPENAI_API_KEY, "
+            "AZURE_OPENAI_ENDPOINT (or AZURE_OPENAI_API_BASE), and AZURE_OPENAI_API_VERSION"
+        )
+    selected_deployment = deployment or os.environ.get(
+        "TAPESPLIT_DIARIZE_DEPLOYMENT", azure_openai_adapter.DEFAULT_DIARIZE_DEPLOYMENT
+    )
+
+    audio = extract_project_audio(project, source_video_id=source_video_id, force=False)
+    references = _mine_speaker_reference_clips(project)
+    reference_clips = {
+        name: Path(clip_path).read_bytes() for name, clip_path in references.items()
+    }
+    run_id = f"spk_run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+
+    all_segments: list[dict[str, Any]] = []
+    part_counts: dict[str, int] = {}
+    for item in audio["audio_files"]:
+        current_source_id = item["source_video_id"]
+        audio_path = Path(item["audio_path"])
+        duration = _audio_duration_s(audio_path)
+        parts = _plan_audio_parts(
+            duration,
+            part_s=AZURE_DIARIZE_PART_SECONDS,
+            overlap_s=AZURE_DIARIZE_OVERLAP_SECONDS,
+        )
+        part_counts[current_source_id] = len(parts)
+        raw_by_part: list[list[dict[str, Any]]] = []
+        for part_index, (part_start, part_end) in enumerate(parts):
+            part_path = _extract_audio_part_mp3(audio_path, part_start, part_end - part_start)
+            try:
+                response = azure_openai_adapter.transcribe_diarize(
+                    audio_path=part_path,
+                    deployment=selected_deployment,
+                    known_speakers=reference_clips or None,
+                    project_dir=project,
+                )
+            finally:
+                part_path.unlink(missing_ok=True)
+            rows = []
+            for segment in response.get("segments") or []:
+                start = _number_or_none(segment.get("start"))
+                end = _number_or_none(segment.get("end"))
+                if start is None or end is None or end <= start:
+                    continue
+                rows.append(
+                    {
+                        "part_index": part_index,
+                        "start_s": round(start + part_start, 3),
+                        "end_s": round(end + part_start, 3),
+                        "raw_speaker": str(segment.get("speaker") or ""),
+                        "text": segment.get("text") or "",
+                    }
+                )
+            raw_by_part.append(rows)
+
+        kept = _reconcile_azure_parts(raw_by_part, parts)
+        label_map = _unify_unnamed_azure_labels(
+            kept,
+            known_names=set(reference_clips),
+            embed_fn=_azure_segment_embed_fn(project, current_source_id, audio_path),
+        )
+        for row in kept:
+            key = (row["part_index"], row["raw_speaker"])
+            label = label_map.get(key, row["raw_speaker"])
+            all_segments.append(
+                {
+                    "source_video_id": current_source_id,
+                    "start_s": row["start_s"],
+                    "end_s": row["end_s"],
+                    "speaker_label": label,
+                    "confidence": None,
+                    "provider": "azure_openai",
+                    "model": selected_deployment,
+                    "metadata": {
+                        "run_id": run_id,
+                        "part_index": row["part_index"],
+                        "raw_speaker": row["raw_speaker"],
+                        "known_speaker": row["raw_speaker"] in reference_clips,
+                        "transcript_text": row["text"],
+                    },
+                }
+            )
+
+    written = write_speaker_segments(project, all_segments, force=force, source_video_id=source_video_id)
+    append_jsonl(
+        project / "speaker_runs.jsonl",
+        {
+            "run_id": run_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "provider": "azure_openai",
+            "model": selected_deployment,
+            "source_video_id": source_video_id,
+            "segments": written,
+            "metadata": {
+                "parts_by_source": part_counts,
+                "known_speaker_names": sorted(reference_clips),
+                "part_seconds": AZURE_DIARIZE_PART_SECONDS,
+                "overlap_seconds": AZURE_DIARIZE_OVERLAP_SECONDS,
+            },
+        },
+    )
+    return {
+        "project": str(project),
+        "run_id": run_id,
+        "backend": AZURE_OPENAI_DIARIZE_BACKEND,
+        "model": selected_deployment,
+        "speaker_segments": written,
+        "output": str(project / "speaker_segments.jsonl"),
+    }
+
+
+def _plan_audio_parts(
+    duration_s: float,
+    *,
+    part_s: float = AZURE_DIARIZE_PART_SECONDS,
+    overlap_s: float = AZURE_DIARIZE_OVERLAP_SECONDS,
+) -> list[tuple[float, float]]:
+    if duration_s <= 0:
+        return []
+    if duration_s <= part_s:
+        return [(0.0, round(duration_s, 3))]
+    stride = part_s - overlap_s
+    parts: list[tuple[float, float]] = []
+    start = 0.0
+    while True:
+        end = min(start + part_s, duration_s)
+        parts.append((round(start, 3), round(end, 3)))
+        if end >= duration_s:
+            break
+        start += stride
+    return parts
+
+
+def _reconcile_azure_parts(
+    raw_by_part: list[list[dict[str, Any]]],
+    parts: list[tuple[float, float]],
+) -> list[dict[str, Any]]:
+    """Drop duplicate segments in overlap zones: each absolute instant is
+    owned by exactly one part (overlaps split at their midpoint), and a
+    segment survives iff its midpoint falls in its own part's zone."""
+    kept: list[dict[str, Any]] = []
+    for index, rows in enumerate(raw_by_part):
+        zone_start = parts[index][0]
+        zone_end = parts[index][1]
+        if index > 0:
+            zone_start = parts[index][0] + (parts[index - 1][1] - parts[index][0]) / 2.0
+        if index < len(parts) - 1:
+            zone_end = parts[index + 1][0] + (parts[index][1] - parts[index + 1][0]) / 2.0
+        for row in rows:
+            midpoint = (float(row["start_s"]) + float(row["end_s"])) / 2.0
+            if zone_start <= midpoint < zone_end or (
+                index == len(parts) - 1 and midpoint >= zone_start
+            ):
+                kept.append(row)
+    return sorted(kept, key=lambda item: float(item["start_s"]))
+
+
+def _unify_unnamed_azure_labels(
+    rows: list[dict[str, Any]],
+    *,
+    known_names: set[str],
+    embed_fn: Any,
+) -> dict[tuple[int, str], str]:
+    """Map per-part anonymous labels (A/B/C restart every request) to stable
+    per-tape labels. Named speakers (from reference clips) are already stable
+    and pass through. Unnamed (part, label) groups are voice-embedded via
+    `embed_fn(windows) -> vectors` and clustered; on failure each group keeps
+    a part-scoped label so no segments are lost."""
+    groups: dict[tuple[int, str], list[tuple[float, float]]] = {}
+    for row in rows:
+        key = (int(row["part_index"]), str(row["raw_speaker"]))
+        if key[1] in known_names:
+            continue
+        duration = float(row["end_s"]) - float(row["start_s"])
+        if 1.0 <= duration <= 12.0:
+            groups.setdefault(key, []).append((float(row["start_s"]), float(row["end_s"])))
+        else:
+            groups.setdefault(key, [])
+
+    mapping: dict[tuple[int, str], str] = {}
+    for row in rows:
+        key = (int(row["part_index"]), str(row["raw_speaker"]))
+        if key[1] in known_names:
+            mapping[key] = key[1]
+
+    keys = sorted(groups)
+    if not keys:
+        return mapping
+    if len({key[0] for key in keys}) <= 1:
+        for key in keys:
+            mapping[key] = f"AZ_SPEAKER_{_azure_label_ordinal(key[1]):02d}"
+        return mapping
+
+    centroids = []
+    embeddable_keys = []
+    for key in keys:
+        windows = sorted(groups[key], key=lambda item: item[1] - item[0], reverse=True)[:3]
+        if not windows:
+            continue
+        try:
+            vectors = embed_fn(windows)
+        except Exception:
+            vectors = None
+        if vectors is None or len(vectors) == 0:
+            continue
+        centroids.append(_mean_unit_vector(vectors))
+        embeddable_keys.append(key)
+
+    if len(embeddable_keys) >= 2:
+        labels = _cluster_voice_embeddings(centroids)
+        canonical = _canonicalize_cluster_labels(labels)
+        for key, label in zip(embeddable_keys, canonical, strict=False):
+            mapping[key] = f"AZ_SPEAKER_{int(label):02d}"
+    for key in keys:
+        if key not in mapping:
+            mapping[key] = f"AZ_P{key[0]:02d}_{key[1]}"
+    return mapping
+
+
+def _azure_label_ordinal(label: str) -> int:
+    if len(label) == 1 and label.isalpha():
+        return ord(label.upper()) - ord("A")
+    digits = re.sub(r"\D", "", label)
+    return int(digits) if digits else 0
+
+
+def _mean_unit_vector(vectors: Any) -> list[float]:
+    import numpy as np  # type: ignore
+
+    matrix = np.asarray(vectors, dtype="float32")
+    centroid = matrix.mean(axis=0)
+    norm = float(np.linalg.norm(centroid))
+    return [float(value) for value in centroid / max(norm, 1e-12)]
+
+
+def _azure_segment_embed_fn(project: Path, source_video_id: str, audio_path: Path) -> Any:
+    """Returns embed_fn(windows) -> vectors using the speechbrain encoder
+    already used by the transcript-embedding backend; None-returning closure
+    when speechbrain is unavailable (callers then keep part-scoped labels)."""
+    if not _speechbrain_available():
+        return lambda windows: None
+
+    def embed(windows: list[tuple[float, float]]) -> Any:
+        import torch  # type: ignore
+        import torchaudio  # type: ignore
+        from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
+
+        model_name = DEFAULT_TRANSCRIPT_EMBEDDING_MODEL
+        cache_dir = project / ".cache" / "speechbrain" / _safe_model_dir(model_name)
+        classifier = EncoderClassifier.from_hparams(
+            source=model_name, savedir=str(cache_dir), run_opts={"device": "cpu"}
+        )
+        signal, sample_rate = torchaudio.load(str(audio_path))
+        if signal.ndim == 2:
+            signal = signal.mean(dim=0)
+        if int(sample_rate) != 16000:
+            signal = torchaudio.functional.resample(signal, int(sample_rate), 16000)
+            sample_rate = 16000
+        clips = []
+        lengths = []
+        for start, end in windows:
+            start_sample = max(0, int(start * sample_rate))
+            end_sample = min(signal.shape[-1], int(end * sample_rate))
+            clip = signal[start_sample:end_sample]
+            if clip.numel() < int(0.4 * sample_rate):
+                continue
+            clips.append(clip)
+            lengths.append(int(clip.numel()))
+        if not clips:
+            return None
+        return _encode_speechbrain_embeddings(classifier, clips, lengths, torch=torch)
+
+    return embed
+
+
+def _mine_speaker_reference_clips(project: Path) -> dict[str, str]:
+    """Pick <=4 named reference clips (2.5-9.5s) from person-linked speaker
+    segments so the cloud diarizer emits real names instead of A/B/C. Mined
+    once per project and cached: the segments being replaced by this backend
+    are exactly the ones the references come from."""
+    manifest_path = project / ".cache" / "azure_diarize_refs" / "manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        clips = {
+            name: path for name, path in (manifest.get("clips") or {}).items() if Path(path).exists()
+        }
+        if clips:
+            return clips
+
+    people_labels: dict[str, str] = {}
+    for row in read_jsonl(project / "people_groups.jsonl"):
+        label = str(row.get("label") or row.get("display_label") or "")
+        if row.get("id") and label:
+            people_labels[str(row["id"])] = label
+
+    candidates: dict[str, list[dict[str, Any]]] = {}
+    counts: dict[str, int] = {}
+    for row in read_jsonl(project / "speaker_segments.jsonl"):
+        person_id = row.get("person_group_id")
+        if not person_id or person_id not in people_labels:
+            continue
+        name = _reference_display_name(people_labels[str(person_id)])
+        if not name:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+        confidence = _number_or_none(row.get("confidence")) or 0.0
+        duration = _row_duration(row)
+        if confidence < AZURE_DIARIZE_REFERENCE_MIN_CONFIDENCE:
+            continue
+        if not (AZURE_DIARIZE_REFERENCE_MIN_S <= duration <= AZURE_DIARIZE_REFERENCE_MAX_S):
+            continue
+        candidates.setdefault(name, []).append(row)
+
+    audio_dir = project / "audio"
+    clips: dict[str, str] = {}
+    output_dir = manifest_path.parent
+    for name in sorted(candidates, key=lambda item: counts.get(item, 0), reverse=True):
+        if len(clips) >= AZURE_DIARIZE_MAX_REFERENCES:
+            break
+        best = max(
+            candidates[name],
+            key=lambda row: (
+                _number_or_none(row.get("confidence")) or 0.0,
+                -abs(_row_duration(row) - 6.0),
+            ),
+        )
+        wav_path = audio_dir / f"{best.get('source_video_id')}.wav"
+        if not wav_path.exists():
+            continue
+        output_dir.mkdir(parents=True, exist_ok=True)
+        clip_path = output_dir / f"{_safe_model_dir(name)}.mp3"
+        try:
+            _extract_audio_clip_mp3(
+                wav_path,
+                float(best.get("start_s") or 0.0),
+                _row_duration(best),
+                clip_path,
+            )
+        except Exception:
+            continue
+        clips[name] = str(clip_path)
+
+    if clips:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(
+            json.dumps({"clips": clips}, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    return clips
+
+
+def _reference_display_name(label: str) -> str:
+    for alias in label.split("/"):
+        cleaned = alias.strip()
+        if cleaned and all(ord(char) < 128 for char in cleaned):
+            return cleaned
+    return label.split("/")[0].strip()
+
+
+def _audio_duration_s(audio_path: Path) -> float:
+    import subprocess
+
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(audio_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(result.stdout.strip())
+
+
+def _extract_audio_part_mp3(audio_path: Path, start_s: float, duration_s: float) -> Path:
+    import subprocess
+    import tempfile
+
+    handle = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    handle.close()
+    output = Path(handle.name)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            f"{start_s:.3f}",
+            "-t",
+            f"{duration_s:.3f}",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-b:a",
+            "48k",
+            str(output),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    return output
+
+
+def _extract_audio_clip_mp3(audio_path: Path, start_s: float, duration_s: float, output: Path) -> None:
+    import subprocess
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            f"{start_s:.3f}",
+            "-t",
+            f"{duration_s:.3f}",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-b:a",
+            "48k",
+            str(output),
+        ],
+        capture_output=True,
+        check=True,
+    )
 
 
 def import_speaker_segments(

@@ -9,6 +9,26 @@
       "input_per_1m": null,
       "output_per_1m": null,
       "cached_input_per_1m": null
+    },
+    "gpt-4o-transcribe-diarize": {
+      "input_per_1m": 2.50,
+      "output_per_1m": 10.00,
+      "cached_input_per_1m": null
+    },
+    "gpt-5.6-sol": {
+      "input_per_1m": 5.00,
+      "output_per_1m": 30.00,
+      "cached_input_per_1m": 0.50
+    },
+    "gpt-5.6-terra": {
+      "input_per_1m": 2.50,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": null
+    },
+    "gpt-5.6-luna": {
+      "input_per_1m": 1.00,
+      "output_per_1m": 6.00,
+      "cached_input_per_1m": null
     }
   },
   "twelvelabs": {

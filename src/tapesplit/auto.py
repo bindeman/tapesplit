@@ -194,6 +194,8 @@ def _available_transcription(caps: dict[str, Any]) -> tuple[bool, str]:
 def _available_diarization(caps: dict[str, Any]) -> tuple[bool, str]:
     if not caps.get("ffmpeg"):
         return False, "ffmpeg required for audio extraction"
+    if caps.get("speaker_diarization_azure_openai"):
+        return True, ""
     if caps.get("speaker_diarization_pyannote") and caps.get("speaker_diarization_hf_token"):
         return True, ""
     if caps.get("speaker_diarization_speechbrain"):

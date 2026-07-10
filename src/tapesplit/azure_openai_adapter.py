@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
+import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +13,10 @@ from urllib.request import Request, urlopen
 
 from tapesplit.costs import LlmUsage, append_llm_usage, estimate_llm_cost_usd
 from tapesplit.env import load_dotenv
+
+
+DEFAULT_DIARIZE_DEPLOYMENT = "gpt-4o-transcribe-diarize"
+RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 
 
 @dataclass(frozen=True)
@@ -33,7 +40,11 @@ class AzureOpenAIConfig:
 def load_azure_openai_config(env_path: Path | None = None) -> AzureOpenAIConfig:
     load_dotenv(env_path)
     return AzureOpenAIConfig(
-        endpoint=_empty_to_none(os.environ.get("AZURE_OPENAI_ENDPOINT")),
+        # AZURE_OPENAI_API_BASE is the alias used by adjacent tooling
+        # (LiteLLM/openai-python); accept either name.
+        endpoint=_empty_to_none(
+            os.environ.get("AZURE_OPENAI_ENDPOINT") or os.environ.get("AZURE_OPENAI_API_BASE")
+        ),
         api_key=_empty_to_none(os.environ.get("AZURE_OPENAI_API_KEY")),
         region=_empty_to_none(os.environ.get("AZURE_OPENAI_REGION")),
         api_version=_empty_to_none(os.environ.get("AZURE_OPENAI_API_VERSION")),
@@ -157,6 +168,131 @@ def chat_completion(
             ),
         )
     return result
+
+
+def transcribe_diarize(
+    *,
+    audio_path: Path,
+    deployment: str = DEFAULT_DIARIZE_DEPLOYMENT,
+    known_speakers: dict[str, bytes] | None = None,
+    project_dir: Path | None = None,
+    operation: str = "transcribe_diarize",
+    timeout: int = 900,
+    max_attempts: int = 4,
+) -> dict[str, Any]:
+    """Diarized transcription of one audio file (<=25MB) via Azure OpenAI.
+
+    Uses the classic deployments route: the version-free /openai/v1 audio
+    route returns 404 DeploymentNotFound on this resource. `known_speakers`
+    maps display names to short (2-10s) mp3 reference clips; the service then
+    emits those names as speaker labels instead of A/B/C.
+    """
+    config = load_azure_openai_config()
+    if not config.configured:
+        raise RuntimeError("Azure OpenAI endpoint, API key, and API version must be configured")
+
+    audio_bytes = Path(audio_path).read_bytes()
+    if len(audio_bytes) > 25 * 1024 * 1024:
+        raise ValueError(f"audio file exceeds the 25MB transcription cap: {audio_path}")
+
+    fields: list[tuple[str, str]] = [
+        ("response_format", "diarized_json"),
+        ("chunking_strategy", "auto"),
+    ]
+    for name, clip in (known_speakers or {}).items():
+        fields.append(("known_speaker_names[]", name))
+        fields.append(
+            (
+                "known_speaker_references[]",
+                "data:audio/mpeg;base64," + base64.b64encode(clip).decode("ascii"),
+            )
+        )
+    body, content_type = _encode_multipart(
+        fields, files=[("file", Path(audio_path).name, audio_bytes, "audio/mpeg")]
+    )
+
+    endpoint = config.endpoint.rstrip("/")
+    url = (
+        f"{endpoint}/openai/deployments/{deployment}/audio/transcriptions"
+        f"?api-version={config.api_version}"
+    )
+    request = Request(
+        url,
+        data=body,
+        headers={"Content-Type": content_type, "api-key": config.api_key},
+        method="POST",
+    )
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read().decode("utf-8")
+                request_id = response.headers.get("x-request-id") or response.headers.get(
+                    "apim-request-id"
+                )
+            break
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            last_error = RuntimeError(f"Azure OpenAI transcription failed ({exc.code}): {detail}")
+            if exc.code not in RETRYABLE_HTTP_CODES or attempt == max_attempts:
+                raise last_error from exc
+            time.sleep(15.0 * attempt)
+    else:  # pragma: no cover - loop always breaks or raises
+        raise last_error or RuntimeError("Azure OpenAI transcription failed")
+
+    result = json.loads(raw)
+    usage = result.get("usage") or {}
+    input_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+    if project_dir is not None:
+        append_llm_usage(
+            project_dir,
+            LlmUsage(
+                provider="azure_openai",
+                deployment=deployment,
+                operation=operation,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=0,
+                estimated_cost_usd=estimate_llm_cost_usd(
+                    provider="azure_openai",
+                    deployment=deployment,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                ),
+                request_id=request_id,
+            ),
+        )
+    return result
+
+
+def _encode_multipart(
+    fields: list[tuple[str, str]],
+    files: list[tuple[str, str, bytes, str]],
+) -> tuple[bytes, str]:
+    boundary = f"tapesplit-{uuid.uuid4().hex}"
+    parts: list[bytes] = []
+    for name, value in fields:
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode("utf-8")
+        )
+    for name, filename, payload, mime in files:
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                f"Content-Type: {mime}\r\n\r\n"
+            ).encode("utf-8")
+        )
+        parts.append(payload)
+        parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
 def smoke_test(alias_or_deployment: str = "fast", project_dir: Path | None = None) -> dict[str, Any]:
