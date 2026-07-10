@@ -49,7 +49,11 @@ def estimate_llm_cost_usd(
 
     input_per_1m = deployment_rates.get("input_per_1m")
     output_per_1m = deployment_rates.get("output_per_1m")
-    cached_input_per_1m = deployment_rates.get("cached_input_per_1m", input_per_1m)
+    # explicit null in the rates file means "no cached tier" — bill cached
+    # tokens at the normal input rate, same as an absent key
+    cached_input_per_1m = deployment_rates.get("cached_input_per_1m")
+    if cached_input_per_1m is None:
+        cached_input_per_1m = input_per_1m
     if input_per_1m is None or output_per_1m is None:
         return None
 

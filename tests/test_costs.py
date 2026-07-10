@@ -57,3 +57,30 @@ def test_estimate_project_twelvelabs_index_cost(tmp_path):
     assert estimate["video_count"] == 1
     assert estimate["duration_min"] == 2
     assert estimate["estimated_cost_usd"] == 0.084
+
+
+def test_estimate_llm_cost_handles_null_cached_rate(tmp_path, monkeypatch):
+    import json
+
+    rates = {
+        "azure_openai": {
+            "gpt-4o-transcribe-diarize": {
+                "input_per_1m": 2.5,
+                "output_per_1m": 10.0,
+                "cached_input_per_1m": None,
+            }
+        }
+    }
+    path = tmp_path / "cost_rates.json"
+    path.write_text(json.dumps(rates), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    cost = estimate_llm_cost_usd(
+        provider="azure_openai",
+        deployment="gpt-4o-transcribe-diarize",
+        input_tokens=1_000_000,
+        output_tokens=100_000,
+        cached_input_tokens=0,
+    )
+
+    assert cost == 3.5
