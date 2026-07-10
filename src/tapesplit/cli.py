@@ -972,6 +972,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     geocode_candidate_parser.add_argument("--max-results", type=int, default=5)
 
+    geocode_places_parser = geocode_subparsers.add_parser(
+        "places",
+        help="Batch-geocode named place candidates via Nominatim into place_geocodes.jsonl.",
+    )
+    geocode_places_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    geocode_places_parser.add_argument("--force", action="store_true", help="Re-query places already cached.")
+    geocode_places_parser.add_argument("--limit", type=int, default=None, help="Only geocode the first N places.")
+
     build_evidence_parser = subparsers.add_parser(
         "build-evidence",
         help="Normalize project artifacts into evidence.jsonl.",
@@ -2165,6 +2173,17 @@ def main(argv: list[str] | None = None) -> int:
                             allow_api=args.allow_api,
                             max_results=args.max_results,
                         ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.geocode_command == "places":
+                from tapesplit.geocoding import geocode_project_places
+
+                print(
+                    json.dumps(
+                        geocode_project_places(args.project, force=args.force, limit=args.limit),
                         indent=2,
                         sort_keys=True,
                     )

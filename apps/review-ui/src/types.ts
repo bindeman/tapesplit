@@ -216,6 +216,18 @@ export interface PlaceRecord {
   parent_place_labels?: string[];
   nearby_place_labels?: string[];
   coordinates?: { lat: number; lng: number } | null;
+  geocode?: {
+    lat?: number;
+    lng?: number;
+    formatted_address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    confidence?: number;
+    approximate?: boolean;
+    context_suspect?: boolean;
+    alternatives?: number;
+  } | null;
   context?: {
     id: string;
     key: string;

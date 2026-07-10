@@ -30,7 +30,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
+import { PlacesMapView } from "./PlacesMap";
 import {
   applyReviewActions,
   applySuggestedReviewActions,
@@ -126,6 +127,7 @@ export function App() {
   const [reviewOpen, setReviewOpen] = useState(() => new URLSearchParams(window.location.search).has("review"));
   const [openEvent, setOpenEvent] = useState<EventRecord | null>(null);
   const [openPerson, setOpenPerson] = useState<PersonRecord | null>(null);
+  const [openPlace, setOpenPlace] = useState<PlaceRecord | null>(null);
   const [openAlbum, setOpenAlbum] = useState<AlbumRecord | null>(null);
 
   async function refresh(nextStatus = "") {
@@ -170,6 +172,13 @@ export function App() {
         setOpenPerson(match);
       }
     }
+    const placeId = params.get("place");
+    if (placeId) {
+      const match = bundle.data.places.find((place) => place.id === placeId);
+      if (match) {
+        setOpenPlace(match);
+      }
+    }
   }, [bundle]);
 
   const navigableEvents = useMemo(
@@ -197,6 +206,7 @@ export function App() {
         else if (openEvent) setOpenEvent(null);
         else if (openAlbum) setOpenAlbum(null);
         else if (openPerson) setOpenPerson(null);
+        else if (openPlace) setOpenPlace(null);
         else if (reviewOpen) setReviewOpen(false);
         return;
       }
@@ -423,12 +433,23 @@ export function App() {
           />
         )}
         {view === "places" && (
-          <PlacesView
-            contexts={bundle.data.place_contexts}
+          <PlacesMapView
             places={bundle.data.places}
             events={bundle.data.timeline.events}
             media={bundle.data.media}
-            onPlay={setActiveMoment}
+            onPlay={(event) => playEvent(event, bundle.data.media, setActiveMoment)}
+            openPlace={openPlace}
+            onOpenPlace={setOpenPlace}
+            helpers={{ placeDisplayLabel, humanizeToken }}
+            renderList={() => (
+              <PlacesView
+                contexts={bundle.data.place_contexts}
+                places={bundle.data.places}
+                events={bundle.data.timeline.events}
+                media={bundle.data.media}
+                onPlay={setActiveMoment}
+              />
+            )}
           />
         )}
         {view === "search" && (
@@ -4206,7 +4227,7 @@ function JournalPostArticle({
     if (!entities?.length) {
       return text;
     }
-    let nodes: ReactNode[] = [text];
+    let nodes: Array<string | ReactElement> = [text];
     for (const entity of entities) {
       if (!entity.span_text) continue;
       nodes = nodes.flatMap((node) => {

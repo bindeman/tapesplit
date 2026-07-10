@@ -32,6 +32,7 @@ def export_visualization_data(
     albums = _visible_rows(read_jsonl(project / "albums.jsonl"), visibility, evidence_by_id)
     people = _visible_rows(read_jsonl(project / "people_groups.jsonl"), visibility, evidence_by_id)
     places = _visible_rows(read_jsonl(project / "place_groups.jsonl"), visibility, evidence_by_id)
+    _attach_place_geocodes(project, places)
     dates = _visible_rows(read_jsonl(project / "date_groups.jsonl"), visibility, evidence_by_id)
     context_edges = _visible_rows(read_jsonl(project / "context_edges.jsonl"), visibility, evidence_by_id)
     edge_metrics = _visible_rows(read_jsonl(project / "edge_metrics.jsonl"), visibility, evidence_by_id)
@@ -461,6 +462,7 @@ def _place_track(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]])
         "parent_place_labels": place.get("parent_place_labels") or [],
         "nearby_place_labels": place.get("nearby_place_labels") or [],
         "coordinates": _place_coordinates(place),
+        "geocode": place.get("geocode"),
         "evidence_basis": _place_evidence_basis(place),
         "location_options": _place_location_options(place),
         "appearances": entries,
@@ -1984,6 +1986,43 @@ def _place_normalized_key(place: dict[str, Any]) -> str:
     metadata = place.get("metadata") if isinstance(place.get("metadata"), dict) else {}
     value = str(metadata.get("normalized_key") or place.get("label") or "")
     return " ".join(value.casefold().replace(",", " ").split())
+
+
+def _attach_place_geocodes(project: Path, places: list[dict[str, Any]]) -> None:
+    """Join the durable Nominatim cache onto place rows by normalized label.
+
+    Fills metadata.selected_geocode (the hook _place_coordinates already
+    reads) plus a UI-facing geocode summary with the approximate/suspect
+    flags, leaving rows without a cache hit untouched.
+    """
+    from tapesplit.geocoding import load_place_geocodes, normalized_geocode_key
+
+    cache = load_place_geocodes(project)
+    if not cache:
+        return
+    for place in places:
+        if place.get("kind") != "named_place_candidate":
+            continue
+        row = cache.get(normalized_geocode_key(str(place.get("label") or "")))
+        if not row or not row.get("selected"):
+            continue
+        selected = row["selected"]
+        metadata = place.setdefault("metadata", {}) if isinstance(place.get("metadata"), dict) or place.get("metadata") is None else {}
+        if isinstance(metadata, dict):
+            metadata.setdefault("selected_geocode", {"lat": selected.get("lat"), "lng": selected.get("lng")})
+            place["metadata"] = metadata
+        place["geocode"] = {
+            "lat": selected.get("lat"),
+            "lng": selected.get("lng"),
+            "formatted_address": selected.get("formatted_address"),
+            "city": selected.get("city"),
+            "state": selected.get("state"),
+            "country": selected.get("country"),
+            "confidence": row.get("confidence"),
+            "approximate": bool(row.get("context_suspect")) or (row.get("confidence") or 0) < 0.6,
+            "context_suspect": bool(row.get("context_suspect")),
+            "alternatives": len(row.get("alternatives") or []),
+        }
 
 
 def _place_coordinates(place: dict[str, Any]) -> dict[str, Any] | None:
