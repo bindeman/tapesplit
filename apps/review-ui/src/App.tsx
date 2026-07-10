@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Album,
+  BookOpen,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -34,6 +35,7 @@ import {
   applyReviewActions,
   applySuggestedReviewActions,
   assetUrl,
+  loadJournalPosts,
   loadProject,
   queueReviewAction,
   reapplyReviewCorrections,
@@ -48,6 +50,9 @@ import type {
   EventEntry,
   EventRecord,
   FaceObservation,
+  JournalBlock,
+  JournalEntity,
+  JournalPost,
   MediaRecord,
   PersonRecord,
   PlaceContext,
@@ -68,7 +73,7 @@ import type {
   VisualAsset,
 } from "./types";
 
-type ViewMode = "library" | "people" | "places" | "albums" | "search";
+type ViewMode = "library" | "people" | "places" | "albums" | "journal" | "search";
 type ReviewScope = "primary" | "backlog" | "all";
 
 type PlayerMoment = {
@@ -95,6 +100,7 @@ const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
   { id: "people", label: "People", icon: Users },
   { id: "places", label: "Places", icon: MapPinned },
   { id: "albums", label: "Albums", icon: Album },
+  { id: "journal", label: "Journal", icon: BookOpen },
   { id: "search", label: "Search", icon: Search },
 ];
 
@@ -407,6 +413,14 @@ export function App() {
         )}
         {view === "albums" && (
           <AlbumsView albums={bundle.data.tracks.albums} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
+        )}
+        {view === "journal" && (
+          <JournalView
+            bundle={bundle}
+            onOpenEvent={setOpenEvent}
+            onOpenPerson={setOpenPerson}
+            onPlay={setActiveMoment}
+          />
         )}
         {view === "places" && (
           <PlacesView
@@ -4072,4 +4086,262 @@ function formatSignedSeconds(value: number) {
 function shortPath(path: string) {
   const parts = path.split("/");
   return parts.slice(-2).join("/");
+}
+
+function JournalView({
+  bundle,
+  onOpenEvent,
+  onOpenPerson,
+  onPlay,
+}: {
+  bundle: ProjectBundle;
+  onOpenEvent: (event: EventRecord) => void;
+  onOpenPerson: (person: PersonRecord) => void;
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const [posts, setPosts] = useState<JournalPost[] | null>(null);
+  const [error, setError] = useState("");
+  const [openPostId, setOpenPostId] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("post") ?? "",
+  );
+
+  useEffect(() => {
+    loadJournalPosts()
+      .then(setPosts)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  const eventsById = useMemo(() => {
+    const map = new Map<string, EventRecord>();
+    for (const event of bundle.data.timeline.events) {
+      map.set(event.id, event);
+    }
+    return map;
+  }, [bundle]);
+
+  if (error) {
+    return <section className="journal-view"><p className="empty-note">{error}</p></section>;
+  }
+  if (posts === null) {
+    return <section className="journal-view"><p className="empty-note">Opening the journal…</p></section>;
+  }
+  if (!posts.length) {
+    return (
+      <section className="journal-view">
+        <header className="view-header"><h1 className="t-large-title">Journal</h1></header>
+        <p className="empty-note">
+          No entries yet — run <code>tapesplit journal generate</code> to draft the first posts from the tapes.
+        </p>
+      </section>
+    );
+  }
+
+  const openPost = posts.find((post) => post.id === openPostId) ?? null;
+  if (openPost) {
+    return (
+      <JournalPostArticle
+        post={openPost}
+        bundle={bundle}
+        eventsById={eventsById}
+        onBack={() => setOpenPostId("")}
+        onOpenEvent={onOpenEvent}
+        onOpenPerson={onOpenPerson}
+        onPlay={onPlay}
+      />
+    );
+  }
+
+  return (
+    <section className="journal-view">
+      <header className="view-header">
+        <h1 className="t-large-title journal-display">Journal</h1>
+        <p className="view-subtitle">Days from the tapes, written down — every line traceable to a moment.</p>
+      </header>
+      <div className="journal-feed">
+        {posts.map((post) => {
+          const hero = post.hero_event_id ? eventsById.get(post.hero_event_id) : undefined;
+          const cover = hero?.thumbnail_path || hero?.keyframe_path;
+          return (
+            <article key={post.id} className="journal-card" onClick={() => setOpenPostId(post.id)}>
+              {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="journal-card-blank" />}
+              <div className="journal-card-body">
+                <span className="journal-kicker">{post.kicker}</span>
+                <h2 className="journal-display">{post.title}</h2>
+                <p className="journal-card-dek">{post.dek}</p>
+                <span className="journal-byline">
+                  {post.date_label}
+                  {post.read_minutes ? ` · ${post.read_minutes} min` : ""}
+                </span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function JournalPostArticle({
+  post,
+  bundle,
+  eventsById,
+  onBack,
+  onOpenEvent,
+  onOpenPerson,
+  onPlay,
+}: {
+  post: JournalPost;
+  bundle: ProjectBundle;
+  eventsById: Map<string, EventRecord>;
+  onBack: () => void;
+  onOpenEvent: (event: EventRecord) => void;
+  onOpenPerson: (person: PersonRecord) => void;
+  onPlay: (moment: PlayerMoment) => void;
+}) {
+  const hero = post.hero_event_id ? eventsById.get(post.hero_event_id) : undefined;
+  const heroCover = hero?.keyframe_path || hero?.thumbnail_path;
+  const media = bundle.data.media;
+
+  function renderEntities(text: string, entities: JournalEntity[] | undefined): ReactNode {
+    if (!entities?.length) {
+      return text;
+    }
+    let nodes: ReactNode[] = [text];
+    for (const entity of entities) {
+      if (!entity.span_text) continue;
+      nodes = nodes.flatMap((node) => {
+        if (typeof node !== "string" || !node.includes(entity.span_text)) {
+          return [node];
+        }
+        const [before, ...rest] = node.split(entity.span_text);
+        const after = rest.join(entity.span_text);
+        return [before, <EntityLink key={`${entity.id}-${before.length}`} entity={entity} />, after];
+      });
+    }
+    return nodes;
+  }
+
+  function EntityLink({ entity }: { entity: JournalEntity }) {
+    if (entity.kind === "person") {
+      const person = bundle.data.people.find((row) => row.id === entity.id);
+      if (person) {
+        return (
+          <button className="entity-link" title="Open person" onClick={() => onOpenPerson(person)}>
+            {entity.span_text}
+          </button>
+        );
+      }
+    }
+    if (entity.kind === "event") {
+      const event = eventsById.get(entity.id);
+      if (event) {
+        return (
+          <button className="entity-link" title="Open moment" onClick={() => onOpenEvent(event)}>
+            {entity.span_text}
+          </button>
+        );
+      }
+    }
+    return <span className="entity-mention" title={entity.kind}>{entity.span_text}</span>;
+  }
+
+  return (
+    <article className="journal-article">
+      <button className="journal-back" onClick={onBack}>
+        ← Journal
+      </button>
+      <header>
+        <span className="journal-kicker">{post.kicker}</span>
+        <h1 className="journal-display journal-title">{post.title}</h1>
+        {post.dek ? <p className="journal-dek">{post.dek}</p> : null}
+        <p className="journal-byline">
+          {post.date_label}
+          {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
+          {post.generated ? " · drafted from the tapes" : ""}
+        </p>
+      </header>
+      {heroCover ? (
+        <figure className="journal-hero">
+          <img src={assetUrl(heroCover)} alt="" />
+        </figure>
+      ) : null}
+      <div className="journal-body">
+        {post.blocks.map((block, index) => (
+          <JournalBlockView key={index} block={block} />
+        ))}
+      </div>
+    </article>
+  );
+
+  function JournalBlockView({ block }: { block: JournalBlock }) {
+    if (block.type === "heading") {
+      return <h3 className="journal-display journal-heading">{block.text}</h3>;
+    }
+    if (block.type === "paragraph") {
+      return (
+        <p className="journal-paragraph">
+          {renderEntities(block.text ?? "", block.entities)}
+          {block.citations?.length ? (
+            <span className="journal-footnote" title={`Grounded in ${block.citations.join(", ")}`}>
+              {"·".repeat(Math.min(block.citations.length, 3))}
+            </span>
+          ) : null}
+        </p>
+      );
+    }
+    if (block.type === "pullquote") {
+      const tape = media.find((row) => row.id === block.source_video_id);
+      const canPlay = Boolean(block.source_video_id && typeof block.start_s === "number");
+      return (
+        <blockquote className="journal-pullquote">
+          <p className="journal-display">«{block.text}»</p>
+          {block.translation ? <p className="journal-translation">{block.translation}</p> : null}
+          <footer>
+            {block.speaker ? <span className="journal-speaker">{block.speaker}</span> : null}
+            {canPlay ? (
+              <button
+                className="journal-play"
+                title="Play this moment"
+                onClick={() =>
+                  onPlay({
+                    videoId: block.source_video_id!,
+                    videoLabel: tape?.filename || block.source_video_id!,
+                    startS: Math.max(0, (block.start_s ?? 0) - 1),
+                    endS: typeof block.end_s === "number" ? block.end_s + 1 : undefined,
+                    title: block.text ?? "Quote",
+                  })
+                }
+              >
+                <Play size={12} /> Play
+              </button>
+            ) : null}
+          </footer>
+        </blockquote>
+      );
+    }
+    if (block.type === "clip") {
+      const event = block.event_id ? eventsById.get(block.event_id) : undefined;
+      if (!event) return null;
+      const cover = event.thumbnail_path || event.keyframe_path;
+      const moment = momentFromEvent(event, media);
+      return (
+        <figure className="journal-clip">
+          {cover ? (
+            <button className="journal-clip-frame" title="Open moment" onClick={() => onOpenEvent(event)}>
+              <img src={assetUrl(cover)} alt="" loading="lazy" />
+            </button>
+          ) : null}
+          <figcaption>
+            <span>{block.text || event.title}</span>
+            {moment ? (
+              <button className="journal-play" title="Play clip" onClick={() => onPlay(moment)}>
+                <Play size={12} /> Play
+              </button>
+            ) : null}
+          </figcaption>
+        </figure>
+      );
+    }
+    return null;
+  }
 }

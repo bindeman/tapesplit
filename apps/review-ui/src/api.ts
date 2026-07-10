@@ -1,4 +1,4 @@
-import type { ProjectBundle, ReviewAction, SearchResponse, SemanticResponse } from "./types";
+import type { JournalPost, ProjectBundle, ReviewAction, SearchResponse, SemanticResponse } from "./types";
 
 export async function loadProject(): Promise<ProjectBundle> {
   const response = await fetch("/api/project");
@@ -63,4 +63,10 @@ async function readResponse<T>(response: Response): Promise<T> {
     throw new Error(payload?.error || `Request failed with ${response.status}`);
   }
   return payload as T;
+}
+
+export async function loadJournalPosts(): Promise<JournalPost[]> {
+  const response = await fetch("/api/journal");
+  const payload = await readResponse<{ posts: JournalPost[] }>(response);
+  return payload.posts ?? [];
 }

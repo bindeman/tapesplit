@@ -531,3 +531,38 @@ export interface SemanticResponse {
   latency_ms?: number;
   sections: Partial<Record<SemanticSectionId, SemanticHit[]>>;
 }
+
+export interface JournalEntity {
+  span_text: string;
+  kind: "person" | "place" | "event";
+  id: string;
+}
+
+export interface JournalBlock {
+  type: "heading" | "paragraph" | "pullquote" | "clip";
+  text?: string;
+  citations?: string[];
+  entities?: JournalEntity[];
+  segment_id?: string;
+  speaker?: string;
+  translation?: string;
+  source_video_id?: string;
+  start_s?: number;
+  end_s?: number;
+  event_id?: string;
+}
+
+export interface JournalPost {
+  id: string;
+  album_id: string;
+  kicker: string;
+  title: string;
+  dek: string;
+  date_label: string;
+  hero_event_id?: string;
+  blocks: JournalBlock[];
+  citations: string[];
+  generated: boolean;
+  read_minutes?: number;
+  created_at?: string;
+}

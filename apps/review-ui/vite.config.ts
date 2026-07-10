@@ -41,6 +41,10 @@ function reviewApiPlugin(): Plugin {
             await sendVideo(req, res);
             return;
           }
+          if (req.method === "GET" && req.url.startsWith("/api/journal")) {
+            await sendJson(res, await loadJournalPosts());
+            return;
+          }
           if (req.method === "GET" && req.url.startsWith("/api/search/semantic")) {
             await sendSemanticSearch(req, res);
             return;
@@ -85,6 +89,11 @@ function reviewApiPlugin(): Plugin {
       });
     },
   };
+}
+
+async function loadJournalPosts() {
+  const journalPath = join(projectDir, "journal_posts.jsonl");
+  return { projectDir, posts: readJsonlIfExists(journalPath) };
 }
 
 async function loadProject() {
