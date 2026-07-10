@@ -152,11 +152,21 @@ trivial for a multimodal model — verification exploits that asymmetry.
   low-confidence claims, chunk-boundary events, auto-accepted targets, and
   high-blast-radius places.
 - **Blind protocol.** The verifier backend receives only a short local clip
-  (ffmpeg, ≤120 s, 480p, under `verification_clips/`) and returns a
-  structured description — it never sees the claim, so it cannot be led. A
-  separate adjudicator compares description to claim and issues
+  (ffmpeg, ≤120 s, 480p, under `verification_clips/`) plus the clip's raw
+  speech with anonymized speaker labels, and returns a structured
+  description — it never sees the claim, so it cannot be led. A separate
+  adjudicator compares description to claim and issues
   `SUPPORTED` / `CONTRADICTED` / `UNDECIDABLE`. The offline baseline is
-  keyword overlap; an LLM adjudicator plugs into the same interface.
+  keyword overlap; `--adjudicator llm` uses gpt-5.6-terra semantically (with
+  keyword fallback on transport errors).
+- **Live backend.** `TAPESPLIT_VERIFIER_BACKEND=azure` activates the
+  gpt-5.6-sol backend. sol takes no video input, so a clip becomes ≤40
+  sampled frames (360p JPEG, `detail=low`), each preceded by a
+  `frame at Xs:` label — timestamps ride inside the request, so the
+  verifier cannot introduce drift. Azure's content filter refuses some
+  innocuous family footage; on `content_policy_violation` the frame batch
+  is bisected, flagged frames dropped, and a fully-blocked clip degrades to
+  a transcript-only description annotated `visual_blocked`.
 - **Consequences.** Verdicts append to `verifications.jsonl`; contradictions
   are digested (never deleted) into `verification_flags.jsonl` for the review
   surface. In calibration, machine verdicts count for/against the claim's

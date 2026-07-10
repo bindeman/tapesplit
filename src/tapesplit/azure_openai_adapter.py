@@ -20,6 +20,15 @@ DEFAULT_DIARIZE_DEPLOYMENT = "gpt-4o-transcribe-diarize"
 RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
 
 
+class ContentPolicyViolation(RuntimeError):
+    """Azure's pre-inference content filter refused the request.
+
+    Raised distinctly so callers can bisect frame batches: the filter is
+    known to refuse innocuous home-video frames (bath/potty scenes), and the
+    correct response is dropping the flagged frames, not failing the claim.
+    """
+
+
 @dataclass(frozen=True)
 class AzureOpenAIConfig:
     endpoint: str | None
@@ -142,6 +151,104 @@ def chat_completion(
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Azure OpenAI request failed ({exc.code}): {detail}") from exc
+
+    result = json.loads(body)
+    usage = result.get("usage") or {}
+    input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    cached_input_tokens = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+    if project_dir is not None:
+        append_llm_usage(
+            project_dir,
+            LlmUsage(
+                provider="azure_openai",
+                deployment=deployment,
+                operation=operation,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+                estimated_cost_usd=estimate_llm_cost_usd(
+                    provider="azure_openai",
+                    deployment=deployment,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                ),
+                request_id=request_id,
+            ),
+        )
+    return result
+
+
+def reasoning_chat_completion(
+    *,
+    deployment: str,
+    messages: list[dict[str, Any]],
+    max_completion_tokens: int = 1200,
+    reasoning_effort: str = "medium",
+    response_format: dict[str, Any] | None = None,
+    project_dir: Path | None = None,
+    operation: str = "reasoning_chat_completion",
+    timeout: int = 240,
+    max_attempts: int = 4,
+) -> dict[str, Any]:
+    """Chat completion for the gpt-5.6 reasoning family (sol/terra/luna).
+
+    These deployments reject ``max_tokens`` and ``temperature``; they take
+    ``max_completion_tokens`` and ``reasoning_effort``. Messages may carry
+    multimodal content parts (``text`` / ``image_url``). Raises
+    :class:`ContentPolicyViolation` when the pre-inference filter refuses the
+    input so callers can bisect frame batches.
+    """
+
+    config = load_azure_openai_config()
+    if not config.configured:
+        raise RuntimeError("Azure OpenAI endpoint, API key, and API version must be configured")
+
+    endpoint = config.endpoint.rstrip("/")
+    url = (
+        f"{endpoint}/openai/deployments/{deployment}/chat/completions"
+        f"?api-version={config.api_version}"
+    )
+    payload: dict[str, Any] = {
+        "messages": messages,
+        "max_completion_tokens": max_completion_tokens,
+        "reasoning_effort": reasoning_effort,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+    data = json.dumps(payload).encode("utf-8")
+
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        request = Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json", "api-key": config.api_key},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8")
+                request_id = response.headers.get("x-request-id") or response.headers.get(
+                    "apim-request-id"
+                )
+            break
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if "content_policy_violation" in detail or "content safety" in detail.lower():
+                raise ContentPolicyViolation(detail[:400]) from exc
+            last_error = RuntimeError(f"Azure OpenAI request failed ({exc.code}): {detail[:400]}")
+            if exc.code not in RETRYABLE_HTTP_CODES or attempt == max_attempts:
+                raise last_error from exc
+            time.sleep(15.0 * attempt)
+        except (TimeoutError, URLError, ConnectionError, HTTPException) as exc:
+            last_error = RuntimeError(f"Azure OpenAI request failed ({type(exc).__name__}): {exc}")
+            if attempt == max_attempts:
+                raise last_error from exc
+            time.sleep(15.0 * attempt)
+    else:  # pragma: no cover - loop always breaks or raises
+        raise last_error or RuntimeError("Azure OpenAI request failed")
 
     result = json.loads(body)
     usage = result.get("usage") or {}

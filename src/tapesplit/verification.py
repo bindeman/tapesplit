@@ -44,10 +44,18 @@ MACHINE_REVIEWER = "clip-verifier"
 
 DEFAULT_SAMPLE_SIZE = 40
 DEFAULT_VERIFIER_DEPLOYMENT = "gpt-5.6-sol"
+DEFAULT_ADJUDICATOR_DEPLOYMENT = "gpt-5.6-terra"
 
 CLIP_PADDING_S = 5.0
 CLIP_MAX_DURATION_S = 120.0
 CLIP_HEIGHT = 480
+
+# Frame-grid request shape (sol has no video input; probe-verified).
+FRAME_HEIGHT = 360
+FRAME_JPEG_QUALITY = 7
+FRAME_MAX_COUNT = 40
+FRAME_MIN_INTERVAL_S = 2.0
+CONTENT_FILTER_MAX_PROBES = 8
 
 # Oversampling triggers.
 LOW_CONFIDENCE_BELOW = 0.6
@@ -524,11 +532,18 @@ class BlindDescription:
 
 
 class VerifierBackend(Protocol):
-    """Blindly describes a clip. Implementations MUST NOT receive the claim."""
+    """Blindly describes a clip. Implementations MUST NOT receive the claim.
+
+    ``transcript`` is raw source evidence (anonymized speech from the clip's
+    range) — never claim text; speaker labels are anonymized so diarization
+    naming cannot leak an identity hypothesis into the blind description.
+    """
 
     name: str
 
-    def describe_clip(self, clip_path: Path, *, include_audio: bool = True) -> BlindDescription: ...
+    def describe_clip(
+        self, clip_path: Path, *, include_audio: bool = True, transcript: str | None = None
+    ) -> BlindDescription: ...
 
 
 class FakeVerifierBackend:
@@ -545,40 +560,244 @@ class FakeVerifierBackend:
         self.default = default or BlindDescription()
         self.calls: list[dict[str, Any]] = []
 
-    def describe_clip(self, clip_path: Path, *, include_audio: bool = True) -> BlindDescription:
-        self.calls.append({"clip_path": Path(clip_path), "include_audio": include_audio})
+    def describe_clip(
+        self, clip_path: Path, *, include_audio: bool = True, transcript: str | None = None
+    ) -> BlindDescription:
+        self.calls.append(
+            {"clip_path": Path(clip_path), "include_audio": include_audio, "transcript": transcript}
+        )
         return self.descriptions.get(Path(clip_path).name, self.default)
 
 
-class AzureVerifierBackend:
-    """gpt-5.6-sol (or compatible) blind clip description via Azure OpenAI.
+_BLIND_PROMPT = (
+    "You are describing home-video footage for an archival index. You are given "
+    "still frames sampled from a short clip (each labeled with its clip-relative "
+    "second) and, when available, an anonymized transcript of the speech. "
+    "Describe ONLY what is present. Return compact JSON with exactly these keys: "
+    '{"setting": str (location/scene type), "activities": [str], '
+    '"people_count": int|null (max distinct people visible), '
+    '"visible_text": [str] (any signs/overlays/dates readable in frames), '
+    '"language": str (language(s) spoken), "audio_summary": str (what is said/heard, '
+    "including any names, dates, or places mentioned)}. Do not speculate beyond the "
+    "frames and transcript."
+)
 
-    Config: standard Azure OpenAI env (AZURE_OPENAI_ENDPOINT/API_KEY/API_VERSION,
-    see azure_openai_adapter) plus TAPESPLIT_VERIFIER_BACKEND=azure as the
-    explicit opt-in and TAPESPLIT_VERIFIER_DEPLOYMENT to override the
-    deployment (default gpt-5.6-sol).
+
+def _extract_clip_frames(clip_path: Path) -> list[tuple[float, bytes]]:
+    """Sample (clip_relative_s, jpeg_bytes) frames from an extracted clip."""
+
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(clip_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    try:
+        duration = float(json.loads(probe.stdout or "{}").get("format", {}).get("duration") or 0.0)
+    except (ValueError, TypeError):
+        duration = 0.0
+    duration = max(duration, FRAME_MIN_INTERVAL_S)
+    interval = max(FRAME_MIN_INTERVAL_S, duration / FRAME_MAX_COUNT)
+
+    import tempfile
+
+    frames: list[tuple[float, bytes]] = []
+    with tempfile.TemporaryDirectory(prefix="tapesplit-verify-") as tmp:
+        pattern = str(Path(tmp) / "frame_%04d.jpg")
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(clip_path),
+                "-vf",
+                f"fps=1/{interval:.3f},scale=-2:{FRAME_HEIGHT}",
+                "-q:v",
+                str(FRAME_JPEG_QUALITY),
+                pattern,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        for i, path in enumerate(sorted(Path(tmp).glob("frame_*.jpg"))):
+            frames.append((round(i * interval, 1), path.read_bytes()))
+    return frames
+
+
+def _frame_content_parts(frames: list[tuple[float, bytes]]) -> list[dict[str, Any]]:
+    import base64
+
+    parts: list[dict[str, Any]] = []
+    for t, jpeg in frames:
+        parts.append({"type": "text", "text": f"frame at {t:g}s:"})
+        parts.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii"),
+                    "detail": "low",
+                },
+            }
+        )
+    return parts
+
+
+def _parse_blind_payload(payload: dict[str, Any]) -> BlindDescription:
+    activities = payload.get("activities") or []
+    visible = payload.get("visible_text") or []
+    count = payload.get("people_count")
+    return BlindDescription(
+        setting=str(payload.get("setting") or ""),
+        activities=[str(a) for a in activities if a] if isinstance(activities, list) else [],
+        people_count=int(count) if isinstance(count, (int, float)) else None,
+        visible_text=[str(v) for v in visible if v] if isinstance(visible, list) else [],
+        language=str(payload.get("language") or ""),
+        audio_summary=str(payload.get("audio_summary") or ""),
+        raw=payload,
+    )
+
+
+class AzureVerifierBackend:
+    """gpt-5.6-sol blind clip description via timestamped frame grids.
+
+    sol has no video/audio input (live-verified), so a clip becomes N sampled
+    frames — each preceded by a 'frame at Xs:' label — plus the anonymized
+    transcript. Azure's content filter is known to refuse innocuous family
+    footage; on ``content_policy_violation`` the frame batch is bisected and
+    flagged frames dropped, degrading to a transcript-only description
+    (annotated ``visual_blocked``) if nothing visual survives.
+
+    Config: AZURE_OPENAI_* env plus TAPESPLIT_VERIFIER_BACKEND=azure opt-in;
+    TAPESPLIT_VERIFIER_DEPLOYMENT overrides the deployment.
     """
 
     name = "azure"
 
-    def __init__(self, deployment: str | None = None) -> None:
+    def __init__(
+        self,
+        deployment: str | None = None,
+        project_dir: Path | None = None,
+        completion_fn: Callable[..., dict[str, Any]] | None = None,
+    ) -> None:
         self.deployment = deployment or _verifier_deployment()
+        self.project_dir = project_dir
+        self._completion_fn = completion_fn
 
-    def describe_clip(self, clip_path: Path, *, include_audio: bool = True) -> BlindDescription:
-        from tapesplit.azure_openai_adapter import load_azure_openai_config
+    # -- request plumbing ---------------------------------------------------
+
+    def _completion(self, **kwargs: Any) -> dict[str, Any]:
+        if self._completion_fn is not None:
+            return self._completion_fn(**kwargs)
+        from tapesplit.azure_openai_adapter import reasoning_chat_completion
+
+        return reasoning_chat_completion(**kwargs)
+
+    def _describe_request(
+        self, frames: list[tuple[float, bytes]], transcript: str | None, *, probe: bool = False
+    ) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [{"type": "text", "text": _BLIND_PROMPT}]
+        content.extend(_frame_content_parts(frames))
+        if transcript:
+            content.append(
+                {"type": "text", "text": f"Anonymized transcript of the clip:\n{transcript}"}
+            )
+        if not frames:
+            content.append(
+                {
+                    "type": "text",
+                    "text": "No frames are available for this clip; describe from the "
+                    'transcript alone and set "setting" to what can be inferred.',
+                }
+            )
+        return self._completion(
+            deployment=self.deployment,
+            messages=[{"role": "user", "content": content}],
+            max_completion_tokens=16 if probe else 1500,
+            reasoning_effort="low" if probe else _verifier_effort(),
+            response_format={"type": "json_object"},
+            project_dir=self.project_dir,
+            operation="verify_describe_probe" if probe else "verify_describe",
+        )
+
+    def _admissible_frames(
+        self, frames: list[tuple[float, bytes]], transcript: str | None, budget: list[int]
+    ) -> list[tuple[float, bytes]]:
+        """Largest filter-passing subset of ``frames`` via bisection probes."""
+
+        from tapesplit.azure_openai_adapter import ContentPolicyViolation
+
+        if not frames or budget[0] <= 0:
+            return []
+        budget[0] -= 1
+        try:
+            self._describe_request(frames, transcript, probe=True)
+            return frames
+        except ContentPolicyViolation:
+            if len(frames) == 1:
+                return []
+            mid = len(frames) // 2
+            return self._admissible_frames(frames[:mid], transcript, budget) + self._admissible_frames(
+                frames[mid:], transcript, budget
+            )
+
+    # -- public -------------------------------------------------------------
+
+    def describe_clip(
+        self, clip_path: Path, *, include_audio: bool = True, transcript: str | None = None
+    ) -> BlindDescription:
+        from tapesplit.azure_openai_adapter import (
+            ContentPolicyViolation,
+            load_azure_openai_config,
+        )
 
         config = load_azure_openai_config()
         if not config.configured or not _verifier_opted_in():
             raise VerifierNotConfigured(
                 "Azure verifier needs AZURE_OPENAI_* config and TAPESPLIT_VERIFIER_BACKEND=azure"
             )
-        # SEAM(sol-video-api): the video-input request shape (content part
-        # encoding, size cap handling, api-version) is wired after the live
-        # API probe. Build the request from the blind-description prompt only
-        # — the claim must never appear here.
-        raise NotImplementedError(
-            "AzureVerifierBackend.describe_clip: video request shape pending the gpt-5.6-sol API probe"
-        )
+
+        frames = _extract_clip_frames(clip_path)
+        dropped = 0
+        visual_blocked = False
+        try:
+            result = self._describe_request(frames, transcript if include_audio else None)
+        except ContentPolicyViolation:
+            budget = [CONTENT_FILTER_MAX_PROBES]
+            surviving = self._admissible_frames(frames, transcript, budget)
+            dropped = len(frames) - len(surviving)
+            frames = surviving
+            if not frames:
+                visual_blocked = True
+            result = self._describe_request(frames, transcript if include_audio else None)
+
+        message = ((result.get("choices") or [{}])[0].get("message") or {})
+        try:
+            payload = json.loads(message.get("content") or "{}")
+        except (ValueError, TypeError):
+            payload = {}
+        description = _parse_blind_payload(payload if isinstance(payload, dict) else {})
+        description.raw = {
+            **description.raw,
+            "frames_used": len(frames),
+            "frames_dropped_by_filter": dropped,
+            "visual_blocked": visual_blocked,
+            "deployment": self.deployment,
+        }
+        return description
 
 
 def _verifier_opted_in() -> bool:
@@ -587,6 +806,17 @@ def _verifier_opted_in() -> bool:
 
 def _verifier_deployment() -> str:
     return os.environ.get("TAPESPLIT_VERIFIER_DEPLOYMENT", "").strip() or DEFAULT_VERIFIER_DEPLOYMENT
+
+
+def _verifier_effort() -> str:
+    return os.environ.get("TAPESPLIT_VERIFIER_EFFORT", "").strip() or "medium"
+
+
+def _adjudicator_deployment() -> str:
+    return (
+        os.environ.get("TAPESPLIT_ADJUDICATOR_DEPLOYMENT", "").strip()
+        or DEFAULT_ADJUDICATOR_DEPLOYMENT
+    )
 
 
 def check_verification_config() -> dict[str, Any]:
@@ -604,7 +834,9 @@ def check_verification_config() -> dict[str, Any]:
     }
 
 
-def resolve_verifier_backend(name: str | None = None) -> VerifierBackend | None:
+def resolve_verifier_backend(
+    name: str | None = None, project_dir: Path | None = None
+) -> VerifierBackend | None:
     """The configured verifier backend, or None when verification is off."""
 
     requested = (name or "").strip().lower()
@@ -612,10 +844,83 @@ def resolve_verifier_backend(name: str | None = None) -> VerifierBackend | None:
         from tapesplit.azure_openai_adapter import load_azure_openai_config
 
         if load_azure_openai_config().configured:
-            return AzureVerifierBackend()
+            return AzureVerifierBackend(project_dir=project_dir)
         if requested:
             raise VerifierNotConfigured("Azure OpenAI endpoint/key/api-version not configured")
     return None
+
+
+def resolve_adjudicator(name: str | None = None, project_dir: Path | None = None) -> Adjudicator:
+    """Adjudicator by name: 'llm' → terra semantic judge, else keyword baseline."""
+
+    requested = (name or "").strip().lower()
+    if requested in ("llm", "terra"):
+        return LlmAdjudicator(project_dir=project_dir)
+    return KeywordOverlapAdjudicator()
+
+
+# ---------------------------------------------------------------------------
+# Clip transcripts (blind: raw speech only, anonymized speakers)
+
+
+def _anonymize_speaker(label: str, mapping: dict[str, str]) -> str:
+    if label not in mapping:
+        mapping[label] = f"Speaker {len(mapping) + 1}"
+    return mapping[label]
+
+
+class _TranscriptIndex:
+    """Per-video speech lines for clip ranges; speaker labels anonymized.
+
+    Prefers the diarized segments (they carry cleaner cloud transcripts in
+    metadata.transcript_text); falls back to whisper transcript_segments.
+    Anonymization is deliberate: diarization names ('Filia') are an identity
+    hypothesis, and leaking them into the blind description would let a
+    person_presence claim confirm itself.
+    """
+
+    def __init__(self, project: Path) -> None:
+        self._by_video: dict[str, list[tuple[float, float, str, str]]] = {}
+        speaker_rows = read_jsonl(project / "speaker_segments.jsonl")
+        for row in speaker_rows:
+            text = str((row.get("metadata") or {}).get("transcript_text") or "").strip()
+            if not text:
+                continue
+            video = str(row.get("source_video_id") or "")
+            self._by_video.setdefault(video, []).append(
+                (
+                    float(row.get("start_s") or 0.0),
+                    float(row.get("end_s") or 0.0),
+                    str(row.get("speaker_label") or ""),
+                    text,
+                )
+            )
+        if not self._by_video:
+            for row in read_jsonl(project / "transcript_segments.jsonl"):
+                text = str(row.get("text") or "").strip()
+                if not text:
+                    continue
+                video = str(row.get("source_video_id") or "")
+                self._by_video.setdefault(video, []).append(
+                    (float(row.get("start_s") or 0.0), float(row.get("end_s") or 0.0), "", text)
+                )
+        for rows in self._by_video.values():
+            rows.sort(key=lambda r: r[0])
+
+    def for_range(self, video: str, start_s: float, end_s: float, *, max_chars: int = 4000) -> str | None:
+        rows = self._by_video.get(video) or []
+        mapping: dict[str, str] = {}
+        lines: list[str] = []
+        for seg_start, seg_end, label, text in rows:
+            if seg_end < start_s or seg_start > end_s:
+                continue
+            stamp = max(0.0, seg_start - start_s)
+            who = _anonymize_speaker(label, mapping) if label else "Speaker"
+            lines.append(f"[{stamp:.0f}s] {who}: {text}")
+        if not lines:
+            return None
+        joined = "\n".join(lines)
+        return joined[:max_chars]
 
 
 # ---------------------------------------------------------------------------
@@ -679,6 +984,88 @@ class KeywordOverlapAdjudicator:
                 0.0,
             )
         return Verdict(VERDICT_UNDECIDABLE, f"weak overlap {round(score, 3)}", round(score, 3))
+
+
+_ADJUDICATOR_PROMPT = (
+    "You compare an archival claim about a home-video clip against a BLIND "
+    "description of that clip produced by a model that never saw the claim. "
+    "Judge only whether the description supports or contradicts the claim; "
+    "cross-language matches count (e.g. an English claim supported by Russian "
+    "speech about the same content). Absence of evidence in a short clip is "
+    "UNDECIDABLE, not contradiction — unless the description richly shows "
+    "something incompatible with the claim. Return compact JSON: "
+    '{"verdict": "SUPPORTED"|"CONTRADICTED"|"UNDECIDABLE", '
+    '"reason": str (<=40 words, cite the decisive evidence), '
+    '"confidence": number 0..1}'
+)
+
+
+class LlmAdjudicator:
+    """gpt-5.6-terra semantic adjudication; keyword baseline as fallback.
+
+    Sees the claim AND the blind description — never the footage. Falls back
+    to :class:`KeywordOverlapAdjudicator` on transport errors so a flaky call
+    degrades to the offline verdict instead of losing the sample.
+    """
+
+    def __init__(
+        self,
+        deployment: str | None = None,
+        project_dir: Path | None = None,
+        completion_fn: Callable[..., dict[str, Any]] | None = None,
+    ) -> None:
+        self.deployment = deployment or _adjudicator_deployment()
+        self.name = f"llm-{self.deployment}"
+        self.project_dir = project_dir
+        self._completion_fn = completion_fn
+        self._fallback = KeywordOverlapAdjudicator()
+
+    def _completion(self, **kwargs: Any) -> dict[str, Any]:
+        if self._completion_fn is not None:
+            return self._completion_fn(**kwargs)
+        from tapesplit.azure_openai_adapter import reasoning_chat_completion
+
+        return reasoning_chat_completion(**kwargs)
+
+    def adjudicate(self, claim: Claim, description: BlindDescription) -> Verdict:
+        packet = {
+            "claim_type": claim.claim_type,
+            "claim": claim.text,
+            "claim_keywords": list(claim.keywords)[:12],
+            "clip_seconds": round(claim.end_s - claim.start_s, 1),
+            "blind_description": description.to_payload(),
+            "visual_blocked": bool(description.raw.get("visual_blocked")),
+        }
+        try:
+            result = self._completion(
+                deployment=self.deployment,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": _ADJUDICATOR_PROMPT + "\n\n" + json.dumps(packet, ensure_ascii=False),
+                    }
+                ],
+                max_completion_tokens=350,
+                reasoning_effort="low",
+                response_format={"type": "json_object"},
+                project_dir=self.project_dir,
+                operation="verify_adjudicate",
+            )
+            message = ((result.get("choices") or [{}])[0].get("message") or {})
+            payload = json.loads(message.get("content") or "{}")
+            verdict = str(payload.get("verdict") or "").upper()
+            if verdict not in (VERDICT_SUPPORTED, VERDICT_CONTRADICTED, VERDICT_UNDECIDABLE):
+                raise ValueError(f"bad verdict: {verdict!r}")
+            confidence = payload.get("confidence")
+            score = float(confidence) if isinstance(confidence, (int, float)) else None
+            return Verdict(verdict, str(payload.get("reason") or ""), score)
+        except Exception as exc:  # noqa: BLE001 - degrade, don't lose the sample
+            fallback = self._fallback.adjudicate(claim, description)
+            return Verdict(
+                fallback.verdict,
+                f"llm-fallback ({type(exc).__name__}): {fallback.reason}",
+                fallback.score,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -745,6 +1132,7 @@ def run_verification(
         )
     judge = adjudicator or KeywordOverlapAdjudicator()
     extract = clip_extractor or (lambda plan: extract_clip(plan, force=force_clips))
+    transcripts = _TranscriptIndex(project)
 
     existing = read_jsonl(project / VERIFICATIONS_FILENAME)
     index = _next_verification_index(existing)
@@ -756,8 +1144,14 @@ def run_verification(
         claim = plan.claim
         try:
             clip_path = extract(plan)
-            # Blind protocol: the backend receives the clip and nothing else.
-            description = backend.describe_clip(clip_path, include_audio=True)
+            # Blind protocol: the backend receives the clip and raw anonymized
+            # speech from its range — never the claim.
+            transcript = transcripts.for_range(
+                claim.source_video_id, plan.clip_start_s, plan.clip_end_s
+            )
+            description = backend.describe_clip(
+                clip_path, include_audio=True, transcript=transcript
+            )
         except (RuntimeError, NotImplementedError) as exc:
             errors.append({"claim_id": claim.id, "error": str(exc)})
             continue

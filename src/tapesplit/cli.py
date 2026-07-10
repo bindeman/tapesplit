@@ -1340,6 +1340,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Verifier backend name (azure). Default: TAPESPLIT_VERIFIER_BACKEND.",
     )
     verify_run.add_argument(
+        "--adjudicator",
+        choices=["keyword", "llm"],
+        default="keyword",
+        help="Verdict judge: offline keyword baseline or LLM (terra). Default: keyword.",
+    )
+    verify_run.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the sampled claim/clip plan without extracting or verifying.",
@@ -2387,6 +2393,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "verify":
             from tapesplit.verification import (
                 DEFAULT_SAMPLE_SIZE,
+                resolve_adjudicator,
                 resolve_verifier_backend,
                 run_verification,
                 verification_report,
@@ -2398,12 +2405,22 @@ def main(argv: list[str] | None = None) -> int:
                     if args.types
                     else None
                 )
-                backend = None if args.dry_run else resolve_verifier_backend(args.backend)
+                backend = (
+                    None
+                    if args.dry_run
+                    else resolve_verifier_backend(args.backend, project_dir=args.project)
+                )
+                adjudicator = (
+                    None
+                    if args.dry_run
+                    else resolve_adjudicator(args.adjudicator, project_dir=args.project)
+                )
                 print(
                     json.dumps(
                         run_verification(
                             args.project,
                             backend=backend,
+                            adjudicator=adjudicator,
                             sample_size=(
                                 args.sample_size
                                 if args.sample_size is not None

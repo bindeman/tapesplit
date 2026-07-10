@@ -201,10 +201,11 @@ def test_run_verification_blind_protocol_and_verdicts(tmp_path: Path):
     )
 
     assert result["verified"] == 4
-    # Blind protocol: the backend saw only clip paths + audio flag, never claims.
+    # Blind protocol: the backend saw clip paths, the audio flag, and raw
+    # anonymized transcript context — never claims.
     assert backend.calls
     for call in backend.calls:
-        assert set(call.keys()) == {"clip_path", "include_audio"}
+        assert set(call.keys()) == {"clip_path", "include_audio", "transcript"}
         assert call["clip_path"].suffix == ".mp4"
 
     rows = [json.loads(line) for line in (project / "verifications.jsonl").read_text().splitlines()]
@@ -380,3 +381,235 @@ def test_cli_verify_dry_run_and_report(tmp_path: Path, capsys):
     assert main(["verify", "report", str(project)]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["verifications"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Azure frames backend + LLM adjudicator (fakes only — no network)
+
+
+def _sol_response(content: dict) -> dict:
+    return {
+        "choices": [{"message": {"content": json.dumps(content)}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+
+
+def test_azure_backend_builds_blind_frame_request(tmp_path: Path, monkeypatch):
+    from tapesplit.verification import AzureVerifierBackend, _frame_content_parts
+
+    monkeypatch.setenv("TAPESPLIT_VERIFIER_BACKEND", "azure")
+    calls = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return _sol_response(
+            {
+                "setting": "backyard",
+                "activities": ["birthday cake"],
+                "people_count": 3,
+                "visible_text": [],
+                "language": "Russian",
+                "audio_summary": "singing happy birthday",
+            }
+        )
+
+    backend = AzureVerifierBackend(completion_fn=fake_completion)
+    monkeypatch.setattr(
+        "tapesplit.verification._extract_clip_frames",
+        lambda _p: [(0.0, b"jpeg-a"), (2.0, b"jpeg-b")],
+    )
+    monkeypatch.setattr(
+        "tapesplit.azure_openai_adapter.load_azure_openai_config",
+        lambda env_path=None: type(
+            "C", (), {"configured": True}
+        )(),
+    )
+
+    description = backend.describe_clip(
+        tmp_path / "clip.mp4", transcript="[0s] Speaker 1: привет"
+    )
+    assert description.setting == "backyard"
+    assert description.people_count == 3
+    assert description.raw["frames_used"] == 2
+    assert description.raw["visual_blocked"] is False
+
+    content = calls[0]["messages"][0]["content"]
+    joined = json.dumps(content)
+    # Blind protocol: frames + transcript only; frame labels carry timestamps.
+    assert "frame at 0s:" in joined and "frame at 2s:" in joined
+    assert "Speaker 1" in joined
+    # image parts are data-URI JPEG at low detail
+    images = [p for p in content if p.get("type") == "image_url"]
+    assert len(images) == 2
+    assert images[0]["image_url"]["detail"] == "low"
+    assert images[0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    parts = _frame_content_parts([(4.0, b"x")])
+    assert parts[0]["text"] == "frame at 4s:"
+
+
+def test_azure_backend_bisects_on_content_policy_violation(tmp_path: Path, monkeypatch):
+    from tapesplit.azure_openai_adapter import ContentPolicyViolation
+    from tapesplit.verification import AzureVerifierBackend
+
+    monkeypatch.setenv("TAPESPLIT_VERIFIER_BACKEND", "azure")
+    frames = [(float(i), f"jpeg-{i}".encode()) for i in range(4)]
+    # frame index 2 is "flagged": any request containing it violates policy.
+    flagged = b"jpeg-2"
+
+    def fake_completion(**kwargs):
+        joined = json.dumps(kwargs["messages"][0]["content"])
+        import base64
+
+        if base64.b64encode(flagged).decode("ascii") in joined:
+            raise ContentPolicyViolation("content_policy_violation")
+        if kwargs["max_completion_tokens"] <= 16:
+            return _sol_response({})  # probe pass
+        return _sol_response(
+            {"setting": "kitchen", "activities": [], "people_count": 1,
+             "visible_text": [], "language": "", "audio_summary": ""}
+        )
+
+    backend = AzureVerifierBackend(completion_fn=fake_completion)
+    monkeypatch.setattr("tapesplit.verification._extract_clip_frames", lambda _p: list(frames))
+    monkeypatch.setattr(
+        "tapesplit.azure_openai_adapter.load_azure_openai_config",
+        lambda env_path=None: type("C", (), {"configured": True})(),
+    )
+
+    description = backend.describe_clip(tmp_path / "clip.mp4")
+    assert description.setting == "kitchen"
+    assert description.raw["frames_used"] == 3
+    assert description.raw["frames_dropped_by_filter"] == 1
+    assert description.raw["visual_blocked"] is False
+
+
+def test_azure_backend_degrades_to_transcript_only_when_all_frames_blocked(
+    tmp_path: Path, monkeypatch
+):
+    from tapesplit.azure_openai_adapter import ContentPolicyViolation
+    from tapesplit.verification import AzureVerifierBackend
+
+    monkeypatch.setenv("TAPESPLIT_VERIFIER_BACKEND", "azure")
+
+    def fake_completion(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        if any(p.get("type") == "image_url" for p in content):
+            raise ContentPolicyViolation("content_policy_violation")
+        return _sol_response(
+            {"setting": "unknown (from speech)", "activities": [], "people_count": None,
+             "visible_text": [], "language": "Russian", "audio_summary": "bath time chatter"}
+        )
+
+    backend = AzureVerifierBackend(completion_fn=fake_completion)
+    monkeypatch.setattr(
+        "tapesplit.verification._extract_clip_frames", lambda _p: [(0.0, b"a"), (2.0, b"b")]
+    )
+    monkeypatch.setattr(
+        "tapesplit.azure_openai_adapter.load_azure_openai_config",
+        lambda env_path=None: type("C", (), {"configured": True})(),
+    )
+
+    description = backend.describe_clip(tmp_path / "clip.mp4", transcript="[0s] Speaker 1: буль")
+    assert description.raw["visual_blocked"] is True
+    assert description.raw["frames_used"] == 0
+    assert "bath" in description.audio_summary
+
+
+def test_llm_adjudicator_verdicts_and_fallback():
+    from tapesplit.verification import Claim, LlmAdjudicator
+
+    claim = Claim(
+        id="c1",
+        claim_type="event_content",
+        action="confirm_event",
+        source_video_id="video_000001",
+        start_s=0.0,
+        end_s=30.0,
+        text="Backyard birthday party",
+        keywords=("backyard", "birthday", "party"),
+        target_id="canonical_event_000001",
+        target_type="canonical_event",
+    )
+    description = BlindDescription(setting="backyard", activities=["birthday cake"], audio_summary="")
+
+    def good(**kwargs):
+        return _sol_response(
+            {"verdict": "SUPPORTED", "reason": "cake and backyard match", "confidence": 0.9}
+        )
+
+    judge = LlmAdjudicator(completion_fn=good)
+    verdict = judge.adjudicate(claim, description)
+    assert verdict.verdict == "SUPPORTED" and verdict.score == 0.9
+    assert judge.name.startswith("llm-")
+
+    def broken(**kwargs):
+        raise RuntimeError("503")
+
+    fallback_judge = LlmAdjudicator(completion_fn=broken)
+    fallback = fallback_judge.adjudicate(claim, description)
+    # degrades to the keyword baseline instead of losing the sample
+    assert fallback.verdict == "SUPPORTED"
+    assert fallback.reason.startswith("llm-fallback")
+
+
+def test_transcript_index_anonymizes_speakers_and_scopes_range(tmp_path: Path):
+    from tapesplit.verification import _TranscriptIndex
+
+    project = _project(tmp_path)
+    for i, (start, end, label, text) in enumerate(
+        [
+            (10.0, 12.0, "Filia", "смотри на камеру"),
+            (13.0, 15.0, "Ekaterina", "улыбнись"),
+            (16.0, 18.0, "Filia", "готово"),
+            (500.0, 502.0, "Ekaterina", "вне диапазона"),
+        ]
+    ):
+        append_jsonl(
+            project / "speaker_segments.jsonl",
+            {
+                "id": f"speaker_segment_{i:06d}",
+                "source_video_id": "video_000001",
+                "start_s": start,
+                "end_s": end,
+                "speaker_label": label,
+                "provider": "azure_openai",
+                "metadata": {"transcript_text": text},
+            },
+        )
+
+    index = _TranscriptIndex(project)
+    transcript = index.for_range("video_000001", 8.0, 20.0)
+    assert transcript is not None
+    # diarization names must NOT leak into the blind channel
+    assert "Filia" not in transcript and "Ekaterina" not in transcript
+    assert "Speaker 1" in transcript and "Speaker 2" in transcript
+    assert "вне диапазона" not in transcript
+    # same speaker keeps the same anonymous handle
+    assert transcript.count("Speaker 1") == 2
+
+
+def test_run_verification_passes_transcript_to_backend(tmp_path: Path):
+    project = _project(tmp_path)
+    _seed_claim_artifacts(project)
+    append_jsonl(
+        project / "speaker_segments.jsonl",
+        {
+            "id": "speaker_segment_000001",
+            "source_video_id": "video_000001",
+            "start_s": 1.0,
+            "end_s": 4.0,
+            "speaker_label": "Filia",
+            "metadata": {"transcript_text": "с днем рождения"},
+        },
+    )
+    backend = FakeVerifierBackend(default=BlindDescription(setting="backyard"))
+    run_verification(
+        project,
+        backend=backend,
+        sample_size=4,
+        seed=1,
+        clip_extractor=_fake_extractor,
+    )
+    transcripts = [c["transcript"] for c in backend.calls if c["transcript"]]
+    assert transcripts, "expected at least one clip to carry transcript context"
+    assert all("Filia" not in t for t in transcripts)
