@@ -235,6 +235,26 @@ claims alongside them into `claim_store.sqlite3` in the project dir
 it proves the v1 artifact is regenerable from live claims byte-for-byte
 (exit 1 on drift).
 
+### Date model (v2 M2)
+
+`src/tapesplit/date_model.py` gives every date reference an origin from a
+fixed taxonomy (`overlay_datestamp`, `narrated_current`,
+`narrated_historical`, `handwritten`, `era_estimate`, `age_anchor`,
+`exif_capture`, `exif_scan`) and every medium a plausible **capture window**
+(`capture_windows.jsonl`) fused from day-precision camcorder datestamp
+overlays (trusted core), narrated full dates and bare on-screen years
+(admitted only near the core — historical signage like "1900" on a plaque
+cannot widen a window), and container/EXIF dates (stamps far from the core
+classify as `exif_scan`, i.e. digitization dates, and are excluded). During
+`build-groups`, each date group is classified against its media's window:
+full dates outside the window become `narrated_historical` even when the
+extractor missed them; in-window bare years stay excluded from chronology
+but route to `resolve_date` review; unclassifiable clues carry
+`origin: null`, which the schema contract only permits on review-flagged
+groups. Both artifacts dual-write date claims, and
+`tapesplit claims diff --artifact date_groups.jsonl|capture_windows.jsonl`
+extends the oracle gate to the date model.
+
 ## Extending
 
 To add a stage: write a run function taking `StageContext`, declare the

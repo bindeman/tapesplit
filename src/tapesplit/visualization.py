@@ -1081,6 +1081,8 @@ def _review_queues(
                     "date_value": date.get("date_value"),
                     "precision": date.get("precision"),
                     "excluded_as_event_date": date.get("excluded_as_event_date"),
+                    "origin": date.get("origin"),
+                    "capture_window_check": date.get("capture_window_check"),
                 },
                 "actions": ["confirm_event_date", "mark_historical_context", "edit_date"],
             }
@@ -1750,6 +1752,8 @@ def _date_ref(row: dict[str, Any]) -> dict[str, Any]:
         "precision": row.get("precision"),
         "excluded_as_event_date": bool(row.get("excluded_as_event_date")),
         "source_kind": row.get("source_kind"),
+        "origin": row.get("origin"),
+        "capture_window_check": row.get("capture_window_check"),
     }
 
 

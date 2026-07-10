@@ -253,7 +253,7 @@ diff continuously, cut over per module, retire v1 artifacts last.
 | # | Module | What happens | Gate | Effort |
 |---|---|---|---|---|
 | M1 | Claim substrate | Storage + schema + validators; importers dual-write claims alongside v1 artifacts; `media.jsonl` + `source_media_id` shim | Round-trip: v1 artifacts regenerable from claims byte-for-byte for one full rebuild | 3–4 d |
-| M2 | Date model | Origin enum, capture windows, DateRef contract to UI | Zero impossible years in chrono view; grounded precision on date claims ≥ v1 | 1–2 d |
+| M2 | Date model | Origin enum, capture windows, DateRef contract to UI — **landed** (`date_model.py`; per-media windows in `capture_windows.jsonl`; 1912/1922/1974/1870 auto-classify `narrated_historical` from windows alone, no UI filter; oracle diff green on both date artifacts) | Zero impossible years in chrono view; grounded precision on date claims ≥ v1 | 1–2 d |
 | M3 | Context model | GeoContext/EraContext split, segment continuity, anchors, contradiction guard, 110-correction remediation | Fleet's named conflations resolve correctly (Moscow-Russia vs Idaho vs Eugene vs Wisconsin); place-claim grounded precision ≥ v1 | 3–5 d |
 | M4 | Event assembly | Stitcher consumes claims; temporal_basis-aware grouping | Event diff vs v1 reviewed; event grounded precision ≥ v1 (chunked tapes must exceed v1's 74%) | 2–3 d |
 | M5 | Evidence compaction | 27MB evidence.jsonl → indexed claim store; graph edges reference claims | Rebuild wall-time and artifact size drop; no consumer regression | 1–2 d |

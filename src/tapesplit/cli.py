@@ -537,7 +537,13 @@ def _build_parser() -> argparse.ArgumentParser:
     claims_diff.add_argument(
         "--artifact",
         default="gemini_events.jsonl",
-        choices=["gemini_events.jsonl", "heuristic_events.jsonl", "corrections.jsonl"],
+        choices=[
+            "gemini_events.jsonl",
+            "heuristic_events.jsonl",
+            "corrections.jsonl",
+            "date_groups.jsonl",
+            "capture_windows.jsonl",
+        ],
         help="v1 artifact to diff against the claim store.",
     )
     claims_backfill = claims_subparsers.add_parser(

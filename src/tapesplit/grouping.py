@@ -7,6 +7,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from tapesplit import date_model
+from tapesplit.claim_store import DualWriter
 from tapesplit.event_stitching import load_source_events
 from tapesplit.place_roles import events_with_role_filtered_places, infer_event_place_roles
 from tapesplit.storage import append_jsonl, read_jsonl
@@ -314,7 +316,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     people_groups = _build_people_groups(context_events, evidence_by_id, person_alias_keys)
     place_groups = _build_place_groups(context_events, evidence_by_id)
     event_continuity_contexts = _build_event_continuity_contexts(context_events, evidence_by_id)
-    date_groups = _build_date_groups(context_events, evidence_by_id)
+    date_groups, capture_windows = _build_date_groups(context_events, evidence_by_id, project=project)
     language_groups = _build_language_groups(context_events, evidence_by_id)
     event_groups = _build_event_groups(context_events, date_groups)
     albums = _build_albums(events, event_groups, evidence_by_id)
@@ -325,6 +327,7 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "people_groups": project / "people_groups.jsonl",
         "place_groups": project / "place_groups.jsonl",
         "date_groups": project / "date_groups.jsonl",
+        "capture_windows": project / date_model.CAPTURE_WINDOWS_FILENAME,
         "language_groups": project / "language_groups.jsonl",
         "event_groups": project / "event_groups.jsonl",
         "albums": project / "albums.jsonl",
@@ -334,9 +337,12 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     _write_jsonl(outputs["people_groups"], people_groups)
     _write_jsonl(outputs["place_groups"], place_groups)
     _write_jsonl(outputs["date_groups"], date_groups)
+    _write_jsonl(outputs["capture_windows"], capture_windows)
     _write_jsonl(outputs["language_groups"], language_groups)
     _write_jsonl(outputs["event_groups"], event_groups)
     _write_jsonl(outputs["albums"], albums)
+
+    date_claims = _dual_write_date_claims(project, date_groups, capture_windows)
 
     return {
         "project": str(project),
@@ -347,9 +353,11 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "people_groups": len(people_groups),
         "place_groups": len(place_groups),
         "date_groups": len(date_groups),
+        "capture_windows": len(capture_windows),
         "language_groups": len(language_groups),
         "event_groups": len(event_groups),
         "albums": len(albums),
+        "date_claims": date_claims,
         "outputs": {name: str(path) for name, path in outputs.items()},
     }
 
@@ -544,7 +552,9 @@ def _build_place_groups(
 def _build_date_groups(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
-) -> list[dict[str, Any]]:
+    *,
+    project: Path | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     buckets: dict[str, dict[str, Any]] = {}
     for event in events:
         for date_text in _metadata_list(event, "date_candidates"):
@@ -574,35 +584,122 @@ def _build_date_groups(
                 }
             )
 
+    # M2 date model: capture windows first (narrated full dates corroborate
+    # them), then per-group origin classification against the windows.
+    ordered = sorted(buckets.items())
+    media_ids_by_key: dict[str, list[str]] = {}
+    narrated_day_years: dict[str, list[int]] = {}
+    for key, bucket in ordered:
+        events_for_group = _unique_events(bucket["events"])
+        evidence_ids = _event_evidence_ids(events_for_group)
+        media_ids = _source_video_ids(evidence_ids, evidence_by_id)
+        media_ids_by_key[key] = media_ids
+        parsed = bucket["parsed"]
+        year = date_model._year_of(parsed.get("date_value"))
+        if parsed.get("precision") == "day" and year is not None:
+            for media_id in media_ids:
+                narrated_day_years.setdefault(media_id, []).append(year)
+
+    overlays_by_media: dict[str, list[dict[str, Any]]] = {}
+    windows_by_media: dict[str, dict[str, Any]] = {}
+    capture_windows: list[dict[str, Any]] = []
+    if project is not None:
+        overlays_by_media = date_model.overlay_datestamps(project)
+        all_media = [str(row.get("id")) for row in read_jsonl(project / "tapes.jsonl") if row.get("id")]
+        capture_windows = date_model.build_capture_windows(
+            project, narrated_day_years=narrated_day_years, media_ids=all_media
+        )
+        windows_by_media = {row["media_id"]: row for row in capture_windows}
+
     groups = []
-    for index, (key, bucket) in enumerate(sorted(buckets.items()), start=1):
+    for index, (key, bucket) in enumerate(ordered, start=1):
         parsed = bucket["parsed"]
         labels = _sorted_labels(bucket["labels"])
         events_for_group = _unique_events(bucket["events"])
         evidence_ids = _event_evidence_ids(events_for_group)
-        excluded = bool(parsed["excluded_as_event_date"])
-        review_status = "needs_review" if excluded or len(labels) > 1 else "unreviewed"
+        media_ids = media_ids_by_key.get(key, [])
+        classification = date_model.classify_date_group(
+            parsed,
+            media_ids=media_ids,
+            windows_by_media=windows_by_media,
+            overlays_by_media=overlays_by_media,
+        )
+        excluded = classification["excluded_as_event_date"]
+        review_status = (
+            "needs_review"
+            if classification["needs_review"] or excluded or len(labels) > 1
+            else "unreviewed"
+        )
         groups.append(
             {
                 "id": f"date_group_{index:06d}",
                 "label": labels[0],
                 "date_value": parsed["date_value"],
                 "precision": parsed["precision"],
-                "source_kind": parsed["source_kind"],
+                "source_kind": date_model.legacy_source_kind(classification["origin"], excluded),
+                "origin": classification["origin"],
+                "capture_window_check": classification["capture_window_check"],
                 "excluded_as_event_date": excluded,
                 "canonical_event_ids": _event_ids(events_for_group),
                 "evidence_ids": evidence_ids,
-                "source_video_ids": _source_video_ids(evidence_ids, evidence_by_id),
+                "source_video_ids": media_ids,
                 "first_start_s": _first_start(events_for_group),
                 "last_end_s": _last_end(events_for_group),
                 "confidence": _group_confidence(events_for_group, review_penalty=0.25 if excluded else 0.0),
                 "review_status": review_status,
                 "supporting_mentions": bucket["mentions"],
-                "notes": _date_notes(parsed),
+                "notes": _date_notes(parsed) + classification["classification_notes"],
                 "metadata": {"normalized_key": key, "aliases": labels},
             }
         )
-    return groups
+    return groups, capture_windows
+
+
+def _dual_write_date_claims(
+    project: Path,
+    date_groups: list[dict[str, Any]],
+    capture_windows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Mirror date groups and capture windows into the claim substrate."""
+
+    summaries: dict[str, Any] = {}
+    for artifact, rows, assertion_of in (
+        (
+            "date_groups.jsonl",
+            date_groups,
+            lambda row: {
+                "date_value": row.get("date_value"),
+                "precision": row.get("precision"),
+                "origin": row.get("origin"),
+                "capture_window_check": row.get("capture_window_check"),
+                "excluded_as_event_date": row.get("excluded_as_event_date"),
+                "label": row.get("label"),
+                "canonical_event_ids": row.get("canonical_event_ids"),
+            },
+        ),
+        (
+            date_model.CAPTURE_WINDOWS_FILENAME,
+            capture_windows,
+            lambda row: {
+                "capture_window": {"start_year": row.get("start_year"), "end_year": row.get("end_year")},
+                "basis": row.get("basis"),
+            },
+        ),
+    ):
+        dual = DualWriter.open(project, artifact=artifact, producer="grouping/date_model_v2")
+        dual.supersede_previous()
+        for row in rows:
+            media_ids = row.get("source_video_ids") or ([row["media_id"]] if row.get("media_id") else [])
+            dual.write_row(
+                row,
+                kind="date",
+                media_id=media_ids[0] if len(media_ids) == 1 else None,
+                confidence=row.get("confidence"),
+                assertion=assertion_of(row),
+            )
+        summaries[artifact] = dual.summary()
+        dual.close()
+    return summaries
 
 
 def _build_language_groups(

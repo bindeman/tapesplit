@@ -473,6 +473,8 @@ def backfill_project_claims(project_dir: Path) -> dict[str, Any]:
             ("gemini_events.jsonl", "event", "source"),
             ("heuristic_events.jsonl", "event", "source"),
             ("corrections.jsonl", "human_action", "reviewer"),
+            ("date_groups.jsonl", "date", "producer"),
+            ("capture_windows.jsonl", "date", "producer"),
         ):
             rows = read_jsonl(project / artifact)
             existing = store.existing_v1_ids(artifact)
