@@ -40,6 +40,7 @@ import {
 } from "./api";
 import type {
   AlbumRecord,
+  DateRef,
   EventEntry,
   EventRecord,
   FaceObservation,
@@ -113,6 +114,7 @@ export function App() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [openEvent, setOpenEvent] = useState<EventRecord | null>(null);
   const [openPerson, setOpenPerson] = useState<PersonRecord | null>(null);
+  const [openAlbum, setOpenAlbum] = useState<AlbumRecord | null>(null);
 
   async function refresh(nextStatus = "") {
     setBusy(true);
@@ -131,6 +133,71 @@ export function App() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  const deepLinkedRef = useRef(false);
+  useEffect(() => {
+    if (!bundle || deepLinkedRef.current) {
+      return;
+    }
+    deepLinkedRef.current = true;
+    const eventId = new URLSearchParams(window.location.search).get("event");
+    if (eventId) {
+      const match = bundle.data.timeline.events.find((event) => event.id === eventId);
+      if (match) {
+        setOpenEvent(match);
+      }
+    }
+  }, [bundle]);
+
+  const navigableEvents = useMemo(
+    () => splitByRelatedness(bundle?.data.timeline.events ?? []).related,
+    [bundle],
+  );
+
+  useEffect(() => {
+    function onKeyDown(keyEvent: KeyboardEvent) {
+      const target = keyEvent.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (keyEvent.key === "Escape") {
+        if (activeMoment) setActiveMoment(null);
+        else if (openEvent) setOpenEvent(null);
+        else if (openAlbum) setOpenAlbum(null);
+        else if (openPerson) setOpenPerson(null);
+        else if (reviewOpen) setReviewOpen(false);
+        return;
+      }
+      if ((keyEvent.key === "ArrowLeft" || keyEvent.key === "ArrowRight") && openEvent) {
+        const index = navigableEvents.findIndex((event) => event.id === openEvent.id);
+        if (index === -1) {
+          return;
+        }
+        const next = navigableEvents[index + (keyEvent.key === "ArrowRight" ? 1 : -1)];
+        if (next) {
+          keyEvent.preventDefault();
+          setOpenEvent(next);
+        }
+        return;
+      }
+      if (keyEvent.key === " ") {
+        const video = document.querySelector<HTMLVideoElement>(".miniplayer video");
+        if (video) {
+          keyEvent.preventDefault();
+          if (video.paused) void video.play().catch(() => undefined);
+          else video.pause();
+        } else if (openEvent && bundle) {
+          keyEvent.preventDefault();
+          playEvent(openEvent, bundle.data.media, setActiveMoment);
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeMoment, openEvent, openAlbum, openPerson, reviewOpen, navigableEvents, bundle]);
 
   const primaryReviewItems = bundle?.data.review_queue ?? [];
   const reviewBacklog = bundle?.data.review_backlog ?? [];
@@ -325,8 +392,10 @@ export function App() {
           <LibraryView
             events={bundle.data.timeline.events}
             media={bundle.data.media}
+            albums={bundle.data.tracks.albums}
             summary={bundle.data.summary}
             onOpen={setOpenEvent}
+            onOpenAlbum={setOpenAlbum}
           />
         )}
         {view === "people" && (
@@ -385,6 +454,19 @@ export function App() {
             setOpenEvent(event);
           }}
           onPlay={setActiveMoment}
+        />
+      )}
+
+      {openAlbum && (
+        <AlbumSheet
+          album={openAlbum}
+          events={bundle.data.timeline.events}
+          media={bundle.data.media}
+          onClose={() => setOpenAlbum(null)}
+          onOpenEvent={(event) => {
+            setOpenAlbum(null);
+            setOpenEvent(event);
+          }}
         />
       )}
 
@@ -475,17 +557,26 @@ export function App() {
 function LibraryView({
   events,
   media,
+  albums,
   summary,
   onOpen,
+  onOpenAlbum,
 }: {
   events: EventRecord[];
   media: MediaRecord[];
+  albums: AlbumRecord[];
   summary: Record<string, number>;
   onOpen: (event: EventRecord) => void;
+  onOpenAlbum: (album: AlbumRecord) => void;
 }) {
-  const [sort, setSort] = useState<LibrarySort>("tape");
+  const [sort, setSort] = useState<LibrarySort>(() => {
+    const requested = new URLSearchParams(window.location.search).get("sort");
+    return requested === "chrono" || requested === "place" ? requested : "tape";
+  });
   const { related, unrelated } = useMemo(() => splitByRelatedness(events), [events]);
   const groups = useMemo(() => libraryGroups(related, media, sort), [related, media, sort]);
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const memories = useMemo(() => memoriesRowAlbums(albums), [albums]);
   const totalHours = Math.round(media.reduce((acc, tape) => acc + (tape.duration_s ?? 0), 0) / 3600);
 
   return (
@@ -513,6 +604,29 @@ function LibraryView({
           </div>
         </div>
       </header>
+
+      {memories.length > 0 && (
+        <div className="memories-row" aria-label="Memories">
+          {(() => {
+            const usedCovers = new Set<string>();
+            return memories.map((album) => {
+              const cover = albumCoverPath(album, eventsById, usedCovers);
+              if (cover) {
+                usedCovers.add(cover);
+              }
+              return (
+                <button key={album.id} className="memory-card" onClick={() => onOpenAlbum(album)}>
+                  {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="card-fallback"><CalendarDays size={26} /></div>}
+                  <span className="memory-shade">
+                    <strong>{album.title}</strong>
+                    <small>{memoryDateLabel(album)}</small>
+                  </span>
+                </button>
+              );
+            });
+          })()}
+        </div>
+      )}
 
       {groups.map((group) => (
         <section key={group.key} className="library-group">
@@ -559,7 +673,7 @@ function EventCard({
 }) {
   const image = event.thumbnail_path || event.keyframe_path;
   const year = eventYear(event);
-  const place = event.places[0]?.label;
+  const place = placeDisplayLabel(event.places[0]?.label);
   const subtitle = [year, place, formatEventDuration(event)].filter(Boolean).join(" · ");
   const [previewing, setPreviewing] = useState(false);
   const hoverTimer = useRef<number | null>(null);
@@ -644,10 +758,12 @@ function EventSheet({
     [event.id, reviewItems],
   );
   const summaryText = event.reconciliation?.reconciled_summary || event.summary;
+  const recordedDate = event.dates.find((date) => date.date_value && plausibleEventDate(date))?.date_value;
+  const mentionedDates = event.dates.filter((date) => !plausibleEventDate(date));
   const byline = [
     event.event_type ? humanizeToken(event.event_type) : null,
     eventYear(event),
-    event.dates.find((date) => date.date_value)?.date_value,
+    recordedDate,
   ]
     .filter(Boolean)
     .slice(0, 2)
@@ -669,6 +785,15 @@ function EventSheet({
           <header>
             <h1>{event.title}</h1>
             {byline && <p className="byline">{byline}</p>}
+            {mentionedDates.length > 0 && (
+              <p className="historical-row">
+                {mentionedDates.slice(0, 3).map((date) => (
+                  <span key={date.id} className="historical-chip" title="Mentioned in narration — not the recording date">
+                    mentioned: {date.label || date.date_value} · historical
+                  </span>
+                ))}
+              </p>
+            )}
           </header>
 
           {(event.people.length > 0 || event.places.length > 0) && (
@@ -679,14 +804,14 @@ function EventSheet({
                 return (
                   <span key={ref.id} className="person-bubble">
                     {thumb ? <img src={assetUrl(thumb)} alt="" /> : <i>{personInitials(ref.label)}</i>}
-                    {ref.label}
+                    {personDisplayName(ref.label)}
                   </span>
                 );
               })}
               {event.places.slice(0, 4).map((ref) => (
                 <span key={ref.id} className="place-pill">
                   <MapPin size={12} />
-                  {ref.label}
+                  {placeDisplayLabel(ref.label)}
                 </span>
               ))}
             </div>
@@ -731,34 +856,58 @@ function EventSheet({
 }
 
 function PeopleWall({ people, onSelect }: { people: PersonRecord[]; onSelect: (person: PersonRecord) => void }) {
-  const { named, roles } = useMemo(() => {
-    const named: PersonRecord[] = [];
+  const { faces, faceless, roles } = useMemo(() => {
+    const faces: PersonRecord[] = [];
+    const faceless: PersonRecord[] = [];
     const roles: PersonRecord[] = [];
     for (const person of people) {
-      (person.kind === "role_candidate" ? roles : named).push(person);
+      if (person.kind === "role_candidate") {
+        roles.push(person);
+      } else if (primaryPersonThumb(person)) {
+        faces.push(person);
+      } else {
+        faceless.push(person);
+      }
     }
-    const count = (person: PersonRecord) => person.appearances?.length || person.appearance_count || 0;
-    const byCount = (a: PersonRecord, b: PersonRecord) => count(b) - count(a);
-    named.sort(byCount);
+    const byCount = (a: PersonRecord, b: PersonRecord) => appearanceCount(b) - appearanceCount(a);
+    faces.sort(byCount);
+    faceless.sort(byCount);
     roles.sort(byCount);
-    return { named, roles };
+    return { faces, faceless, roles };
   }, [people]);
 
   return (
     <section className="people-wall">
       <header className="stage-hero">
         <h1>People</h1>
-        <p>{named.length} people across the tapes</p>
+        <p>{faces.length + faceless.length === 1 ? "1 person" : `${faces.length + faceless.length} people`} across the tapes</p>
       </header>
       <div className="avatar-grid">
-        {named.map((person) => (
+        {faces.map((person) => (
           <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
             <PersonAvatar person={person} size="large" />
-            <strong>{person.label}</strong>
+            <strong>{personDisplayName(person.label)}</strong>
             <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
           </button>
         ))}
       </div>
+      {faceless.length > 0 && (
+        <details className="offcuts">
+          <summary>
+            <ChevronRight size={15} className="chevron" />
+            Heard or mentioned, no face yet ({faceless.length})
+          </summary>
+          <div className="avatar-grid compact">
+            {faceless.map((person) => (
+              <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+                <PersonAvatar person={person} />
+                <strong>{personDisplayName(person.label)}</strong>
+                <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
       {roles.length > 0 && (
         <details className="offcuts">
           <summary>
@@ -769,8 +918,8 @@ function PeopleWall({ people, onSelect }: { people: PersonRecord[]; onSelect: (p
             {roles.map((person) => (
               <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
                 <PersonAvatar person={person} />
-                <strong>{person.label}</strong>
-                <span>{appearanceCount(person)}</span>
+                <strong>{personDisplayName(person.label)}</strong>
+                <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
               </button>
             ))}
           </div>
@@ -831,9 +980,9 @@ function PersonSheet({
           <header className="person-head">
             <PersonAvatar person={person} size="large" />
             <div>
-              <h1>{person.label}</h1>
+              <h1>{personDisplayName(person.label)}</h1>
               <p className="byline">
-                {person.aliases.length > 0 && `also ${person.aliases.slice(0, 4).join(", ")} · `}
+                {personAliasByline(person) && `also known as ${personAliasByline(person)} · `}
                 {appearances.length} {appearances.length === 1 ? "event" : "events"}
               </p>
             </div>
@@ -851,6 +1000,57 @@ function PersonSheet({
                 </button>
               );
             })}
+          </div>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function AlbumSheet({
+  album,
+  events,
+  media,
+  onClose,
+  onOpenEvent,
+}: {
+  album: AlbumRecord;
+  events: EventRecord[];
+  media: MediaRecord[];
+  onClose: () => void;
+  onOpenEvent: (event: EventRecord) => void;
+}) {
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const cover = albumCoverPath(album, eventsById);
+  const albumEvents = (album.events ?? [])
+    .map((entry) => eventsById.get(entry.event_id))
+    .filter((event): event is EventRecord => Boolean(event));
+  const byline = [
+    album.date_label,
+    placeDisplayLabel(album.place_label),
+    (album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="sheet-scrim" onClick={onClose}>
+      <article className="event-sheet" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+        <button className="sheet-close" onClick={onClose} aria-label="Close">
+          <X size={16} />
+        </button>
+        <div className="sheet-hero">
+          {cover ? <img src={assetUrl(cover)} alt="" /> : <div className="card-fallback tall"><CalendarDays size={40} /></div>}
+        </div>
+        <div className="sheet-body">
+          <header>
+            <h1>{album.title}</h1>
+            {byline && <p className="byline">{byline}</p>}
+          </header>
+          <div className="event-grid">
+            {albumEvents.map((event) => (
+              <EventCard key={event.id} event={event} media={media} onOpen={onOpenEvent} />
+            ))}
           </div>
         </div>
       </article>
@@ -906,7 +1106,7 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
   if (sort === "place") {
     const byPlace = new Map<string, EventRecord[]>();
     for (const event of events) {
-      const place = event.places[0]?.label || "No place identified";
+      const place = placeDisplayLabel(event.places[0]?.label) || "No place identified";
       (byPlace.get(place) ?? byPlace.set(place, []).get(place))!.push(event);
     }
     const keys = [...byPlace.keys()].sort((a, b) => {
@@ -948,17 +1148,27 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
 const EARLIEST_PLAUSIBLE_YEAR = 1970;
 const LATEST_PLAUSIBLE_YEAR = new Date().getFullYear();
 
+// A date can anchor an event only if the pipeline didn't exclude it and its
+// year sits inside the camcorder era; anything else is narration history.
+function plausibleEventDate(date: DateRef): boolean {
+  if (date.excluded_as_event_date) {
+    return false;
+  }
+  const match = /(19|20)\d{2}/.exec(date.date_value ?? date.label ?? "");
+  if (!match) {
+    return true;
+  }
+  const year = Number(match[0]);
+  return year >= EARLIEST_PLAUSIBLE_YEAR && year <= LATEST_PLAUSIBLE_YEAR;
+}
+
 function eventYear(event: EventRecord): string {
   for (const date of event.dates ?? []) {
-    if (date.excluded_as_event_date) {
+    if (!plausibleEventDate(date)) {
       continue;
     }
     const match = /(19|20)\d{2}/.exec(date.date_value ?? date.label ?? "");
-    if (!match) {
-      continue;
-    }
-    const year = Number(match[0]);
-    if (year >= EARLIEST_PLAUSIBLE_YEAR && year <= LATEST_PLAUSIBLE_YEAR) {
+    if (match) {
       return match[0];
     }
   }
@@ -1008,11 +1218,11 @@ function formatEventDuration(event: EventRecord): string {
 }
 
 function appearanceCount(person: PersonRecord): number {
-  return person.appearances?.length || person.appearance_count || 0;
+  return person.appearances?.length || person.appearance_count || person.canonical_event_ids?.length || 0;
 }
 
 function personInitials(label: string): string {
-  return label
+  return personDisplayName(label)
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -1023,6 +1233,97 @@ function personInitials(label: string): string {
 function humanizeToken(value: string): string {
   const text = value.replace(/_/g, " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// Pipeline labels hold every alias at once ("Filia / Filip / Филя"); a person
+// deserves one confident name, with the rest demoted to a byline.
+function personDisplayName(label: string): string {
+  const parts = label
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    return label.trim() || label;
+  }
+  const latin = parts.filter((part) => /^[ -ɏ]+$/.test(part));
+  const pool = latin.length ? latin : parts;
+  return pool.reduce((best, part) => (part.length < best.length ? part : best));
+}
+
+function personAliasByline(person: PersonRecord): string {
+  const display = personDisplayName(person.label);
+  const seen = new Set([display.toLowerCase()]);
+  const rest: string[] = [];
+  for (const alias of [...person.label.split("/"), ...(person.aliases ?? [])]) {
+    const trimmed = alias.trim();
+    if (!trimmed || seen.has(trimmed.toLowerCase())) {
+      continue;
+    }
+    seen.add(trimmed.toLowerCase());
+    rest.push(trimmed);
+  }
+  return rest.slice(0, 6).join(", ");
+}
+
+// Regions that must never share one scope: two of these in a parenthetical
+// means the pipeline is asserting a contradiction, so we suppress it.
+const DISJOINT_REGIONS = [
+  "oregon",
+  "wisconsin",
+  "idaho",
+  "hawaii",
+  "alaska",
+  "california",
+  "florida",
+  "washington",
+  "switzerland",
+  "russia",
+];
+
+// Context groups named after tapes are honest about being unplaced; named
+// contexts drop the trailing machinery word.
+function contextDisplayLabel(raw: string): string {
+  const label = raw.trim();
+  if (/^video_\d+/i.test(label)) {
+    const year = /(19|20)\d{2}(?:\s*[–-]\s*(?:19|20)\d{2})?/.exec(label)?.[0];
+    return year ? `${year} · unplaced` : "Unplaced";
+  }
+  return label.replace(/\s*context$/i, "");
+}
+
+// Machine scopes ("video_000003 context") and contradictory compound scopes
+// ("Hawaii, Moscow context") assert things the archive has not earned; only a
+// scope that reads as one coherent place survives to the screen.
+function placeDisplayLabel(raw?: string): string {
+  if (!raw) {
+    return "";
+  }
+  const trimmed = raw.trim();
+  const match = /^(.*?)\s*\(([^()]*)\)$/.exec(trimmed);
+  if (!match) {
+    return trimmed;
+  }
+  const label = match[1].trim() || trimmed;
+  let scope = match[2].trim();
+  if (!scope || /video_\d+/i.test(scope)) {
+    return label;
+  }
+  if (/^near\s/i.test(scope)) {
+    return `${label} · ${scope}`;
+  }
+  scope = scope.replace(/\s*context$/i, "").trim();
+  if (!scope) {
+    return label;
+  }
+  const parts = scope.split(",").map((part) => part.trim()).filter(Boolean);
+  const regionHits = new Set(
+    parts.map((part) => part.toLowerCase()).filter((part) => DISJOINT_REGIONS.includes(part)),
+  );
+  const leadsWithRegion = DISJOINT_REGIONS.includes(parts[0]?.toLowerCase() ?? "");
+  if (regionHits.size > 1 || parts.length > 2 || (leadsWithRegion && parts.length > 1)) {
+    return label;
+  }
+  return `${label} · ${scope}`;
 }
 
 function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
@@ -2141,10 +2442,10 @@ function TimelineView({
                 <Token>{event.review_status}</Token>
                 {event.reconciliation?.reconciliation_status ? <Token>{reconciliationLabel(event.reconciliation.reconciliation_status)}</Token> : null}
                 {event.people.slice(0, 4).map((person) => (
-                  <Token key={person.id}>{person.label}</Token>
+                  <Token key={person.id}>{personDisplayName(person.label)}</Token>
                 ))}
                 {event.places.slice(0, 3).map((place) => (
-                  <Token key={place.id}>{place.label}</Token>
+                  <Token key={place.id}>{placeDisplayLabel(place.label)}</Token>
                 ))}
               </div>
               <EventIntelligencePanel event={event} media={media} pending={pending} onPlay={onPlay} onQueue={onQueue} />
@@ -2462,25 +2763,25 @@ function AlbumsView({
             <div className="row-heading">
               <div className="event-title-stack">
                 <h2>{album.title}</h2>
-                <small>{[album.date_label, album.place_label].filter(Boolean).join(" · ") || album.album_type || "album"}</small>
+                <small>{[album.date_label, placeDisplayLabel(album.place_label)].filter(Boolean).join(" · ") || humanizeToken(album.album_type ?? "album")}</small>
               </div>
-              <span>{album.events?.length ?? 0} events</span>
+              <span>{(album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`}</span>
             </div>
             <div className="token-row">
-              <Token>{album.album_type ?? "album"}</Token>
-              <Token>{album.review_status ?? "unreviewed"}</Token>
+              <Token>{humanizeToken(album.album_type ?? "album")}</Token>
               {(album.people_labels ?? []).slice(0, 5).map((label) => (
-                <Token key={label}>{label}</Token>
+                <Token key={label}>{personDisplayName(label)}</Token>
               ))}
             </div>
             <div className="album-events">
               {(album.events ?? []).slice(0, 8).map((event) => {
                 const fullEvent = eventsById.get(event.event_id);
+                const moment = momentFromEvent(event, media);
                 return (
                   <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
                     {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
                     <span>{event.title}</span>
-                    <small>{formatTime(event.start_s)}</small>
+                    <small>{moment ? formatTime(moment.startS) : ""}</small>
                   </button>
                 );
               })}
@@ -2491,6 +2792,36 @@ function AlbumsView({
       {!visibleAlbums.length ? <EmptyState icon={CalendarDays} title="No albums" /> : null}
     </section>
   );
+}
+
+// The richest dated day-albums are ready-made Memories; surface a handful
+// as the library's hero strip.
+function memoriesRowAlbums(albums: AlbumRecord[]): AlbumRecord[] {
+  return dedupeAlbumsForDisplay(albums.filter((album) => album.date_label && (album.events?.length ?? 0) >= 2))
+    .sort((a, b) => (b.events?.length ?? 0) - (a.events?.length ?? 0))
+    .slice(0, 6);
+}
+
+function albumCoverPath(album: AlbumRecord, eventsById: Map<string, EventRecord>, avoid?: Set<string>): string {
+  const candidates = [
+    album.thumbnail_path ?? "",
+    ...(album.events ?? []).map((entry) => eventsById.get(entry.event_id)?.thumbnail_path ?? ""),
+  ].filter(Boolean);
+  return candidates.find((path) => !avoid?.has(path)) ?? candidates[0] ?? "";
+}
+
+// Day-albums carry every constituent date ("MAY 10 2002, MAY 11 2002, ...");
+// a Memory reads as a span. Dates themselves may contain commas ("March 22,
+// 2006"), so split only at commas that start a new month token.
+const MONTH_BOUNDARY = /,\s*(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
+
+function memoryDateLabel(album: AlbumRecord): string {
+  const label = album.date_label ?? "";
+  const parts = label.split(MONTH_BOUNDARY).map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) {
+    return label;
+  }
+  return `${parts[0]} – ${parts[parts.length - 1]}`;
 }
 
 function dedupeAlbumsForDisplay(albums: AlbumRecord[]) {
@@ -2543,8 +2874,8 @@ function PlacesView({
         {contexts.map((context) => (
           <article key={context.id} className="context-block">
             <div className="row-heading">
-              <h2>{context.label}</h2>
-              <span>{context.place_count} places</span>
+              <h2>{contextDisplayLabel(context.label)}</h2>
+              <span>{context.place_count === 1 ? "1 place" : `${context.place_count} places`}</span>
             </div>
             <div className="moment-strip">
               {context.events.slice(0, 5).map((event) => {
@@ -2561,8 +2892,7 @@ function PlacesView({
               {context.places.map((place) => (
                 <div key={place.id} className="place-row">
                   <PlaceThumb place={places.find((row) => row.id === place.id)} eventsById={eventsById} />
-                  <span>{place.display_label}</span>
-                  <small>{place.review_status}</small>
+                  <span>{placeDisplayLabel(place.display_label)}</span>
                 </div>
               ))}
             </div>
@@ -2573,8 +2903,8 @@ function PlacesView({
         {places.map((place) => (
           <div key={place.id} className="flat-row">
             <PlaceThumb place={place} eventsById={eventsById} />
-            <span>{place.display_label}</span>
-            <small>{place.kind} · {place.place_type} · {place.review_status}</small>
+            <span>{placeDisplayLabel(place.display_label)}</span>
+            {place.place_type && <small>{humanizeToken(place.place_type)}</small>}
           </div>
         ))}
       </div>
@@ -2930,9 +3260,14 @@ function formatScore(value?: number) {
 }
 
 function formatTime(value?: number) {
-  if (typeof value !== "number") return "00:00";
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60);
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0:00";
+  const total = Math.max(0, Math.floor(value));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 

@@ -176,6 +176,7 @@ export interface DateRef extends EntityRef {
   date_value?: string;
   precision?: string;
   excluded_as_event_date?: boolean;
+  source_kind?: string;
 }
 
 export interface PersonRecord {
@@ -186,6 +187,7 @@ export interface PersonRecord {
   confidence?: number;
   review_status: string;
   appearance_count?: number;
+  canonical_event_ids?: string[];
   appearances?: EventEntry[];
   thumbnail_path?: string;
   candidate_face_clusters?: Array<{

@@ -1662,6 +1662,7 @@ def _date_ref(row: dict[str, Any]) -> dict[str, Any]:
         "date_value": row.get("date_value"),
         "precision": row.get("precision"),
         "excluded_as_event_date": bool(row.get("excluded_as_event_date")),
+        "source_kind": row.get("source_kind"),
     }
 
 

@@ -90,7 +90,16 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
                 "date_value": "2005-09-07",
                 "precision": "day",
                 "canonical_event_ids": ["canonical_event_000001"],
-            }
+            },
+            {
+                "id": "date_group_000002",
+                "label": "1912",
+                "date_value": "1912",
+                "precision": "year",
+                "source_kind": "mentioned_historical_date",
+                "excluded_as_event_date": True,
+                "canonical_event_ids": ["canonical_event_000001"],
+            },
         ],
     )
     _write_jsonl(
@@ -279,6 +288,10 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert payload["timeline"]["events"][0]["people"][0]["label"] == "Filip"
     assert payload["media"][0]["offset_s"] == 0.0
     assert payload["timeline"]["events"][0]["places"][0]["label"] == "home (Madison, Wisconsin context)"
+    event_dates = {date["date_value"]: date for date in payload["timeline"]["events"][0]["dates"]}
+    assert event_dates["2005-09-07"]["excluded_as_event_date"] is False
+    assert event_dates["1912"]["excluded_as_event_date"] is True
+    assert event_dates["1912"]["source_kind"] == "mentioned_historical_date"
     assert payload["tracks"]["people"][0]["thumbnail_path"] == "thumbnails/faces/filip.jpg"
     assert payload["tracks"]["people"][0]["candidate_face_clusters"][0]["face_cluster_id"] == "face_cluster_000001"
     assert payload["tracks"]["places"][0]["display_label"] == "home (Madison, Wisconsin context)"
@@ -302,10 +315,12 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert {item["task_type"] for item in payload["review_backlog"]} == {
         "resolve_face_cluster",
         "confirm_place_context",
+        "resolve_date",
     }
     assert {item["source_id"] for item in payload["review_backlog"]} == {
         "face_cluster_000001",
         "context_edge_000002",
+        "date_group_000002",
     }
     face_review = next(item for item in payload["review_backlog"] if item["source_id"] == "face_cluster_000001")
     assert face_review["candidate"]["identity_candidates"][0]["face_identity_candidate_id"] == "face_identity_candidate_000001"
@@ -326,9 +341,9 @@ def test_export_visualization_data_builds_ui_ready_timeline_and_graph(tmp_path: 
     assert relationship_review["thumbnail_path"] == "thumbnails/events/canonical_event_000001.jpg"
     assert payload["relationships"]["candidates"][0]["events"][0]["event_id"] == "canonical_event_000001"
     assert payload["summary"]["review_items"] == 2
-    assert payload["summary"]["review_backlog_items"] == 2
-    assert payload["summary"]["review_total_items"] == 4
-    assert payload["summary"]["suggested_review_actions"] == 4
+    assert payload["summary"]["review_backlog_items"] == 3
+    assert payload["summary"]["review_total_items"] == 5
+    assert payload["summary"]["suggested_review_actions"] == 5
     assert payload["summary"]["speaker_segments"] == 2
     assert payload["summary"]["speaker_tracks"] == 1
     assert payload["summary"]["speaker_identity_candidates"] == 1
