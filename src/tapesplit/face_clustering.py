@@ -17,12 +17,19 @@ from tapesplit.visibility import build_visibility_filter
 
 
 DEFAULT_FACE_CLUSTER_DISTANCE = 0.28
-# Average-linkage sweep on the family haul (buffalo_l embeddings, 1,120 faces,
-# scoring same-keyframe wrong-merges + integrity of the human-linked clusters):
-#   0.55 -> many splits, 0 violations;  0.60 -> 0 violations;
-#   0.65 -> minimal violations, best cluster count;  0.70/0.75 -> mega-cluster
-#   chaining returns. Cannot-link constraints block same-frame merges outright,
-# so 0.65 keeps the measured sweet spot from the research audit.
+# Constrained average-linkage sweep on the family haul (buffalo_l, 1,125
+# embedded faces; "blocked" = same-frame merges prevented by cannot-links,
+# "integrity" = human-linked clusters staying whole):
+#   thr   clusters  singletons  largest  blocked  integrity
+#   0.55     653       425        31        5       0.91
+#   0.60     549       340        36        7       0.91
+#   0.65     441       242        60       12       1.00
+#   0.70     353       166       120       20       1.00
+#   0.75     280       113       186       33       1.00
+# 0.65 is the sweet spot: full human-cluster integrity before the largest
+# cluster starts doubling (120@0.70, 186@0.75 — the chaining regime the
+# research audit measured as impure). Revisit 0.70 after face tracks (P1)
+# tighten same-person distances.
 DEFAULT_ARCFACE_FACE_CLUSTER_DISTANCE = 0.65
 # KP-RPE cosine scale differs from buffalo_l; recalibrate with the closed-loop
 # sweep once weights are cached locally. Placeholder until measured.
