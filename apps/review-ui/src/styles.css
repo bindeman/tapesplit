@@ -2161,3 +2161,223 @@ p {
 .miniplayer.dragging .panel-heading {
   cursor: grabbing;
 }
+
+/* ---- Per-face triage + person curation (merge flow) ---- */
+
+.face-context-tile .tile-main {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.face-context-tile.excluded .scene-frame,
+.face-context-tile.excluded .face-inset {
+  filter: grayscale(1) brightness(0.55);
+}
+
+.excluded-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  box-shadow: var(--shadow-1);
+}
+
+.tile-play,
+.tile-menu-button {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--material);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  box-shadow: var(--shadow-1);
+  backdrop-filter: blur(12px);
+}
+
+.tile-play {
+  right: 34px;
+}
+
+.tile-menu-button {
+  top: 6px;
+  right: 6px;
+  bottom: auto;
+}
+
+.face-context-tile:hover .tile-play,
+.face-context-tile:hover .tile-menu-button,
+.face-context-tile.excluded .tile-menu-button {
+  opacity: 1;
+}
+
+.tile-menu {
+  position: absolute;
+  top: 32px;
+  right: 6px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  padding: 5px;
+  border-radius: var(--r-m);
+  background: var(--card);
+  box-shadow: var(--shadow-2);
+  border: 1px solid var(--line);
+}
+
+.tile-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: none;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tile-menu > button:hover {
+  background: var(--bg-elev);
+}
+
+.person-picker {
+  position: relative;
+  min-width: 190px;
+}
+
+.person-picker input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.person-picker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: var(--r-m);
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.person-picker-list button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+
+.person-picker-list button:hover {
+  background: var(--accent-soft);
+}
+
+.person-picker-list button small {
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.person-picker-list .avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.merge-affordance {
+  margin-top: 8px;
+}
+
+.same-person-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+
+.same-person-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-l);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+}
+
+.same-person-faces {
+  display: flex;
+}
+
+.same-person-faces .avatar {
+  width: 38px;
+  height: 38px;
+  border: 2px solid var(--bg);
+}
+
+.same-person-faces .avatar + .avatar {
+  margin-left: -12px;
+}
+
+.same-person-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.same-person-text small {
+  color: var(--text-2);
+}
+
+.same-person-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.exclusion-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--warn);
+}

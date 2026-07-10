@@ -61,6 +61,11 @@ REFUTES: dict[str, str] = {
     "rename_person": "confirm_person",
     "rename_event": "confirm_event",
     "edit_date": "confirm_event_date",
+    # Per-face triage: a human pulling crops out of (or disowning) a cluster
+    # is evidence against the identity suggestions built on that cluster.
+    "detach_faces_from_cluster": "confirm_identity",
+    "reassign_face_observations": "confirm_identity",
+    "mark_face_unknown": "confirm_identity",
 }
 
 CONFIRM_ACTIONS = {

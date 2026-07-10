@@ -8,9 +8,11 @@ import {
   Clock3,
   Film,
   GitMerge,
+  HelpCircle,
   ImageIcon,
   Info,
   Inbox,
+  MoreHorizontal,
   LayoutGrid,
   ListFilter,
   MapPin,
@@ -150,6 +152,13 @@ export function App() {
         if (params.has("play")) {
           playEvent(match, bundle.data.media, setActiveMoment);
         }
+      }
+    }
+    const personId = params.get("person");
+    if (personId) {
+      const match = bundle.data.people.find((person) => person.id === personId);
+      if (match) {
+        setOpenPerson(match);
       }
     }
   }, [bundle]);
@@ -404,7 +413,7 @@ export function App() {
           />
         )}
         {view === "people" && (
-          <PeopleWall people={bundle.data.people} onSelect={setOpenPerson} />
+          <PeopleWall people={bundle.data.people} onSelect={setOpenPerson} onQueue={queueAction} />
         )}
         {view === "albums" && (
           <AlbumsView albums={bundle.data.tracks.albums} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
@@ -451,8 +460,10 @@ export function App() {
       {openPerson && (
         <PersonSheet
           person={openPerson}
+          people={bundle.data.people}
           events={bundle.data.timeline.events}
           media={bundle.data.media}
+          onQueue={queueAction}
           onClose={() => setOpenPerson(null)}
           onOpenEvent={(event) => {
             setOpenPerson(null);
@@ -860,7 +871,56 @@ function EventSheet({
   );
 }
 
-function PeopleWall({ people, onSelect }: { people: PersonRecord[]; onSelect: (person: PersonRecord) => void }) {
+function PeopleWall({
+  people,
+  onSelect,
+  onQueue,
+}: {
+  people: PersonRecord[];
+  onSelect: (person: PersonRecord) => void;
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
+  const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(() => loadDismissedPairs());
+
+  function dismissPair(key: string) {
+    setDismissedPairs((current) => {
+      const next = new Set(current);
+      next.add(key);
+      window.localStorage.setItem(DISMISSED_PAIRS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  const duplicatePairs = useMemo(() => {
+    const named = people.filter(
+      (person) => person.kind !== "role_candidate" && !/^face cluster/i.test(person.label),
+    );
+    const pairs: { a: PersonRecord; b: PersonRecord; score: number }[] = [];
+    for (let i = 0; i < named.length; i += 1) {
+      for (let j = i + 1; j < named.length; j += 1) {
+        const score = samePersonScore(named[i], named[j]);
+        if (score >= 2 && !dismissedPairs.has(pairKey(named[i], named[j]))) {
+          pairs.push({ a: named[i], b: named[j], score });
+        }
+      }
+    }
+    return pairs.sort((x, y) => y.score - x.score).slice(0, 3);
+  }, [dismissedPairs, people]);
+
+  function mergePair(a: PersonRecord, b: PersonRecord) {
+    // Merge the thinner record into the richer one.
+    const [source, destination] = appearanceCount(a) <= appearanceCount(b) ? [a, b] : [b, a];
+    void onQueue({
+      id: `merge_${source.id}_${destination.id}`,
+      action: "merge_person",
+      target_id: source.id,
+      target_type: "people_group",
+      notes: "Confirmed as the same person from the People wall",
+      payload: { merge_with_person_group_id: destination.id },
+    });
+    dismissPair(pairKey(a, b));
+  }
+
   const { faces, faceless, roles } = useMemo(() => {
     const faces: PersonRecord[] = [];
     const faceless: PersonRecord[] = [];
@@ -887,6 +947,33 @@ function PeopleWall({ people, onSelect }: { people: PersonRecord[]; onSelect: (p
         <h1>People</h1>
         <p>{faces.length + faceless.length === 1 ? "1 person" : `${faces.length + faceless.length} people`} across the tapes</p>
       </header>
+      {duplicatePairs.length > 0 && (
+        <div className="same-person-row">
+          {duplicatePairs.map(({ a, b }) => (
+            <div key={pairKey(a, b)} className="same-person-card">
+              <div className="same-person-faces">
+                <PersonAvatar person={a} />
+                <PersonAvatar person={b} />
+              </div>
+              <div className="same-person-text">
+                <strong>Same person?</strong>
+                <small>
+                  {personDisplayName(a.label)} · {personDisplayName(b.label)}
+                </small>
+              </div>
+              <div className="same-person-actions">
+                <button className="command-button" onClick={() => mergePair(a, b)}>
+                  <GitMerge size={14} />
+                  <span>Merge</span>
+                </button>
+                <button className="command-button secondary" onClick={() => dismissPair(pairKey(a, b))}>
+                  <span>Not the same</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="avatar-grid">
         {faces.map((person) => (
           <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
@@ -945,19 +1032,24 @@ function PersonAvatar({ person, size }: { person: PersonRecord; size?: "large" }
 
 function PersonSheet({
   person,
+  people,
   events,
   media,
   onClose,
   onOpenEvent,
   onPlay,
+  onQueue,
 }: {
   person: PersonRecord;
+  people: PersonRecord[];
   events: EventRecord[];
   media: MediaRecord[];
   onClose: () => void;
   onOpenEvent: (event: EventRecord) => void;
   onPlay: (moment: PlayerMoment) => void;
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
 }) {
+  const [merging, setMerging] = useState(false);
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const appearances = useMemo(() => {
     if (person.appearances?.length) {
@@ -990,6 +1082,31 @@ function PersonSheet({
                 {personAliasByline(person) && `also known as ${personAliasByline(person)} · `}
                 {appearances.length} {appearances.length === 1 ? "event" : "events"}
               </p>
+              <div className="merge-affordance">
+                {merging ? (
+                  <PersonPicker
+                    people={people}
+                    placeholder="Merge into…"
+                    excludeIds={[person.id]}
+                    onPick={(destination) => {
+                      void onQueue({
+                        id: `merge_${person.id}_${destination.id}`,
+                        action: "merge_person",
+                        target_id: person.id,
+                        target_type: "people_group",
+                        notes: `Merged from person sheet into ${personDisplayName(destination.label)}`,
+                        payload: { merge_with_person_group_id: destination.id },
+                      });
+                      setMerging(false);
+                    }}
+                  />
+                ) : (
+                  <button className="command-button secondary" onClick={() => setMerging(true)}>
+                    <GitMerge size={14} />
+                    <span>Merge into…</span>
+                  </button>
+                )}
+              </div>
             </div>
           </header>
           <div className="event-grid">
@@ -1290,6 +1407,113 @@ function PersonNameBadge({ label, aliases = [] }: { label: string; aliases?: str
   );
 }
 
+// Small typeahead over the people wall, for merges and reassignment.
+function PersonPicker({
+  people,
+  placeholder,
+  excludeIds = [],
+  onPick,
+}: {
+  people: PersonRecord[];
+  placeholder: string;
+  excludeIds?: string[];
+  onPick: (person: PersonRecord) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const matches = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      return [];
+    }
+    return people
+      .filter((person) => person.kind !== "role_candidate" && !excludeIds.includes(person.id))
+      .filter((person) =>
+        [person.label, ...(person.aliases ?? [])].some((alias) => alias.toLowerCase().includes(normalized)),
+      )
+      .slice(0, 6);
+  }, [excludeIds, people, query]);
+  return (
+    <div className="person-picker" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+      <input autoFocus value={query} onChange={(changeEvent) => setQuery(changeEvent.target.value)} placeholder={placeholder} />
+      {matches.length > 0 && (
+        <div className="person-picker-list">
+          {matches.map((person) => (
+            <button key={person.id} type="button" onClick={() => onPick(person)}>
+              <PersonAvatar person={person} />
+              <span>{personDisplayName(person.label)}</span>
+              <small>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Common Russian diminutive families: enough to pair the archive's nicknames
+// without pretending to be a name database.
+const DIMINUTIVE_FAMILIES: string[][] = [
+  ["lena", "len", "elena", "лена", "елена"],
+  ["filya", "filia", "filip", "filipp", "philip", "phillip", "филип", "филя"],
+  ["andryusha", "andrey", "andrei", "andrew", "андрей", "андрюша"],
+  ["sasha", "alexander", "alexandra", "aleksandr", "саша"],
+  ["misha", "mikhail", "michael", "миша"],
+  ["dima", "dmitri", "dmitriy", "dmitry", "дима"],
+  ["katya", "ekaterina", "katherine", "катя"],
+  ["natasha", "natalia", "natalya", "наташа"],
+  ["tanya", "tatiana", "tatyana", "таня"],
+  ["grisha", "grigory", "grigori", "гриша"],
+];
+
+function personNameTokens(person: PersonRecord): Set<string> {
+  const tokens = new Set<string>();
+  for (const raw of [person.label, ...(person.aliases ?? [])]) {
+    for (const part of raw.split("/")) {
+      const token = part.trim().toLowerCase();
+      if (token.length >= 3 && !token.includes("(")) {
+        tokens.add(token);
+      }
+    }
+  }
+  return tokens;
+}
+
+function samePersonScore(a: PersonRecord, b: PersonRecord): number {
+  const tokensA = personNameTokens(a);
+  const tokensB = personNameTokens(b);
+  if (!tokensA.size || !tokensB.size) {
+    return 0;
+  }
+  let score = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) {
+      score += 2;
+    }
+  }
+  for (const family of DIMINUTIVE_FAMILIES) {
+    const inA = family.some((name) => tokensA.has(name));
+    const inB = family.some((name) => tokensB.has(name));
+    if (inA && inB) {
+      score += 2;
+    }
+  }
+  return score;
+}
+
+const DISMISSED_PAIRS_KEY = "tapesplit.samePersonDismissed.v1";
+
+function loadDismissedPairs(): Set<string> {
+  try {
+    return new Set(JSON.parse(window.localStorage.getItem(DISMISSED_PAIRS_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function pairKey(a: PersonRecord, b: PersonRecord): string {
+  return [a.id, b.id].sort().join("::");
+}
+
 const PERSONISH_TASKS = new Set(["resolve_face_cluster", "resolve_speaker", "resolve_person"]);
 
 // Review titles arrive as "Resolve face cluster: Filia / Filip / Филя"; keep
@@ -1488,10 +1712,37 @@ function ReviewDetail({
 }) {
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const isFaceItem = item.task_type === "resolve_face_cluster";
+  const [excludedFaces, setExcludedFaces] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setExcludedFaces(new Set());
+  }, [item.id]);
+
+  function toggleFace(faceId: string) {
+    setExcludedFaces((current) => {
+      const next = new Set(current);
+      if (next.has(faceId)) {
+        next.delete(faceId);
+      } else {
+        next.add(faceId);
+      }
+      return next;
+    });
+  }
+
   return (
     <section className="review-surface">
       {isFaceItem ? (
-        <FaceContextGallery clusterId={item.source_id} faces={faces} visualAssets={visualAssets} media={media} onPlay={onPlay} />
+        <FaceContextGallery
+          clusterId={item.source_id}
+          faces={faces}
+          visualAssets={visualAssets}
+          media={media}
+          onPlay={onPlay}
+          excluded={excludedFaces}
+          onToggle={toggleFace}
+          people={people}
+          onQueue={onQueue}
+        />
       ) : (
         <div className="review-media">
           {item.thumbnail_path ? (
@@ -1516,7 +1767,7 @@ function ReviewDetail({
         <SuggestedResolution item={item} onQueue={onQueue} />
         <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
         <EvidenceList item={item} media={media} onPlay={onPlay} />
-        <ReviewActionControls item={item} people={people} onQueue={onQueue} />
+        <ReviewActionControls item={item} people={people} onQueue={onQueue} excludedFaceIds={[...excludedFaces]} />
       </div>
     </section>
   );
@@ -1528,13 +1779,23 @@ function FaceContextGallery({
   visualAssets,
   media,
   onPlay,
+  excluded,
+  onToggle,
+  people = [],
+  onQueue,
 }: {
   clusterId: string;
   faces: FaceObservation[];
   visualAssets: VisualAsset[];
   media: MediaRecord[];
   onPlay: (moment: PlayerMoment) => void;
+  excluded?: Set<string>;
+  onToggle?: (faceId: string) => void;
+  people?: PersonRecord[];
+  onQueue?: (action: ReviewAction | ReviewAction[]) => Promise<void>;
 }) {
+  const [menuFor, setMenuFor] = useState("");
+  const [reassignFor, setReassignFor] = useState("");
   const tiles = useMemo(() => {
     const assetsById = new Map(visualAssets.map((asset) => [asset.id, asset]));
     const assetsBySubject = new Map<string, VisualAsset>();
@@ -1555,30 +1816,112 @@ function FaceContextGallery({
   if (!tiles.length) {
     return null;
   }
+  const selectable = Boolean(onToggle && excluded);
+
+  function playFace(asset: VisualAsset | undefined) {
+    if (!asset || typeof asset.time_s !== "number") {
+      return;
+    }
+    const tape = media.find((row) => row.id === asset.source_video_id);
+    onPlay({
+      videoId: asset.source_video_id,
+      videoLabel: tape?.filename || asset.source_video_id,
+      startS: Math.max(0, (asset.time_s ?? 0) - 2),
+      title: "Face context",
+    });
+  }
+
   return (
     <div className="face-context-grid">
       {tiles.map(({ face, asset }) => {
         const scene = asset?.keyframe_path || asset?.thumbnail_path;
-        const tape = media.find((row) => row.id === asset?.source_video_id);
         const playable = asset && typeof asset.time_s === "number";
+        const isExcluded = excluded?.has(face.id) ?? false;
         return (
-          <button
-            key={face.id}
-            className="face-context-tile"
-            title={playable ? "Play this moment" : undefined}
-            onClick={() =>
-              playable &&
-              onPlay({
-                videoId: asset.source_video_id,
-                videoLabel: tape?.filename || asset.source_video_id,
-                startS: Math.max(0, (asset.time_s ?? 0) - 2),
-                title: "Face context",
-              })
-            }
-          >
-            {scene ? <img className="scene-frame" src={assetUrl(scene)} alt="" loading="lazy" /> : <div className="card-fallback" />}
-            <img className="face-inset" src={assetUrl(face.face_thumbnail_path ?? "")} alt="" loading="lazy" />
-          </button>
+          <div key={face.id} className={`face-context-tile ${isExcluded ? "excluded" : ""}`}>
+            <button
+              className="tile-main"
+              title={selectable ? (isExcluded ? "Include this face" : "Exclude this face") : playable ? "Play this moment" : undefined}
+              onClick={() => (selectable ? onToggle?.(face.id) : playFace(asset))}
+            >
+              {scene ? <img className="scene-frame" src={assetUrl(scene)} alt="" loading="lazy" /> : <div className="card-fallback" />}
+              <img className="face-inset" src={assetUrl(face.face_thumbnail_path ?? "")} alt="" loading="lazy" />
+              {isExcluded && (
+                <span className="excluded-badge">
+                  <X size={12} />
+                </span>
+              )}
+            </button>
+            {playable && selectable && (
+              <button className="tile-play" title="Play this moment" onClick={() => playFace(asset)}>
+                <Play size={12} />
+              </button>
+            )}
+            {onQueue && (
+              <button
+                className="tile-menu-button"
+                title="More"
+                onClick={() => {
+                  setReassignFor("");
+                  setMenuFor(menuFor === face.id ? "" : face.id);
+                }}
+              >
+                <MoreHorizontal size={13} />
+              </button>
+            )}
+            {menuFor === face.id && onQueue && (
+              <div className="tile-menu">
+                {reassignFor === face.id ? (
+                  <PersonPicker
+                    people={people}
+                    placeholder="Who is this?"
+                    onPick={(person) => {
+                      void onQueue({
+                        id: `reassign_${face.id}`,
+                        action: "reassign_face_observations",
+                        target_id: clusterId,
+                        target_type: "face_cluster",
+                        notes: `Reviewer says this face is ${personDisplayName(person.label)}`,
+                        payload: {
+                          face_observation_ids: [face.id],
+                          destination_person_group_id: person.id,
+                        },
+                      });
+                      setMenuFor("");
+                      setReassignFor("");
+                    }}
+                  />
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setReassignFor(face.id);
+                      }}
+                    >
+                      <UserCheck size={13} />
+                      <span>This is someone else…</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        void onQueue({
+                          id: `unknown_${face.id}`,
+                          action: "mark_face_unknown",
+                          target_id: clusterId,
+                          target_type: "face_cluster",
+                          notes: "Reviewer does not recognize this face",
+                          payload: { face_observation_ids: [face.id] },
+                        });
+                        setMenuFor("");
+                      }}
+                    >
+                      <HelpCircle size={13} />
+                      <span>Don't know</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
@@ -1732,13 +2075,15 @@ function ReviewActionControls({
   item,
   people = [],
   onQueue,
+  excludedFaceIds = [],
 }: {
   item: ReviewItem;
   people?: PersonRecord[];
   onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+  excludedFaceIds?: string[];
 }) {
   if (item.task_type === "resolve_face_cluster") {
-    return <FaceClusterActions item={item} people={people} onQueue={onQueue} />;
+    return <FaceClusterActions item={item} people={people} onQueue={onQueue} excludedFaceIds={excludedFaceIds} />;
   }
   if (item.task_type === "resolve_speaker") {
     return <SpeakerIdentityActions item={item} onQueue={onQueue} />;
@@ -1773,28 +2118,50 @@ function FaceClusterActions({
   item,
   people = [],
   onQueue,
+  excludedFaceIds = [],
 }: {
   item: ReviewItem;
   people?: PersonRecord[];
   onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+  excludedFaceIds?: string[];
 }) {
   const candidates = identityCandidates(item);
   const [selectedId, setSelectedId] = useState(candidates[0]?.face_identity_candidate_id ?? "");
   const [customName, setCustomName] = useState("");
   const selected = candidates.find((candidate) => candidate.face_identity_candidate_id === selectedId);
 
+  // Any excluded tiles ride along with the decisive action as one submit.
+  function withDetach(action: ReviewAction): ReviewAction | ReviewAction[] {
+    if (!excludedFaceIds.length) {
+      return action;
+    }
+    return [
+      action,
+      {
+        id: `detach_${item.source_id}`,
+        action: "detach_faces_from_cluster",
+        target_id: item.source_id,
+        target_type: "face_cluster",
+        notes: "Reviewer excluded these faces while resolving the cluster",
+        payload: { face_observation_ids: excludedFaceIds },
+      },
+    ];
+  }
+
   function nameCluster() {
     const label = customName.trim();
     if (!label) return;
     const match = findPerson(people, undefined, label);
-    void onQueue({
-      id: `label_${item.source_id}`,
-      action: "label_face_cluster",
-      target_id: item.source_id,
-      target_type: "face_cluster",
-      notes: match ? `Matched existing person ${match.label}` : "Named directly by reviewer",
-      payload: match ? { label, person_group_id: match.id } : { label },
-    });
+    void onQueue(
+      withDetach({
+        id: `label_${item.source_id}`,
+        action: "label_face_cluster",
+        target_id: item.source_id,
+        target_type: "face_cluster",
+        notes: match ? `Matched existing person ${match.label}` : "Named directly by reviewer",
+        payload: match ? { label, person_group_id: match.id } : { label },
+      }),
+    );
     setCustomName("");
   }
 
@@ -1843,6 +2210,12 @@ function FaceClusterActions({
           </label>
         ))}
       </div>
+      {excludedFaceIds.length > 0 && (
+        <p className="exclusion-note">
+          {excludedFaceIds.length} {excludedFaceIds.length === 1 ? "face" : "faces"} excluded — they leave this
+          cluster when you confirm or name it.
+        </p>
+      )}
       <ActionRow>
         <CommandButton
           icon={UserCheck}
@@ -1850,14 +2223,16 @@ function FaceClusterActions({
           disabled={!selected}
           onClick={() =>
             selected &&
-            onQueue({
-              ...baseAction(item, "confirm_identity"),
-              target_id: selected.face_identity_candidate_id,
-              payload: {
-                face_cluster_id: item.source_id,
-                person_group_id: selected.person_group_id,
-              },
-            })
+            onQueue(
+              withDetach({
+                ...baseAction(item, "confirm_identity"),
+                target_id: selected.face_identity_candidate_id,
+                payload: {
+                  face_cluster_id: item.source_id,
+                  person_group_id: selected.person_group_id,
+                },
+              }),
+            )
           }
         />
         <CommandButton

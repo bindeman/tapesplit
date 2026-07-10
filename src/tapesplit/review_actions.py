@@ -13,6 +13,9 @@ SUPPORTED_REVIEW_ACTIONS = {
     "confirm_identity",
     "label_face_cluster",
     "reject_identity",
+    "detach_faces_from_cluster",
+    "reassign_face_observations",
+    "mark_face_unknown",
     "confirm_speaker_identity",
     "reject_speaker_identity",
     "confirm_person",
@@ -67,6 +70,15 @@ SAFE_AUTO_ACCEPT_MIN_CONFIDENCE: dict[str, float | None] = {
 # Relationships based only on a kinship word near a name are the known
 # over-eager case. A single-mention candidate must clear a higher bar.
 SAFE_RELATIONSHIP_SINGLE_EVIDENCE_MIN_CONFIDENCE = 0.85
+
+# Per-face triage is a human judgment about which crops belong together. No
+# generator suggests these and no policy may auto-accept them: they are
+# ground truth about cluster quality, not automatable inferences.
+HUMAN_ONLY_REVIEW_ACTIONS = {
+    "detach_faces_from_cluster",
+    "reassign_face_observations",
+    "mark_face_unknown",
+}
 
 
 def apply_review_actions(
@@ -253,6 +265,9 @@ def _apply_action(state: _ProjectReviewState, correction: dict[str, Any]) -> lis
         "confirm_identity": _confirm_identity,
         "label_face_cluster": _label_face_cluster,
         "reject_identity": _reject_identity,
+        "detach_faces_from_cluster": _detach_faces_from_cluster,
+        "reassign_face_observations": _reassign_face_observations,
+        "mark_face_unknown": _mark_face_unknown,
         "confirm_speaker_identity": _confirm_speaker_identity,
         "reject_speaker_identity": _reject_speaker_identity,
         "confirm_person": _confirm_person,
@@ -379,6 +394,130 @@ def _reject_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> 
                 row["review_status"] = "rejected"
         _append_unique(cluster, "review_correction_ids", correction["id"])
         effects.append(_effect("face_clusters.jsonl", cluster, "rejected person candidate on face cluster"))
+    return effects
+
+
+def _requested_cluster_faces(
+    state: _ProjectReviewState,
+    cluster: dict[str, Any],
+    correction: dict[str, Any],
+    *,
+    require_membership: bool = True,
+) -> list[dict[str, Any]]:
+    requested = [str(value) for value in correction["payload"].get("face_observation_ids") or [] if value]
+    if not requested:
+        raise ValueError(f"{correction['action']} requires payload.face_observation_ids")
+    cluster_id = str(cluster.get("id") or "")
+    wanted = set(requested)
+    faces = [
+        face
+        for face in state.rows("face_observations.jsonl")
+        if str(face.get("id") or "") in wanted
+        and (not require_membership or str(face.get("face_cluster_id") or "") == cluster_id)
+    ]
+    if not faces:
+        raise ValueError(f"none of the requested face observations belong to {cluster_id}")
+    return faces
+
+
+def _remove_faces_from_cluster_row(
+    cluster: dict[str, Any],
+    removed_ids: set[str],
+    correction: dict[str, Any],
+) -> None:
+    remaining = [fid for fid in cluster.get("face_observation_ids") or [] if str(fid) not in removed_ids]
+    cluster["face_observation_ids"] = remaining
+    cluster["face_count"] = len(remaining)
+    if str(cluster.get("representative_face_observation_id") or "") in removed_ids:
+        cluster["representative_face_observation_id"] = remaining[0] if remaining else ""
+    if not remaining:
+        cluster["review_only"] = True
+        _append_unique(cluster, "notes", "all faces removed by reviewer")
+    _append_unique(cluster, "review_correction_ids", correction["id"])
+
+
+def _detach_faces_from_cluster(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reviewer says these crops are not the same person: return them to the pool."""
+
+    cluster = _require_target(state, "face_clusters.jsonl", correction)
+    faces = _requested_cluster_faces(state, cluster, correction)
+    cluster_id = str(cluster.get("id") or "")
+    effects = []
+    for face in faces:
+        face["face_cluster_id"] = ""
+        face["detached_from_face_cluster_id"] = cluster_id
+        face["person_group_id"] = ""
+        face["identity_review_status"] = "detached"
+        _append_unique(face, "review_correction_ids", correction["id"])
+        effects.append(_effect("face_observations.jsonl", face, "detached face from cluster"))
+    _remove_faces_from_cluster_row(cluster, {str(face["id"]) for face in faces}, correction)
+    effects.append(_effect("face_clusters.jsonl", cluster, f"detached {len(faces)} face(s) from cluster"))
+    return effects
+
+
+def _reassign_face_observations(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reviewer says these crops belong to a different cluster or person."""
+
+    cluster = _require_target(state, "face_clusters.jsonl", correction)
+    payload = correction["payload"]
+    destination_cluster_id = str(payload.get("destination_face_cluster_id") or "")
+    destination_person_id = str(payload.get("destination_person_group_id") or "")
+    if not destination_cluster_id and not destination_person_id:
+        raise ValueError(
+            "reassign_face_observations requires destination_face_cluster_id or destination_person_group_id"
+        )
+    destination_cluster = (
+        state.row_by_id("face_clusters.jsonl", destination_cluster_id) if destination_cluster_id else None
+    )
+    if destination_cluster_id and not destination_cluster:
+        raise ValueError(f"{destination_cluster_id} not found in face_clusters.jsonl")
+    if not destination_person_id and destination_cluster:
+        destination_person_id = str(destination_cluster.get("linked_person_group_id") or "")
+
+    faces = _requested_cluster_faces(state, cluster, correction)
+    source_id = str(cluster.get("id") or "")
+    effects = []
+    for face in faces:
+        face["face_cluster_id"] = destination_cluster_id
+        face["detached_from_face_cluster_id"] = source_id
+        face["person_group_id"] = destination_person_id
+        face["identity_review_status"] = "reassigned"
+        _append_unique(face, "review_correction_ids", correction["id"])
+        effects.append(_effect("face_observations.jsonl", face, "reassigned face observation"))
+    moved_ids = {str(face["id"]) for face in faces}
+    _remove_faces_from_cluster_row(cluster, moved_ids, correction)
+    effects.append(_effect("face_clusters.jsonl", cluster, f"moved {len(faces)} face(s) out of cluster"))
+
+    if destination_cluster:
+        for face_id in sorted(moved_ids):
+            _append_unique(destination_cluster, "face_observation_ids", face_id)
+        destination_cluster["face_count"] = len(destination_cluster.get("face_observation_ids") or [])
+        _append_unique(destination_cluster, "review_correction_ids", correction["id"])
+        effects.append(_effect("face_clusters.jsonl", destination_cluster, "received reassigned face(s)"))
+
+    if destination_person_id:
+        person = state.row_by_id("people_groups.jsonl", destination_person_id)
+        if person:
+            _append_unique(person, "review_correction_ids", correction["id"])
+            effects.append(_effect("people_groups.jsonl", person, "faces reassigned to person"))
+    return effects
+
+
+def _mark_face_unknown(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
+    """Reviewer honestly does not know who this is: exclude from identity suggestions."""
+
+    cluster = _require_target(state, "face_clusters.jsonl", correction)
+    faces = _requested_cluster_faces(state, cluster, correction, require_membership=False)
+    effects = []
+    for face in faces:
+        face["identity_unknown"] = True
+        face["person_group_id"] = ""
+        face["identity_review_status"] = "unknown"
+        _append_unique(face, "review_correction_ids", correction["id"])
+        effects.append(_effect("face_observations.jsonl", face, "marked face as unknown identity"))
+    _append_unique(cluster, "notes", f"{len(faces)} face(s) marked unknown by reviewer")
+    _append_unique(cluster, "review_correction_ids", correction["id"])
+    effects.append(_effect("face_clusters.jsonl", cluster, "recorded unknown-identity faces"))
     return effects
 
 
@@ -935,6 +1074,8 @@ def _safe_policy_block_reason(
     """Return why the safe auto-accept policy refuses this action, or None."""
 
     action_name = str(action.get("action") or "")
+    if action_name in HUMAN_ONLY_REVIEW_ACTIONS:
+        return f"{action_name} is human-only and never auto-accepted"
     floor = SAFE_AUTO_ACCEPT_MIN_CONFIDENCE.get(action_name, 0.7)
     if tuned_floors and action_name in tuned_floors and floor is not None:
         floor = tuned_floors[action_name]
