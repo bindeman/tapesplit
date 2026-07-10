@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tapesplit.claim_store import DualWriter
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -95,6 +96,16 @@ def apply_review_actions(
 
     state.write(touched_files)
     _write_jsonl(project / "corrections.jsonl", corrections)
+    dual = DualWriter.open(project, artifact="corrections.jsonl", producer="human")
+    for correction in normalized_actions:
+        dual.write_row(
+            correction,
+            kind="human_action",
+            media_id=None,
+            assertion={"action": correction.get("action"), "target_id": correction.get("target_id")},
+            producer=str(correction.get("reviewer") or "human"),
+        )
+    dual.close()
     return {
         "project": str(project),
         "actions_applied": len(normalized_actions),

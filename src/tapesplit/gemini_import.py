@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from tapesplit.claim_store import DualWriter
 from tapesplit.storage import append_jsonl, read_jsonl
 
 TIMED_ANALYSIS_FIELDS = [
@@ -57,6 +58,11 @@ def import_gemini_analysis(
     for path in outputs:
         if path.exists():
             path.unlink()
+
+    dual = DualWriter.open(
+        project, artifact="gemini_events.jsonl", producer="gemini_vertex", run_id=str(selected_run_id)
+    )
+    dual.supersede_previous()
 
     evidence_count = 0
     claim_count = 0
@@ -149,6 +155,7 @@ def import_gemini_analysis(
                 skipped.append(
                     {"kind": "event_candidate", "reason": "time_unreliable", "item": item, "chunk": chunk_metadata}
                 )
+                dual.reject(skipped[-1], media_id=source_video_id)
                 continue
             normalized = _normalize_interval(
                 item,
@@ -159,6 +166,7 @@ def import_gemini_analysis(
             )
             if normalized is None:
                 skipped.append({"kind": "event_candidate", "item": item, "chunk": chunk_metadata})
+                dual.reject(skipped[-1], media_id=source_video_id)
                 continue
             start_s, end_s, validation_notes = normalized
             validation_notes = [*timeline_notes, *validation_notes]
@@ -167,6 +175,7 @@ def import_gemini_analysis(
                 skipped.append(
                     {"kind": "event_candidate", "reason": "sliver_span", "item": item, "chunk": chunk_metadata}
                 )
+                dual.reject(skipped[-1], media_id=source_video_id)
                 continue
             local_start_s, local_end_s = _local_interval(item)
             event_metadata = {
@@ -197,31 +206,39 @@ def import_gemini_analysis(
                 source_video_id,
             )
             event_count += 1
-            append_jsonl(
-                project / "gemini_events.jsonl",
-                {
-                    "id": f"gem_event_{event_count:06d}",
-                    "source": "gemini_vertex",
+            event_row = {
+                "id": f"gem_event_{event_count:06d}",
+                "source": "gemini_vertex",
+                "source_video_id": source_video_id,
+                "review_status": "needs_review" if validation_notes or item.get("needs_review") else "unreviewed",
+                "title": item.get("title") or "Untitled Gemini event",
+                "start_s": start_s,
+                "end_s": end_s,
+                "confidence": item.get("confidence", 0.6),
+                "evidence_ids": [evidence_id],
+                "summary": item.get("summary") or "",
+                "relatedness": item.get("relatedness"),
+                "metadata": {
+                    "event_type": item.get("event_type"),
                     "source_video_id": source_video_id,
-                    "review_status": "needs_review" if validation_notes or item.get("needs_review") else "unreviewed",
-                    "title": item.get("title") or "Untitled Gemini event",
-                    "start_s": start_s,
-                    "end_s": end_s,
-                    "confidence": item.get("confidence", 0.6),
-                    "evidence_ids": [evidence_id],
-                    "summary": item.get("summary") or "",
-                    "relatedness": item.get("relatedness"),
-                    "metadata": {
-                        "event_type": item.get("event_type"),
-                        "source_video_id": source_video_id,
-                        "people": item.get("people") or [],
-                        "place_candidates": item.get("place_candidates") or [],
-                        "date_candidates": item.get("date_candidates") or [],
-                        "languages": item.get("languages") or [],
-                        "validation_notes": validation_notes,
-                        **chunk_metadata,
-                    },
+                    "people": item.get("people") or [],
+                    "place_candidates": item.get("place_candidates") or [],
+                    "date_candidates": item.get("date_candidates") or [],
+                    "languages": item.get("languages") or [],
+                    "validation_notes": validation_notes,
+                    **chunk_metadata,
                 },
+            }
+            append_jsonl(project / "gemini_events.jsonl", event_row)
+            dual.write_row(
+                event_row,
+                kind="event",
+                media_id=source_video_id,
+                start_s=start_s,
+                end_s=end_s,
+                confidence=item.get("confidence", 0.6),
+                chunk=chunk_metadata,
+                media_duration_s=duration_s,
             )
             add_claim(
                 {
@@ -287,10 +304,12 @@ def import_gemini_analysis(
                     source_video_id,
                 )
 
+    dual.close()
     return {
         "project": str(project),
         "source_video_id": source_video_ids[0] if len(source_video_ids) == 1 else None,
         "source_video_ids": source_video_ids,
+        "claims_dual_write": dual.summary(),
         "analysis_run_id": selected_run_id,
         "selection": "best_per_source" if all_runs and best_per_source else "all" if all_runs else "latest_run",
         "analyses": len(selected),

@@ -515,6 +515,36 @@ def _build_parser() -> argparse.ArgumentParser:
     gemini_compare.add_argument("project", type=Path, help="TapeSplit project directory.")
     gemini_compare.add_argument("--source-video-id", help="Limit comparison to one source video id.")
 
+    claims_parser = subparsers.add_parser(
+        "claims",
+        help="Inspect the v2 claim substrate (dual-written alongside v1 artifacts).",
+    )
+    claims_subparsers = claims_parser.add_subparsers(dest="claims_command", required=True)
+    claims_stats = claims_subparsers.add_parser("stats", help="Summarize the project claim store.")
+    claims_stats.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_export = claims_subparsers.add_parser("export", help="Export all claims to JSONL.")
+    claims_export.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_export.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Export path (default: claim_store_export.jsonl in the project).",
+    )
+    claims_diff = claims_subparsers.add_parser(
+        "diff", help="Oracle diff: is a v1 artifact regenerable from live claims byte-for-byte?"
+    )
+    claims_diff.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_diff.add_argument(
+        "--artifact",
+        default="gemini_events.jsonl",
+        choices=["gemini_events.jsonl", "heuristic_events.jsonl", "corrections.jsonl"],
+        help="v1 artifact to diff against the claim store.",
+    )
+    claims_backfill = claims_subparsers.add_parser(
+        "backfill", help="Write claims for existing v1 rows that predate the substrate (idempotent)."
+    )
+    claims_backfill.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     costs_parser = subparsers.add_parser(
         "costs",
         help="Summarize tracked provider usage and estimated costs.",
@@ -1730,6 +1760,24 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+        if args.command == "claims":
+            from tapesplit.claim_store import ClaimStore, backfill_project_claims, diff_v1_artifact
+
+            if args.claims_command == "stats":
+                with ClaimStore(args.project) as store:
+                    print(json.dumps(store.stats(), indent=2, sort_keys=True))
+                return 0
+            if args.claims_command == "export":
+                with ClaimStore(args.project) as store:
+                    print(json.dumps(store.export_jsonl(args.output), indent=2, sort_keys=True))
+                return 0
+            if args.claims_command == "diff":
+                result = diff_v1_artifact(args.project, args.artifact)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result["byte_identical"] else 1
+            if args.claims_command == "backfill":
+                print(json.dumps(backfill_project_claims(args.project), indent=2, sort_keys=True))
                 return 0
         if args.command == "costs":
             if args.costs_command == "llm":

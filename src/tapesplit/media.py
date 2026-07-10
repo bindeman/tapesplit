@@ -91,3 +91,61 @@ def _int_or_none(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
 
+
+def source_media_id(record: dict) -> str | None:
+    """Read-compat shim for the v2 source_media_id rename (REFOUNDATION.md section 3).
+
+    677 call sites key records by source_video_id; new code reads through this
+    helper so producers can migrate field names module-by-module.
+    """
+
+    for key in ("source_media_id", "source_video_id", "media_id"):
+        value = record.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def build_media_index(project_dir: Path) -> dict:
+    """Derive media.jsonl from tapes.jsonl; media-type rows other than tapes are kept.
+
+    media.jsonl supersedes tapes.jsonl as the media-agnostic source registry
+    (tape | photo | audio). Tapes remain authoritative during cutover: tape
+    rows here are always regenerated from tapes.jsonl.
+    """
+
+    project = project_dir.expanduser().resolve()
+    tapes_path = project / "tapes.jsonl"
+    media_path = project / "media.jsonl"
+    non_tape_rows = []
+    if media_path.exists():
+        for line in media_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("media_type") != "tape":
+                non_tape_rows.append(row)
+    tape_rows = []
+    if tapes_path.exists():
+        for line in tapes_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            tape = json.loads(line)
+            tape_rows.append(
+                {
+                    "media_id": tape.get("id"),
+                    "media_type": "tape",
+                    "filename": tape.get("filename"),
+                    "path": tape.get("path"),
+                    "relative_path": tape.get("relative_path"),
+                    "probe": tape.get("probe"),
+                }
+            )
+    rows = tape_rows + non_tape_rows
+    if rows:
+        media_path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+    return {"media_rows": len(rows), "tape_rows": len(tape_rows), "output": str(media_path)}
+

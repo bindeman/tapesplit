@@ -22,6 +22,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from tapesplit.claim_store import DualWriter
 from tapesplit.storage import append_jsonl, read_jsonl
 
 DEFAULT_MIN_EVENT_SECONDS = 10.0
@@ -99,8 +100,19 @@ def build_heuristic_events(
     output = project / "heuristic_events.jsonl"
     if output.exists():
         output.unlink()
+    dual = DualWriter.open(project, artifact="heuristic_events.jsonl", producer="local_heuristic")
+    dual.supersede_previous()
     for event in events:
         append_jsonl(output, event)
+        dual.write_row(
+            event,
+            kind="event",
+            media_id=event.get("source_video_id"),
+            start_s=event.get("start_s"),
+            end_s=event.get("end_s"),
+            confidence=event.get("confidence"),
+        )
+    dual.close()
 
     return {
         "project": str(project),

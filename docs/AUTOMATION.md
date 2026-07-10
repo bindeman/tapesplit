@@ -173,6 +173,34 @@ deployment via `TAPESPLIT_VERIFIER_DEPLOYMENT`, default `gpt-5.6-sol`) and is
 cost-gated like the gemini stage. `tapesplit verify run --dry-run` prints the
 sampled plan without extracting anything.
 
+## Claim substrate (v2 M1)
+
+The v2 re-foundation (`docs/REFOUNDATION.md`) replaces stored conclusions
+with claims — assertions carrying producer provenance, a span with an
+explicit reference frame, confidence, and verification status. During the
+strangler cutover v1 artifacts stay authoritative; producers *dual-write*
+claims alongside them into `claim_store.sqlite3` in the project dir
+(`src/tapesplit/claim_store.py`):
+
+- gemini import, heuristic events, and review actions mirror every row (and
+  every rejected candidate) as claims; regeneration supersedes prior claims
+  rather than deleting them.
+- Spans are `{clock, start_s, end_s}` with `clock ∈ {source, chunk,
+  capture}`; a span violating its clock's bounds is rejected at write time,
+  never clamped. Chunk→source conversion is an explicit function that
+  reports the applied offset.
+- Dual-write is best-effort and side-effect free for v1: with
+  `TAPESPLIT_CLAIMS=0` (or on any store error) v1 outputs are byte-identical
+  and the run summary records the reason.
+- `media.jsonl` (media-agnostic source registry) is derived from
+  `tapes.jsonl`; new code reads ids via `media.source_media_id()` so the
+  `source_video_id` rename can land module-by-module.
+
+`tapesplit claims stats|export|backfill` inspect and migrate the store;
+`tapesplit claims diff --artifact gemini_events.jsonl` is the M1 oracle gate —
+it proves the v1 artifact is regenerable from live claims byte-for-byte
+(exit 1 on drift).
+
 ## Extending
 
 To add a stage: write a run function taking `StageContext`, declare the
