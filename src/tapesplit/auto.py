@@ -151,6 +151,9 @@ def gather_capabilities() -> dict[str, Any]:
     caps.update(check_visual_text_config())
     caps.update(check_visual_embedding_config())
     caps.update(check_visual_caption_config())
+    from tapesplit.semantic_search import check_semantic_search_config
+
+    caps.update(check_semantic_search_config())
     try:
         caps.update(check_gemini_config())
     except Exception as exc:  # config parsing should never block local stages
@@ -643,6 +646,22 @@ def _run_apply_suggestions(context: StageContext) -> dict[str, Any]:
     }
 
 
+def _run_semantic_embed(context: StageContext) -> dict[str, Any]:
+    from tapesplit.semantic_search import upgrade_search_index_semantic
+
+    try:
+        result = upgrade_search_index_semantic(context.project)
+    except FileNotFoundError as exc:
+        raise StageSkipped(str(exc)) from exc
+    return {
+        "documents": result.get("documents"),
+        "embedded": result.get("embedded"),
+        "cached_hits": result.get("cached_hits"),
+        "clip_vectors": result.get("clip_vectors"),
+        "model": result.get("model"),
+    }
+
+
 VERIFY_SAMPLE_SIZE = 40
 VERIFY_EST_USD_PER_CLIP = 0.05
 
@@ -892,6 +911,20 @@ def build_stages() -> list[Stage]:
             requires=("finalize",),
             always_run=True,
             run=_run_apply_suggestions,
+        ),
+        Stage(
+            name="semantic-embed",
+            title="Embed archive for semantic search",
+            kind=KIND_LOCAL_ML,
+            requires=("finalize",),
+            after=("apply-suggestions",),
+            always_run=True,
+            produces=("semantic_cache.sqlite",),
+            availability=_available_backend(
+                "semantic_search_backend",
+                "semantic search needs sentence-transformers (install .[local-ai])",
+            ),
+            run=_run_semantic_embed,
         ),
         Stage(
             name="verify",

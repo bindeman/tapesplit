@@ -41,6 +41,10 @@ function reviewApiPlugin(): Plugin {
             await sendVideo(req, res);
             return;
           }
+          if (req.method === "GET" && req.url.startsWith("/api/search/semantic")) {
+            await sendSemanticSearch(req, res);
+            return;
+          }
           if (req.method === "GET" && req.url.startsWith("/api/search")) {
             await sendSearch(req, res);
             return;
@@ -111,6 +115,97 @@ async function sendSearch(req: IncomingMessage, res: ServerResponse) {
     await run(tapesplitBin, ["search", "build", projectDir], repoRoot);
   }
   await sendJson(res, await runJson(tapesplitBin, ["search", "query", projectDir, query, "--limit", String(limit)], repoRoot));
+}
+
+// --- Warm semantic-search sidecar -----------------------------------------
+// `tapesplit search serve` keeps the embedding models loaded; we hold one
+// child process, speak JSON-lines over stdio, and respawn it on death.
+
+type SidecarPending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
+
+let sidecarChild: ReturnType<typeof spawn> | null = null;
+let sidecarBuffer = "";
+let sidecarRequestId = 0;
+const sidecarPending = new Map<number, SidecarPending>();
+
+function ensureSidecar() {
+  if (sidecarChild) {
+    return sidecarChild;
+  }
+  const child = spawn(tapesplitBin, ["search", "serve", projectDir], { cwd: repoRoot, stdio: "pipe" });
+  sidecarBuffer = "";
+  child.stdout.on("data", (chunk) => {
+    sidecarBuffer += chunk.toString();
+    let newline = sidecarBuffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = sidecarBuffer.slice(0, newline).trim();
+      sidecarBuffer = sidecarBuffer.slice(newline + 1);
+      newline = sidecarBuffer.indexOf("\n");
+      if (!line) continue;
+      try {
+        const payload = JSON.parse(line) as { id?: number };
+        if (typeof payload.id === "number" && sidecarPending.has(payload.id)) {
+          const pending = sidecarPending.get(payload.id)!;
+          sidecarPending.delete(payload.id);
+          clearTimeout(pending.timer);
+          pending.resolve(payload);
+        }
+      } catch {
+        // ready banner or noise; ignore
+      }
+    }
+  });
+  child.on("exit", () => {
+    if (sidecarChild === child) {
+      sidecarChild = null;
+    }
+    for (const [, pending] of sidecarPending) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("semantic search sidecar exited"));
+    }
+    sidecarPending.clear();
+  });
+  child.on("error", () => {
+    if (sidecarChild === child) {
+      sidecarChild = null;
+    }
+  });
+  sidecarChild = child;
+  return child;
+}
+
+function sidecarQuery(query: string, limit: number): Promise<unknown> {
+  const child = ensureSidecar();
+  const id = ++sidecarRequestId;
+  return new Promise((resolveQuery, rejectQuery) => {
+    const timer = setTimeout(() => {
+      sidecarPending.delete(id);
+      rejectQuery(new Error("semantic search timed out (models may still be loading)"));
+    }, 30000);
+    sidecarPending.set(id, { resolve: resolveQuery, reject: rejectQuery, timer });
+    child.stdin?.write(JSON.stringify({ id, op: "query", q: query, limit }) + "\n");
+  });
+}
+
+async function sendSemanticSearch(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url || "", "http://localhost");
+  const query = (url.searchParams.get("q") || "").trim();
+  const rawLimit = Number(url.searchParams.get("limit") || 8);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 24) : 8;
+  if (!query) {
+    await sendJson(res, { query: "", semantic: false, sections: {} });
+    return;
+  }
+  try {
+    const payload = (await sidecarQuery(query, limit)) as { ok?: boolean; result?: unknown; error?: string };
+    if (payload.ok && payload.result) {
+      await sendJson(res, payload.result);
+      return;
+    }
+    await sendJson(res, { error: payload.error || "semantic search failed" }, 500);
+  } catch (error) {
+    await sendJson(res, { error: error instanceof Error ? error.message : String(error) }, 500);
+  }
 }
 
 async function sendAsset(req: IncomingMessage, res: ServerResponse) {

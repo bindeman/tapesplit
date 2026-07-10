@@ -50,7 +50,8 @@ Current order:
 | 10–15 | ocr, captions, visual-embed, visual-similarity, faces, face-cluster | local-ml | per-backend |
 | 16 | finalize | derived | full rebuild: groups, place roles, alignments, reconciliation, relationships, speaker identities, context graph, search, story, report, visualization |
 | 17 | apply-suggestions | derived | safe-policy auto-acceptance + output refresh |
-| 18 | verify | cloud | blind clip verification of sampled claims (`TAPESPLIT_VERIFIER_BACKEND`) |
+| 18 | semantic-embed | local-ml | dense multilingual + CLIP vectors for semantic search (incremental) |
+| 19 | verify | cloud | blind clip verification of sampled claims (`TAPESPLIT_VERIFIER_BACKEND`) |
 
 ## State and resume
 
@@ -172,6 +173,29 @@ configured (`TAPESPLIT_VERIFIER_BACKEND=azure` plus Azure OpenAI env;
 deployment via `TAPESPLIT_VERIFIER_DEPLOYMENT`, default `gpt-5.6-sol`) and is
 cost-gated like the gemini stage. `tapesplit verify run --dry-run` prints the
 sampled plan without extracting anything.
+
+## Semantic search
+
+`finalize` builds the keyword index (`search.sqlite`: FTS5 + sparse TF-IDF)
+on every run; the `semantic-embed` stage (`src/tapesplit/semantic_search.py`)
+then upgrades it with the layers that make search semantic:
+
+- **Spoken/written meaning.** Dense vectors from a multilingual
+  sentence-transformers model for the user-facing document types
+  (transcripts, events, albums, people, places, captions, OCR). English
+  queries hit Russian transcripts and vice versa. Vectors are cached by
+  content hash in `semantic_cache.sqlite`, so re-finalizes only encode text
+  that changed — the first haul pass costs minutes, later passes seconds.
+- **What's on screen.** Scene-keyframe CLIP vectors (already produced by
+  `visual-embed`) are copied into a `clip_vectors` table and queried with the
+  CLIP text tower: "birthday cake" or "snow" finds footage nobody transcribed
+  or captioned. English-only (CLIP's text tower is not multilingual).
+- **Sectioned results.** `tapesplit search semantic <project> "query"`
+  returns People / Places / Moments / Spoken / Seen; `tapesplit search serve`
+  is a warm JSON-lines sidecar (models loaded once) that the review UI's ⌘K
+  overlay talks to via `/api/search/semantic` — interactive queries answer in
+  ~100–300 ms instead of paying model load per query. Without the upgrade the
+  same endpoints fall back to keyword matching and say so.
 
 ## Claim substrate (v2 M1)
 

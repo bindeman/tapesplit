@@ -1,4 +1,4 @@
-import type { ProjectBundle, ReviewAction, SearchResponse } from "./types";
+import type { ProjectBundle, ReviewAction, SearchResponse, SemanticResponse } from "./types";
 
 export async function loadProject(): Promise<ProjectBundle> {
   const response = await fetch("/api/project");
@@ -40,6 +40,12 @@ export async function reapplyReviewCorrections(): Promise<ProjectBundle> {
 export async function searchProject(query: string, limit = 12): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const response = await fetch(`/api/search?${params.toString()}`);
+  return readResponse(response);
+}
+
+export async function semanticSearchProject(query: string, limit = 8): Promise<SemanticResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(`/api/search/semantic?${params.toString()}`);
   return readResponse(response);
 }
 

@@ -41,6 +41,7 @@ import {
   searchProject,
   videoUrl,
 } from "./api";
+import { semanticSearchProject } from "./api";
 import type {
   AlbumRecord,
   DateRef,
@@ -57,6 +58,9 @@ import type {
   ReviewItem,
   SceneRecord,
   SearchResult,
+  SemanticHit,
+  SemanticResponse,
+  SemanticSectionId,
   SourceRange,
   SpeakerIdentityCandidate,
   SuggestedReviewAction,
@@ -105,10 +109,7 @@ export function App() {
   const [reviewScope, setReviewScope] = useState<ReviewScope>("primary");
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchBusy, setSearchBusy] = useState(false);
-  const [searchError, setSearchError] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeMoment, setActiveMoment] = useState<PlayerMoment | null>(null);
   const [status, setStatus] = useState("");
@@ -170,6 +171,11 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(keyEvent: KeyboardEvent) {
+      if ((keyEvent.metaKey || keyEvent.ctrlKey) && keyEvent.key.toLowerCase() === "k") {
+        keyEvent.preventDefault();
+        setSearchOpen((open) => !open);
+        return;
+      }
       const target = keyEvent.target as HTMLElement | null;
       if (
         target &&
@@ -178,7 +184,8 @@ export function App() {
         return;
       }
       if (keyEvent.key === "Escape") {
-        if (activeMoment) setActiveMoment(null);
+        if (searchOpen) setSearchOpen(false);
+        else if (activeMoment) setActiveMoment(null);
         else if (openEvent) setOpenEvent(null);
         else if (openAlbum) setOpenAlbum(null);
         else if (openPerson) setOpenPerson(null);
@@ -211,7 +218,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeMoment, openEvent, openAlbum, openPerson, reviewOpen, navigableEvents, bundle]);
+  }, [activeMoment, openEvent, openAlbum, openPerson, reviewOpen, searchOpen, navigableEvents, bundle]);
 
   const primaryReviewItems = bundle?.data.review_queue ?? [];
   const reviewBacklog = bundle?.data.review_backlog ?? [];
@@ -323,25 +330,6 @@ export function App() {
     }
   }
 
-  async function runSearch(nextQuery = searchQuery) {
-    const trimmed = nextQuery.trim();
-    if (!trimmed) {
-      setSearchResults([]);
-      setSearchError("");
-      return;
-    }
-    setSearchBusy(true);
-    setSearchError("");
-    try {
-      const response = await searchProject(trimmed, 16);
-      setSearchResults(response.results);
-    } catch (err) {
-      setSearchError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSearchBusy(false);
-    }
-  }
-
   if (!bundle) {
     return (
       <div className="boot">
@@ -428,16 +416,15 @@ export function App() {
           />
         )}
         {view === "search" && (
-          <SearchView
-            query={searchQuery}
-            results={searchResults}
-            busy={searchBusy}
-            error={searchError}
-            media={bundle.data.media}
-            onQueryChange={setSearchQuery}
-            onSearch={runSearch}
-            onPlay={setActiveMoment}
-          />
+          <section className="search-view">
+            <SemanticSearchPanel
+              bundle={bundle}
+              autoFocus
+              onOpenEvent={setOpenEvent}
+              onOpenPerson={setOpenPerson}
+              onPlay={setActiveMoment}
+            />
+          </section>
         )}
       </main>
 
@@ -565,6 +552,30 @@ export function App() {
         <DraggableMiniplayer>
           <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
         </DraggableMiniplayer>
+      )}
+
+      {searchOpen && (
+        <div className="search-overlay" onClick={() => setSearchOpen(false)}>
+          <div className="search-dialog" role="dialog" aria-label="Search" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+            <SemanticSearchPanel
+              bundle={bundle}
+              autoFocus
+              onClose={() => setSearchOpen(false)}
+              onOpenEvent={(event) => {
+                setSearchOpen(false);
+                setOpenEvent(event);
+              }}
+              onOpenPerson={(person) => {
+                setSearchOpen(false);
+                setOpenPerson(person);
+              }}
+              onPlay={(moment) => {
+                setSearchOpen(false);
+                setActiveMoment(moment);
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3235,90 +3246,285 @@ function RangeMomentButton({
   );
 }
 
-function SearchView({
-  query,
-  results,
-  busy,
-  error,
-  media,
-  onQueryChange,
-  onSearch,
+const semanticSectionLabels: Record<SemanticSectionId, string> = {
+  people: "People",
+  places: "Places",
+  moments: "Moments",
+  spoken: "Spoken",
+  seen: "Seen",
+};
+
+function SemanticSearchPanel({
+  bundle,
+  autoFocus,
+  onClose,
+  onOpenEvent,
+  onOpenPerson,
   onPlay,
 }: {
-  query: string;
-  results: SearchResult[];
-  busy: boolean;
-  error: string;
-  media: MediaRecord[];
-  onQueryChange: (value: string) => void;
-  onSearch: (query?: string) => Promise<void>;
+  bundle: ProjectBundle;
+  autoFocus?: boolean;
+  onClose?: () => void;
+  onOpenEvent: (event: EventRecord) => void;
+  onOpenPerson: (person: PersonRecord) => void;
   onPlay: (moment: PlayerMoment) => void;
 }) {
+  const [text, setText] = useState("");
+  const [response, setResponse] = useState<SemanticResponse | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const requestRef = useRef(0);
+
+  const media = bundle.data.media;
+  const events = bundle.data.timeline.events;
+  const people = bundle.data.people;
+  const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
+  const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+
+  const suggestions = useMemo(() => {
+    const needle = text.trim().toLowerCase();
+    if (!needle || needle.length < 2) {
+      return [];
+    }
+    const pool: string[] = [];
+    for (const person of people) {
+      pool.push(personDisplayName(person.label));
+    }
+    for (const place of bundle.data.places) {
+      pool.push(placeDisplayLabel(place.display_label || place.label));
+    }
+    for (const event of events) {
+      const year = eventYear(event);
+      if (year) pool.push(year);
+    }
+    const unique = [...new Set(pool)];
+    return unique
+      .filter((token) => token && token.toLowerCase() !== needle && token.toLowerCase().includes(needle))
+      .slice(0, 6);
+  }, [text, people, events, bundle.data.places]);
+
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus();
+    }
+  }, [autoFocus]);
+
+  useEffect(() => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setResponse(null);
+      setNotice("");
+      return;
+    }
+    const requestId = ++requestRef.current;
+    setBusy(true);
+    const timer = setTimeout(async () => {
+      try {
+        const result = await semanticSearchProject(trimmed, 8);
+        if (requestRef.current !== requestId) return;
+        setResponse(result);
+        setNotice(result.semantic ? "" : "Semantic index not built yet — showing keyword matches. Run: tapesplit search embed <project>");
+      } catch (err) {
+        if (requestRef.current !== requestId) return;
+        // Sidecar unavailable: fall back to the legacy keyword endpoint.
+        try {
+          const legacy = await searchProject(trimmed, 16);
+          if (requestRef.current !== requestId) return;
+          setResponse(legacyToSections(trimmed, legacy.results));
+          setNotice("Semantic search unavailable — showing keyword matches.");
+        } catch (fallbackErr) {
+          if (requestRef.current !== requestId) return;
+          setResponse(null);
+          setNotice(fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr));
+        }
+      } finally {
+        if (requestRef.current === requestId) setBusy(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [text]);
+
+  const sections = response?.sections ?? {};
+  const hasHits = (Object.keys(sections) as SemanticSectionId[]).some((key) => (sections[key] ?? []).length > 0);
+
   return (
-    <section className="search-view">
-      <form
-        className="search-command"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onSearch(query);
-        }}
-      >
+    <div className="semantic-search">
+      <div className="search-command">
         <Search size={18} />
-        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search tape" />
-        <button className="command-button" disabled={busy || !query.trim()}>
-          <Search size={16} />
-          <span>{busy ? "Searching" : "Search"}</span>
-        </button>
-      </form>
-      {error ? (
-        <div className="status error">
-          <AlertTriangle size={14} />
-          {error}
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(changeEvent) => setText(changeEvent.target.value)}
+          onKeyDown={(keyEvent) => {
+            if (keyEvent.key === "Escape") {
+              keyEvent.stopPropagation();
+              if (text) setText("");
+              else onClose?.();
+            }
+          }}
+          placeholder="Search people, places, moments, words, or what's on screen"
+          aria-label="Semantic search"
+        />
+        {busy ? <RefreshCw size={15} className="spin" /> : <kbd>⌘K</kbd>}
+      </div>
+
+      {suggestions.length > 0 && (
+        <div className="suggestion-tokens">
+          {suggestions.map((token) => (
+            <button key={token} onClick={() => setText(token)}>
+              {token}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {notice ? (
+        <div className="search-notice">
+          <Info size={13} />
+          <span>{notice}</span>
         </div>
       ) : null}
-      <div className="search-results">
-        {results.map((result) => (
-          <SearchResultRow key={`${result.record_type}:${result.source_id}`} result={result} media={media} onPlay={onPlay} />
-        ))}
-        {!results.length && !busy ? <EmptyState icon={Search} title="No search results" /> : null}
+
+      <div className="semantic-sections">
+        {(Object.keys(semanticSectionLabels) as SemanticSectionId[]).map((sectionId) => {
+          const hits = sections[sectionId] ?? [];
+          if (!hits.length) return null;
+          return (
+            <div key={sectionId} className="section-block">
+              <h3>{semanticSectionLabels[sectionId]}</h3>
+              {sectionId === "people" && (
+                <div className="people-hit-row">
+                  {hits.map((hit) => {
+                    const person = peopleById.get(hit.source_id);
+                    const name = personDisplayName(hit.title || person?.label || "");
+                    return (
+                      <button key={hit.source_id} className="people-hit" onClick={() => person && onOpenPerson(person)} disabled={!person}>
+                        <span className="people-hit-avatar">
+                          {person?.thumbnail_path ? <img src={assetUrl(person.thumbnail_path)} alt="" /> : <i>{personInitials(name)}</i>}
+                        </span>
+                        <span>{name}</span>
+                        {person?.canonical_event_ids?.length ? <em>{person.canonical_event_ids.length}</em> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {sectionId === "places" && (
+                <div className="token-row">
+                  {hits.map((hit) => (
+                    <button key={hit.source_id} className="place-hit" onClick={() => setText(placeDisplayLabel(hit.title))}>
+                      <MapPin size={13} />
+                      <span>{placeDisplayLabel(hit.title)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {sectionId === "moments" && (
+                <div className="moment-hit-grid">
+                  {hits.map((hit) => {
+                    const event = eventsById.get(hit.source_id);
+                    const thumb = event?.thumbnail_path;
+                    return (
+                      <button key={`${hit.record_type}:${hit.source_id}`} className="moment-hit" onClick={() => event && onOpenEvent(event)} disabled={!event}>
+                        <span className="moment-hit-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" loading="lazy" /> : <ImageIcon size={18} />}</span>
+                        <span className="moment-hit-copy">
+                          <strong>{hit.title || event?.title || hit.source_id}</strong>
+                          {hit.snippet ? <small>{hit.snippet}</small> : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {sectionId === "spoken" && (
+                <div className="spoken-hits">
+                  {hits.map((hit) => (
+                    <SpokenHitRow key={hit.source_id} hit={hit} media={media} onPlay={onPlay} />
+                  ))}
+                </div>
+              )}
+              {sectionId === "seen" && (
+                <div className="seen-grid">
+                  {hits.map((hit) => (
+                    <SeenHitTile key={`${hit.record_type}:${hit.source_id}`} hit={hit} media={media} onPlay={onPlay} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {text.trim() && !busy && !hasHits ? <EmptyState icon={Search} title="No matches in the archive" /> : null}
       </div>
-    </section>
+    </div>
   );
 }
 
-function SearchResultRow({
-  result,
-  media,
-  onPlay,
-}: {
-  result: SearchResult;
-  media: MediaRecord[];
-  onPlay: (moment: PlayerMoment) => void;
-}) {
-  const sourceRange: SourceRange | null = result.source_video_id
-    ? {
-        source_video_id: result.source_video_id,
-        start_s: result.start_s,
-        end_s: result.end_s,
-      }
-    : null;
+function SpokenHitRow({ hit, media, onPlay }: { hit: SemanticHit; media: MediaRecord[]; onPlay: (moment: PlayerMoment) => void }) {
+  const moment = momentFromHit(hit, media);
   return (
-    <article className="search-result-row">
-      <div className="search-result-main">
-        <div className="row-heading">
-          <h2>{result.title}</h2>
-          {sourceRange ? <RangeMomentButton range={sourceRange} media={media} onPlay={onPlay} title={result.title} /> : null}
-        </div>
-        {result.snippet ? <p>{result.snippet}</p> : null}
-        <div className="token-row">
-          <Token>{predicateLabel(result.record_type)}</Token>
-          <Token>{formatScore(result.score)}</Token>
-          {result.time_label ? <Token>{result.time_label}</Token> : null}
-          {result.source_video_id ? <Token>{result.source_video_id}</Token> : null}
-        </div>
-      </div>
-    </article>
+    <button className="spoken-hit" onClick={() => moment && onPlay(moment)} disabled={!moment}>
+      <Play size={13} />
+      <span className="spoken-quote">{hit.snippet || hit.title}</span>
+      {moment ? (
+        <small>
+          {moment.videoLabel} · {formatTime(moment.startS)}
+        </small>
+      ) : null}
+    </button>
   );
+}
+
+function SeenHitTile({ hit, media, onPlay }: { hit: SemanticHit; media: MediaRecord[]; onPlay: (moment: PlayerMoment) => void }) {
+  const moment = momentFromHit(hit, media);
+  if (!hit.thumbnail_path) {
+    return null;
+  }
+  return (
+    <button className="seen-tile" onClick={() => moment && onPlay(moment)} disabled={!moment} title={moment ? `${moment.videoLabel} · ${formatTime(moment.startS)}` : ""}>
+      <img src={assetUrl(hit.thumbnail_path)} alt="" loading="lazy" />
+      {moment ? <small>{formatTime(moment.startS)}</small> : null}
+    </button>
+  );
+}
+
+function momentFromHit(hit: SemanticHit, media: MediaRecord[]): PlayerMoment | null {
+  if (!hit.source_video_id) {
+    return null;
+  }
+  const anchor = typeof hit.time_s === "number" ? hit.time_s : typeof hit.start_s === "number" ? hit.start_s : null;
+  if (anchor === null) {
+    return null;
+  }
+  const tape = media.find((row) => row.id === hit.source_video_id);
+  return {
+    videoId: hit.source_video_id,
+    videoLabel: tape?.filename || hit.source_video_id,
+    startS: Math.max(0, anchor - 2),
+    endS: typeof hit.end_s === "number" ? hit.end_s : undefined,
+    title: hit.title || hit.snippet || "Search match",
+  };
+}
+
+function legacyToSections(query: string, results: SearchResult[]): SemanticResponse {
+  const spoken: SemanticHit[] = [];
+  const moments: SemanticHit[] = [];
+  for (const result of results) {
+    const hit: SemanticHit = {
+      kind: "document",
+      score: result.score ?? 0,
+      record_type: result.record_type,
+      source_id: result.source_id,
+      source_video_id: result.source_video_id ?? null,
+      start_s: result.start_s ?? null,
+      end_s: result.end_s ?? null,
+      title: result.title,
+      snippet: result.snippet ?? "",
+    };
+    if (result.record_type === "transcript") spoken.push(hit);
+    else if (result.record_type === "event" || result.record_type === "album") moments.push(hit);
+  }
+  return { query, semantic: false, sections: { spoken, moments } };
 }
 
 function AlbumsView({

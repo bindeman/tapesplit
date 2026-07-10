@@ -507,3 +507,27 @@ export interface SearchResult {
   embedding_score?: number;
   metadata?: Record<string, unknown>;
 }
+
+export type SemanticSectionId = "people" | "places" | "moments" | "spoken" | "seen";
+
+export interface SemanticHit {
+  kind: "document" | "keyframe";
+  score: number;
+  record_type: string;
+  source_id: string;
+  source_video_id?: string | null;
+  start_s?: number | null;
+  end_s?: number | null;
+  time_s?: number | null;
+  title: string;
+  snippet: string;
+  thumbnail_path?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SemanticResponse {
+  query: string;
+  semantic: boolean;
+  latency_ms?: number;
+  sections: Partial<Record<SemanticSectionId, SemanticHit[]>>;
+}

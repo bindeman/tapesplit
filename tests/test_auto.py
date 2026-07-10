@@ -37,6 +37,7 @@ FULL_CAPS = {
     "visual_embedding_default_backend": "sentence-transformers",
     "face_detection_default_backend": "apple-vision",
     "face_embedding_default_backend": "arcface-insightface",
+    "semantic_search_backend": "sentence-transformers",
 }
 
 

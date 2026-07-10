@@ -2381,3 +2381,325 @@ p {
   font-size: 12.5px;
   color: var(--warn);
 }
+
+/* --- Semantic global search (⌘K) ----------------------------------------- */
+
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 9vh 20px 20px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fade-in 140ms ease-out;
+}
+
+.search-dialog {
+  width: min(720px, 100%);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--material);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.semantic-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+  padding: 14px;
+}
+
+.semantic-search .search-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+
+.semantic-search .search-command input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.semantic-search .search-command kbd {
+  font: 11px/1 var(--font-stack, -apple-system);
+  color: var(--text-tertiary);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 3px 5px;
+}
+
+.suggestion-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.suggestion-tokens button,
+.place-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.suggestion-tokens button:hover,
+.place-hit:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.search-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+}
+
+.semantic-sections {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 2px;
+}
+
+.section-block h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.people-hit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.people-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 4px 12px 4px 4px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.people-hit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.people-hit em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.people-hit-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--fill-secondary, rgba(120, 120, 128, 0.16));
+}
+
+.people-hit-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.people-hit-avatar i {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.moment-hit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+.moment-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.moment-hit:hover {
+  border-color: var(--accent);
+}
+
+.moment-hit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.moment-hit-thumb {
+  width: 72px;
+  height: 48px;
+  flex: none;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--fill-secondary, rgba(120, 120, 128, 0.16));
+  color: var(--text-tertiary);
+}
+
+.moment-hit-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.moment-hit-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.moment-hit-copy strong {
+  font-size: 13.5px;
+  font-weight: 590;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.moment-hit-copy small {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.spoken-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spoken-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 9px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.spoken-hit:hover {
+  background: var(--fill-secondary, rgba(120, 120, 128, 0.12));
+}
+
+.spoken-hit .spoken-quote {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+.spoken-hit small {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.seen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+.seen-tile {
+  position: relative;
+  border: none;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  cursor: pointer;
+  background: var(--fill-secondary, rgba(120, 120, 128, 0.16));
+}
+
+.seen-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 200ms ease;
+}
+
+.seen-tile:hover img {
+  transform: scale(1.05);
+}
+
+.seen-tile small {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  font-size: 10.5px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.search-view .semantic-search {
+  max-width: 780px;
+  margin: 0 auto;
+  width: 100%;
+}

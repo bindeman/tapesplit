@@ -1149,6 +1149,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disambiguate source ids shared across record types.",
     )
     search_similar.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
+    search_embed = search_subparsers.add_parser(
+        "embed",
+        help="Add dense multilingual + CLIP semantic vectors to the search index (incremental).",
+    )
+    search_embed.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_embed.add_argument(
+        "--model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help="SentenceTransformers text model for dense vectors.",
+    )
+    search_embed.add_argument(
+        "--no-clip",
+        action="store_true",
+        help="Skip the CLIP text-to-image keyframe layer.",
+    )
+    search_semantic = search_subparsers.add_parser(
+        "semantic",
+        help="Sectioned semantic search: People / Places / Moments / Spoken / Seen.",
+    )
+    search_semantic.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_semantic.add_argument("query", help="Natural-language search query (Russian or English).")
+    search_semantic.add_argument("--limit", type=int, default=8, help="Max results per section. Default: 8.")
+    search_serve = search_subparsers.add_parser(
+        "serve",
+        help="Warm semantic-search sidecar: JSON-lines requests on stdin, responses on stdout.",
+    )
+    search_serve.add_argument("project", type=Path, help="TapeSplit project directory.")
 
     eval_parser = subparsers.add_parser(
         "eval",
@@ -2200,6 +2227,38 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+            if args.search_command == "embed":
+                from tapesplit.semantic_search import upgrade_search_index_semantic
+
+                print(
+                    json.dumps(
+                        upgrade_search_index_semantic(
+                            args.project,
+                            model_name=args.model,
+                            include_clip=not args.no_clip,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.search_command == "semantic":
+                from tapesplit.semantic_search import semantic_query
+
+                print(
+                    json.dumps(
+                        semantic_query(args.project, args.query, limit_per_section=args.limit),
+                        indent=2,
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    )
+                )
+                return 0
+            if args.search_command == "serve":
+                from tapesplit.semantic_search import serve_semantic_search
+
+                serve_semantic_search(args.project)
                 return 0
         if args.command == "eval":
             if args.eval_command == "build":
