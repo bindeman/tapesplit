@@ -1381,6 +1381,27 @@ def _build_parser() -> argparse.ArgumentParser:
     story_parser.add_argument("--json-out", type=Path, help="Output JSON path. Defaults to <project>/story.json.")
     story_parser.add_argument("--md-out", type=Path, help="Output Markdown path. Defaults to <project>/tape_story.md.")
 
+    journal_parser = subparsers.add_parser(
+        "journal",
+        help="Generate and list grounded journal posts (machine-drafted, citation-enforced).",
+    )
+    journal_sub = journal_parser.add_subparsers(dest="journal_command", required=True)
+    journal_generate = journal_sub.add_parser("generate", help="Draft journal posts for the richest dated albums.")
+    journal_generate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    journal_generate.add_argument("--limit", type=int, default=8, help="Maximum posts to draft. Default: 8.")
+    journal_generate.add_argument("--album", action="append", dest="albums", help="Specific album id (repeatable).")
+    journal_generate.add_argument(
+        "--deployment", default=None, help="Azure reasoning deployment. Default: gpt-5.6-terra."
+    )
+    journal_generate.add_argument(
+        "--dry-run", action="store_true", help="Print the grounding-packet plan without calling the model."
+    )
+    journal_generate.add_argument(
+        "--force", action="store_true", help="Regenerate posts that already exist for the selected albums."
+    )
+    journal_list = journal_sub.add_parser("list", help="List generated journal posts.")
+    journal_list.add_argument("project", type=Path, help="TapeSplit project directory.")
+
     viz_parser = subparsers.add_parser(
         "export-visualization",
         help="Export UI-ready timeline, place, people, relationship, and asset data.",
@@ -2456,6 +2477,22 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
+            return 0
+        if args.command == "journal":
+            from tapesplit.journal import DEFAULT_JOURNAL_DEPLOYMENT, generate_journal_posts, list_journal_posts
+
+            if args.journal_command == "generate":
+                result = generate_journal_posts(
+                    args.project,
+                    limit=args.limit,
+                    album_ids=args.albums,
+                    deployment=args.deployment or DEFAULT_JOURNAL_DEPLOYMENT,
+                    dry_run=args.dry_run,
+                    force=args.force,
+                )
+            else:
+                result = {"posts": list_journal_posts(args.project)}
+            print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
             return 0
         if args.command == "export-visualization":
             print(
