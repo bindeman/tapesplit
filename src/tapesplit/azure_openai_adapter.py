@@ -8,7 +8,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from http.client import HTTPException
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from tapesplit.costs import LlmUsage, append_llm_usage, estimate_llm_cost_usd
@@ -236,6 +237,14 @@ def transcribe_diarize(
             detail = exc.read().decode("utf-8", errors="replace")
             last_error = RuntimeError(f"Azure OpenAI transcription failed ({exc.code}): {detail}")
             if exc.code not in RETRYABLE_HTTP_CODES or attempt == max_attempts:
+                raise last_error from exc
+            time.sleep(15.0 * attempt)
+        except (TimeoutError, URLError, ConnectionError, HTTPException) as exc:
+            # stalled reads on long parts are transient — retry like a 5xx
+            last_error = RuntimeError(
+                f"Azure OpenAI transcription failed ({type(exc).__name__}): {exc}"
+            )
+            if attempt == max_attempts:
                 raise last_error from exc
             time.sleep(15.0 * attempt)
     else:  # pragma: no cover - loop always breaks or raises

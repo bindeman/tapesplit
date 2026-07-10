@@ -272,3 +272,41 @@ def test_encode_multipart_contains_fields_and_file():
     assert b"Content-Type: audio/mpeg" in body
     assert b"\x00\x01audio" in body
     assert body.endswith(f"--{boundary}--\r\n".encode())
+
+
+def test_transcribe_diarize_retries_read_timeouts(tmp_path: Path, monkeypatch):
+    import tapesplit.azure_openai_adapter as adapter
+
+    monkeypatch.setenv("AZURE_OPENAI_API_BASE", "https://example.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+    audio = tmp_path / "part.mp3"
+    audio.write_bytes(b"mp3")
+
+    attempts = []
+
+    class FakeResponse:
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"text": "ok", "segments": [], "usage": {"input_tokens": 1, "output_tokens": 1}}'
+
+    def fake_urlopen(request, timeout=None):
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise TimeoutError("The read operation timed out")
+        return FakeResponse()
+
+    monkeypatch.setattr(adapter, "urlopen", fake_urlopen)
+    monkeypatch.setattr(adapter.time, "sleep", lambda seconds: None)
+
+    result = adapter.transcribe_diarize(audio_path=audio)
+
+    assert result["text"] == "ok"
+    assert len(attempts) == 3
