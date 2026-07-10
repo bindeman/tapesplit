@@ -103,6 +103,8 @@ const initialView = ((): ViewMode => {
   return (viewLabels.some((item) => item.id === requested) ? requested : "library") as ViewMode;
 })();
 
+const initialSearchText = new URLSearchParams(window.location.search).get("q") ?? "";
+
 export function App() {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [view, setView] = useState<ViewMode>(initialView);
@@ -3269,7 +3271,7 @@ function SemanticSearchPanel({
   onOpenPerson: (person: PersonRecord) => void;
   onPlay: (moment: PlayerMoment) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialSearchText);
   const [response, setResponse] = useState<SemanticResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");

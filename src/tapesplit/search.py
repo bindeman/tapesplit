@@ -464,7 +464,13 @@ def collect_search_documents(project: Path, *, include_groups: bool = True) -> l
                     continue
                 docs.append(_group_document(row, record_type=record_type, title_key=title_key))
 
-    return [doc for doc in docs if doc["title"] or doc["text"]]
+    # Append-oriented artifacts can briefly hold superseded rows with the same
+    # id (e.g. a diarization re-run mid-merge); keep the last occurrence.
+    deduped: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        if doc["title"] or doc["text"]:
+            deduped[doc["id"]] = doc
+    return list(deduped.values())
 
 
 def _correction_search_text(row: dict[str, Any]) -> str:
