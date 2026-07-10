@@ -2094,3 +2094,70 @@ p {
 .name-entry input {
   flex: 1;
 }
+
+/* ---------------------------------------------------- alias badge + popover */
+
+.alias-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: default;
+}
+
+.alias-more {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--fill, rgba(120, 120, 128, 0.16));
+  color: var(--text-2);
+  align-self: center;
+  white-space: nowrap;
+}
+
+.alias-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 90;
+}
+
+.alias-badge:hover .alias-pop {
+  opacity: 1;
+  transform: none;
+}
+
+/* --------------------------------------------------- draggable miniplayer */
+
+.miniplayer .panel-heading {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.miniplayer.dragging {
+  animation: none;
+}
+
+.miniplayer.dragging .panel-heading {
+  cursor: grabbing;
+}

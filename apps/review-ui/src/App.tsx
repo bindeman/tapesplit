@@ -27,6 +27,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   applyReviewActions,
   applySuggestedReviewActions,
@@ -111,7 +112,7 @@ export function App() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(() => new URLSearchParams(window.location.search).has("review"));
   const [openEvent, setOpenEvent] = useState<EventRecord | null>(null);
   const [openPerson, setOpenPerson] = useState<PersonRecord | null>(null);
   const [openAlbum, setOpenAlbum] = useState<AlbumRecord | null>(null);
@@ -140,11 +141,15 @@ export function App() {
       return;
     }
     deepLinkedRef.current = true;
-    const eventId = new URLSearchParams(window.location.search).get("event");
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get("event");
     if (eventId) {
       const match = bundle.data.timeline.events.find((event) => event.id === eventId);
       if (match) {
         setOpenEvent(match);
+        if (params.has("play")) {
+          playEvent(match, bundle.data.media, setActiveMoment);
+        }
       }
     }
   }, [bundle]);
@@ -546,9 +551,9 @@ export function App() {
       )}
 
       {activeMoment && (
-        <div className="miniplayer">
+        <DraggableMiniplayer>
           <VideoPlayerPanel moment={activeMoment} onClear={() => setActiveMoment(null)} />
-        </div>
+        </DraggableMiniplayer>
       )}
     </div>
   );
@@ -1250,11 +1255,11 @@ function personDisplayName(label: string): string {
   return pool.reduce((best, part) => (part.length < best.length ? part : best));
 }
 
-function personAliasByline(person: PersonRecord): string {
-  const display = personDisplayName(person.label);
+function personAliasList(label: string, extra: string[] = []): string[] {
+  const display = personDisplayName(label);
   const seen = new Set([display.toLowerCase()]);
   const rest: string[] = [];
-  for (const alias of [...person.label.split("/"), ...(person.aliases ?? [])]) {
+  for (const alias of [...label.split("/"), ...extra]) {
     const trimmed = alias.trim();
     if (!trimmed || seen.has(trimmed.toLowerCase())) {
       continue;
@@ -1262,7 +1267,80 @@ function personAliasByline(person: PersonRecord): string {
     seen.add(trimmed.toLowerCase());
     rest.push(trimmed);
   }
-  return rest.slice(0, 6).join(", ");
+  return rest;
+}
+
+function personAliasByline(person: PersonRecord): string {
+  return personAliasList(person.label, person.aliases ?? []).slice(0, 6).join(", ");
+}
+
+// One confident name up front; the rest of the aliases stay a hover away.
+function PersonNameBadge({ label, aliases = [] }: { label: string; aliases?: string[] }) {
+  const display = personDisplayName(label);
+  const rest = personAliasList(label, aliases);
+  if (!rest.length) {
+    return <>{display}</>;
+  }
+  return (
+    <span className="alias-badge" title={`Also: ${rest.join(", ")}`}>
+      {display}
+      <span className="alias-more">+{rest.length}</span>
+      <span className="alias-pop">{rest.join(" · ")}</span>
+    </span>
+  );
+}
+
+const PERSONISH_TASKS = new Set(["resolve_face_cluster", "resolve_speaker", "resolve_person"]);
+
+// Review titles arrive as "Resolve face cluster: Filia / Filip / Филя"; keep
+// the prefix, badge the alias soup.
+function ReviewItemTitle({ item }: { item: ReviewItem }) {
+  const title = item.title ?? "";
+  if (!PERSONISH_TASKS.has(item.task_type) || !title.includes("/")) {
+    return <>{title}</>;
+  }
+  const colon = title.indexOf(":");
+  const tail = (colon >= 0 ? title.slice(colon + 1) : title).trim();
+  if (!tail.includes("/")) {
+    return <>{title}</>;
+  }
+  return (
+    <>
+      {colon >= 0 ? `${title.slice(0, colon + 1)} ` : null}
+      <PersonNameBadge label={tail} />
+    </>
+  );
+}
+
+// Free-text labels like "Appears to be Filia / Filip / Филя" — badge the
+// slash-run, leave the surrounding words alone. Spaced slashes only, so
+// dates and paths never match.
+function AliasAwareLabel({ text }: { text: string }) {
+  const firstSlash = text.indexOf(" / ");
+  if (firstSlash < 0) {
+    return <>{text}</>;
+  }
+  const head = text.slice(0, firstSlash);
+  let start = 0;
+  for (const delimiter of [": ", " be ", " is ", " as ", "· ", "( "]) {
+    const at = head.lastIndexOf(delimiter);
+    if (at >= 0) {
+      start = Math.max(start, at + delimiter.length);
+    }
+  }
+  const rest = text.slice(start);
+  const cut = rest.search(/\s+\(/);
+  const run = (cut >= 0 ? rest.slice(0, cut) : rest).trim();
+  if (!run.includes(" / ")) {
+    return <>{text}</>;
+  }
+  return (
+    <>
+      {text.slice(0, start)}
+      <PersonNameBadge label={run} />
+      {cut >= 0 ? rest.slice(cut) : ""}
+    </>
+  );
 }
 
 // Regions that must never share one scope: two of these in a parenthetical
@@ -1370,7 +1448,9 @@ function ReviewQueue({
           >
             <span className={`task-dot ${item.task_type}`} />
             <span className="queue-text">
-              <strong>{item.title}</strong>
+              <strong>
+                <ReviewItemTitle item={item} />
+              </strong>
               <small>
                 {taskLabel(item.task_type)} · {formatConfidence(item.confidence)}
               </small>
@@ -1429,7 +1509,9 @@ function ReviewDetail({
           <span className="review-confidence">{formatConfidence(item.confidence)}</span>
           {pending && <span className="pending-pill">Queued</span>}
         </div>
-        <h2>{item.title}</h2>
+        <h2>
+          <ReviewItemTitle item={item} />
+        </h2>
         <p>{item.prompt}</p>
         <SuggestedResolution item={item} onQueue={onQueue} />
         <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
@@ -1513,7 +1595,9 @@ function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (ac
     <div className="suggested-resolution">
       <div>
         <small>Best Guess</small>
-        <strong>{suggestion.label}</strong>
+        <strong>
+          <AliasAwareLabel text={suggestion.label} />
+        </strong>
         {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
       </div>
       <CommandButton icon={CheckCircle2} label="Accept Guess" onClick={() => onQueue(actions.length === 1 ? actions[0] : actions)} />
@@ -1612,7 +1696,9 @@ function PersonChip({ label, person }: { label: string; person?: PersonRecord })
         )}
       </div>
       <div>
-        <strong>{person?.label || label}</strong>
+        <strong>
+          <PersonNameBadge label={person?.label || label} aliases={person?.aliases ?? []} />
+        </strong>
         <small>{person ? "person candidate" : "unresolved role"}</small>
       </div>
     </div>
@@ -1741,7 +1827,9 @@ function FaceClusterActions({
               onChange={() => setSelectedId(candidate.face_identity_candidate_id)}
             />
             <span>
-              <strong>{candidate.person_label}</strong>
+              <strong>
+                <PersonNameBadge label={candidate.person_label} />
+              </strong>
               <small>
                 {formatConfidence(candidate.confidence)} · {candidate.candidate_ambiguity ?? "unknown"} ambiguity
                 {candidate.direct_name_event_ids?.length ? " · named in event" : " · co-occurrence only"}
@@ -1831,7 +1919,9 @@ function SpeakerIdentityActions({ item, onQueue }: { item: ReviewItem; onQueue: 
                 onChange={() => setSelectedId(candidateId)}
               />
               <span>
-                <strong>{candidate.person_label}</strong>
+                <strong>
+                <PersonNameBadge label={candidate.person_label} />
+              </strong>
                 <small>
                   {formatConfidence(candidate.confidence)}
                   {candidate.person_kind ? ` · ${candidate.person_kind}` : ""}
@@ -2041,10 +2131,12 @@ function PersonActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: 
                 onChange={() => setSelectedRoleOptionId(option.person_group_id)}
               />
               <span>
-                <strong>{option.label}</strong>
+                <strong>
+                  <PersonNameBadge label={option.label ?? ""} />
+                </strong>
                 <small>
                   role identity · {formatConfidence(option.confidence)}
-                  {option.object_label ? ` · via ${option.object_label}` : ""}
+                  {option.object_label ? ` · via ${personDisplayName(option.object_label)}` : ""}
                 </small>
                 {option.basis?.length ? <small title={option.basis.join(" · ")}>{option.basis.join(" · ")}</small> : null}
               </span>
@@ -2248,6 +2340,121 @@ function MomentButton({
       <Clock3 size={13} />
       <span>{formatTime(moment.startS)}</span>
     </button>
+  );
+}
+
+const PLAYER_POS_KEY = "tapesplit.miniplayer.pos";
+
+function readSavedPlayerPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(PLAYER_POS_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { x?: number; y?: number };
+    if (typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+      return null;
+    }
+    return clampPlayerPos(parsed as { x: number; y: number }, null);
+  } catch {
+    return null;
+  }
+}
+
+function clampPlayerPos(pos: { x: number; y: number }, el: HTMLElement | null) {
+  const width = el?.offsetWidth ?? 430;
+  const height = el?.offsetHeight ?? 340;
+  return {
+    x: Math.min(Math.max(8, pos.x), Math.max(8, window.innerWidth - width - 8)),
+    y: Math.min(Math.max(8, pos.y), Math.max(8, window.innerHeight - height - 8)),
+  };
+}
+
+// The player floats bottom-right by default; grab its header to put it
+// anywhere, double-click the header to send it home. Position survives
+// reloads via localStorage; drags move via transform and bake to left/top
+// on release.
+function DraggableMiniplayer({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef<{ pointerId: number; startX: number; startY: number; origin: { x: number; y: number } } | null>(null);
+  const [pos, setPos] = useState(readSavedPlayerPos);
+  const [dragging, setDragging] = useState(false);
+
+  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (!target.closest(".panel-heading") || target.closest("button, a, input, video")) {
+      return;
+    }
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const origin = { x: rect.left, y: rect.top };
+    setPos(origin);
+    dragState.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, origin };
+    el.setPointerCapture(event.pointerId);
+    setDragging(true);
+    event.preventDefault();
+  }
+
+  function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragState.current;
+    const el = ref.current;
+    if (!drag || !el || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    const next = clampPlayerPos(
+      { x: drag.origin.x + event.clientX - drag.startX, y: drag.origin.y + event.clientY - drag.startY },
+      el,
+    );
+    el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragState.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    dragState.current = null;
+    setDragging(false);
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    el.style.transform = "";
+    const next = clampPlayerPos({ x: rect.left, y: rect.top }, el);
+    setPos(next);
+    try {
+      localStorage.setItem(PLAYER_POS_KEY, JSON.stringify(next));
+    } catch {
+      // storage unavailable; position just won't persist
+    }
+  }
+
+  return (
+    <div
+      ref={ref}
+      className={`miniplayer${dragging ? " dragging" : ""}`}
+      style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onDoubleClick={(event) => {
+        if ((event.target as HTMLElement).closest(".panel-heading")) {
+          setPos(null);
+          try {
+            localStorage.removeItem(PLAYER_POS_KEY);
+          } catch {
+            // storage unavailable
+          }
+        }
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
