@@ -30,6 +30,10 @@ macos = [
 face-ai = [
   "insightface>=1.0.1",
   "onnxruntime>=1.27.0",
+  # cvlface-kprpe backend (bundled remote code needs these at import time)
+  "omegaconf>=2.3",
+  "timm>=1.0",
+  "easydict>=1.10",
 ]
 visual-ai = [
   "pillow>=10.1",
