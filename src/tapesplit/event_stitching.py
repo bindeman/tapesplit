@@ -88,11 +88,20 @@ def stitch_project_events(
 
 
 def load_source_events(project: Path, *, prefer_gemini: bool = True) -> list[dict[str, Any]]:
+    from tapesplit.event_reassembly import apply_adjustment, load_reassembly_layers
+
     gemini_events = read_jsonl(project / "gemini_events.jsonl")
     if prefer_gemini and gemini_events:
         analyzed = gemini_events
     else:
         analyzed = read_jsonl(project / "events.jsonl") + gemini_events
+    adjustments, azure_events = load_reassembly_layers(project)
+    if adjustments:
+        analyzed = [
+            apply_adjustment(event, adjustments[event["id"]]) if event.get("id") in adjustments else event
+            for event in analyzed
+        ]
+    analyzed = analyzed + azure_events
     rows = analyzed + _uncovered_heuristic_events(project, analyzed)
     return [_normalize_candidate(row) for row in rows]
 

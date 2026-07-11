@@ -7,6 +7,7 @@ from tapesplit.context_graph import build_context_graph
 from tapesplit.content_classification import build_content_classifications_for_project
 from tapesplit.evidence import build_evidence
 from tapesplit.event_alignment import build_event_alignments
+from tapesplit.event_reassembly import build_event_reassembly, remap_event_corrections
 from tapesplit.event_reconciliation import build_event_reconciliations
 from tapesplit.event_stitching import stitch_project_events
 from tapesplit.gemini_import import import_gemini_analysis
@@ -63,6 +64,9 @@ def rebuild_project_outputs(
     steps.append({"step": "build_evidence", "result": build_evidence(project)})
     if synthesize_heuristic_events and (project / "tapes.jsonl").exists():
         steps.append({"step": "build_heuristic_events", "result": build_heuristic_events(project)})
+    events_before_stitch = read_jsonl(project / "canonical_events.jsonl")
+    if (project / "azure_adjudication.json").exists():
+        steps.append({"step": "event_reassembly", "result": build_event_reassembly(project)})
     steps.append(
         {
             "step": "stitch_events",
@@ -73,6 +77,17 @@ def rebuild_project_outputs(
             ),
         }
     )
+    if events_before_stitch:
+        steps.append(
+            {
+                "step": "remap_event_corrections",
+                "result": remap_event_corrections(
+                    project,
+                    before_events=events_before_stitch,
+                    after_events=read_jsonl(project / "canonical_events.jsonl"),
+                ),
+            }
+        )
     _append_reapply_step(steps, project, "review_reapply_after_stitch_events")
     steps.append({"step": "classify_content", "result": build_content_classifications_for_project(project)})
     steps.append({"step": "build_evidence_after_classification", "result": build_evidence(project)})
