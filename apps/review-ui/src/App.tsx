@@ -986,7 +986,9 @@ function PeopleWall({
     for (const person of people) {
       if (person.kind === "role_candidate") {
         roles.push(person);
-      } else if (primaryPersonThumb(person)) {
+      } else if (primaryPersonThumb(person) || appearanceCount(person) >= 2) {
+        // Substantial people stay on the wall even without a confident face —
+        // an honest monogram beats both a wrong crop and being hidden away.
         faces.push(person);
       } else {
         faceless.push(person);
@@ -1045,7 +1047,7 @@ function PeopleWall({
         <details className="offcuts">
           <summary>
             <ChevronRight size={15} className="chevron" />
-            Heard or mentioned, no face yet ({faceless.length})
+            More people ({faceless.length})
           </summary>
           <div className="avatar-grid compact">
             {faceless.map((person) => (
@@ -1080,10 +1082,22 @@ function PeopleWall({
 }
 
 function PersonAvatar({ person, size }: { person: PersonRecord; size?: "large" }) {
-  const thumb = primaryPersonThumb(person);
+  const thumbs = personFaceThumbs(person);
+  const [thumbIndex, setThumbIndex] = useState(0);
+  useEffect(() => setThumbIndex(0), [person.id]);
+  const thumb = thumbs[thumbIndex] ?? "";
   return (
     <span className={`avatar ${size ?? ""}`}>
-      {thumb ? <img src={assetUrl(thumb)} alt="" loading="lazy" /> : <i>{personInitials(person.label)}</i>}
+      {thumb ? (
+        <img
+          src={assetUrl(thumb)}
+          alt=""
+          loading="lazy"
+          onError={() => setThumbIndex((index) => index + 1)}
+        />
+      ) : (
+        <i>{personInitials(person.label)}</i>
+      )}
     </span>
   );
 }
@@ -4085,6 +4099,11 @@ function primaryPersonThumb(person?: PersonRecord) {
 function personFaceThumbs(person?: PersonRecord) {
   if (!person) {
     return [];
+  }
+  if (person.avatar_candidates) {
+    // New exports carry ranked, attribution-gated crops. An empty list means no
+    // crop met the bar — the monogram is the honest render, so no legacy fallback.
+    return uniqueStrings(person.avatar_candidates.map((candidate) => candidate.path || ""));
   }
   return uniqueStrings([
     person.thumbnail_path || "",

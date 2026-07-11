@@ -190,6 +190,14 @@ export interface PersonRecord {
   canonical_event_ids?: string[];
   appearances?: EventEntry[];
   thumbnail_path?: string;
+  avatar_candidates?: Array<{
+    path: string;
+    quality: number;
+    attribution: number;
+    source?: string;
+    face_cluster_id?: string;
+    score?: number;
+  }>;
   candidate_face_clusters?: Array<{
     face_cluster_id: string;
     thumbnail_path?: string;

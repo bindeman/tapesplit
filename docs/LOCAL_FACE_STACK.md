@@ -99,3 +99,17 @@ sits well below both in the 40–100px regime this archive lives in. Weights
 `TAPESPLIT_FACE_ALLOW_DOWNLOAD=1` to permit the download. buffalo_l stays the
 default and fallback, and its cosine threshold (0.65) does not transfer —
 recalibrate with a sweep when enabling KP-RPE.
+
+## Avatar candidates
+
+`export-visualization` ranks each person's best face crops into
+`avatar_candidates` (top 3: `path`, `quality`, `attribution`, `source`). An
+avatar is an identity assertion, so two gates apply: the crop must clear a
+quality floor (track `top_frames` outrank keyframe-era observation crops;
+narrow face boxes are penalized as likely profiles), and the cluster must be
+confidently attributed — linked clusters always qualify, candidate clusters
+need confidence ≥ 0.6 (≥ 0.45 with direct-name evidence) and a clear margin
+over rivals, except when the tied rivals share name tokens (duplicate groups
+of the same person). People with no qualifying crop render as monograms in
+the UI; every `confirm_identity`/`label_face_cluster` review decision links a
+cluster and lights the avatar up on the next export.

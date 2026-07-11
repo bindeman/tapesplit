@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,7 @@ def export_visualization_data(
     visual_assets = read_jsonl(project / "visual_assets.jsonl")
     face_observations = read_jsonl(project / "face_observations.jsonl")
     face_clusters = read_jsonl(project / "face_clusters.jsonl")
+    face_tracks = read_jsonl(project / "face_tracks.jsonl")
     face_identity_candidates = read_jsonl(project / "face_identity_candidates.jsonl")
     speaker_segments = read_jsonl(project / "speaker_segments.jsonl")
     speaker_identity_candidates = read_jsonl(project / "speaker_identity_candidates.jsonl")
@@ -72,6 +74,7 @@ def export_visualization_data(
     assets_by_subject = _assets_by_subject(visual_assets)
     faces_by_person = _faces_by_person(face_observations)
     clusters_by_person_candidate = _clusters_by_person_candidate(face_clusters)
+    avatar_candidates_by_person = _avatar_candidates_by_person(face_clusters, face_tracks, face_observations)
     edge_metrics_by_edge = {str(metric.get("edge_id")): metric for metric in edge_metrics if metric.get("edge_id")}
     video_offsets = _video_offsets(tapes)
     place_contexts = _place_context_groups(places, events_by_id)
@@ -126,7 +129,7 @@ def export_visualization_data(
         },
         "tracks": {
             "people": [
-                _people_track(person, events_by_id, faces_by_person)
+                _people_track(person, events_by_id, faces_by_person, avatar_candidates_by_person)
                 | {
                     "candidate_face_clusters": clusters_by_person_candidate.get(str(person.get("id") or ""), []),
                 }
@@ -145,7 +148,7 @@ def export_visualization_data(
         "places": [_place_node(place, events_by_id) for place in sorted(places, key=lambda row: _place_sort_key(row))],
         "place_contexts": place_contexts,
         "people": [
-            _person_node(person, faces_by_person)
+            _person_node(person, faces_by_person, avatar_candidates_by_person)
             | {
                 "candidate_face_clusters": clusters_by_person_candidate.get(str(person.get("id") or ""), []),
             }
@@ -432,10 +435,12 @@ def _people_track(
     person: dict[str, Any],
     events_by_id: dict[str, dict[str, Any]],
     faces_by_person: dict[str, list[dict[str, Any]]],
+    avatar_candidates_by_person: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     person_id = str(person.get("id") or "")
     event_entries = _event_entries(person.get("canonical_event_ids") or [], events_by_id)
     faces = faces_by_person.get(person_id, [])
+    avatar_candidates = (avatar_candidates_by_person or {}).get(person_id, [])
     return {
         "id": person_id,
         "label": str(person.get("label") or ""),
@@ -443,7 +448,10 @@ def _people_track(
         "kind": person.get("kind"),
         "appearances": event_entries,
         "appearance_count": len(event_entries),
-        "thumbnail_path": _first_path(faces, "face_thumbnail_path"),
+        "avatar_candidates": avatar_candidates,
+        "thumbnail_path": (
+            avatar_candidates[0]["path"] if avatar_candidates else _first_path(faces, "face_thumbnail_path")
+        ),
         "review_status": person.get("review_status") or "unreviewed",
     }
 
@@ -609,16 +617,24 @@ def _place_node(place: dict[str, Any], events_by_id: dict[str, dict[str, Any]]) 
     }
 
 
-def _person_node(person: dict[str, Any], faces_by_person: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+def _person_node(
+    person: dict[str, Any],
+    faces_by_person: dict[str, list[dict[str, Any]]],
+    avatar_candidates_by_person: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     person_id = str(person.get("id") or "")
     faces = faces_by_person.get(person_id, [])
+    avatar_candidates = (avatar_candidates_by_person or {}).get(person_id, [])
     return {
         "id": person_id,
         "label": str(person.get("label") or ""),
         "aliases": person.get("aliases") or [],
         "kind": person.get("kind"),
         "canonical_event_ids": person.get("canonical_event_ids") or [],
-        "thumbnail_path": _first_path(faces, "face_thumbnail_path"),
+        "avatar_candidates": avatar_candidates,
+        "thumbnail_path": (
+            avatar_candidates[0]["path"] if avatar_candidates else _first_path(faces, "face_thumbnail_path")
+        ),
         "confidence": person.get("confidence"),
         "review_status": person.get("review_status") or "unreviewed",
         "notes": person.get("notes") or [],
@@ -1579,6 +1595,137 @@ def _faces_by_person(faces: list[dict[str, Any]]) -> dict[str, list[dict[str, An
         if person_id:
             grouped[person_id].append(face)
     return dict(grouped)
+
+
+# An avatar is an implicit identity assertion, so both gates matter: the crop must
+# be worth looking at AND the cluster must plausibly belong to the person.
+AVATAR_ATTRIBUTION_FLOOR = 0.6
+AVATAR_DIRECT_NAME_ATTRIBUTION_FLOOR = 0.45
+AVATAR_ATTRIBUTION_MARGIN = 0.05
+AVATAR_CROP_QUALITY_FLOOR = 0.45
+AVATAR_PROFILE_ASPECT_RATIO = 0.72
+AVATAR_MAX_CANDIDATES = 3
+
+
+def _avatar_aspect_factor(bbox: dict[str, Any] | None) -> float:
+    width = float((bbox or {}).get("width") or 0.0)
+    height = float((bbox or {}).get("height") or 0.0)
+    if width <= 0 or height <= 0:
+        return 1.0
+    ratio = width / height
+    if ratio < AVATAR_PROFILE_ASPECT_RATIO:
+        # Tall, narrow face boxes are usually profiles or half-turned heads.
+        return 0.6
+    if ratio > 1.6:
+        return 0.8
+    return 1.0
+
+
+def _person_name_tokens(label: Any) -> set[str]:
+    return {token for token in re.split(r"[\s/·,]+", str(label or "").casefold()) if len(token) > 1}
+
+
+def _cluster_avatar_attribution(cluster: dict[str, Any]) -> tuple[str, float] | None:
+    linked = str(cluster.get("linked_person_group_id") or "")
+    if linked:
+        return linked, 1.0
+    candidates = [
+        candidate
+        for candidate in cluster.get("candidate_people") or []
+        if str(candidate.get("person_group_id") or "")
+    ]
+    if not candidates:
+        return None
+    ranked = sorted(candidates, key=lambda row: _number_or_none(row.get("confidence")) or 0.0, reverse=True)
+    top = ranked[0]
+    confidence = _number_or_none(top.get("confidence")) or 0.0
+    top_tokens = _person_name_tokens(top.get("person_label"))
+    for rival in ranked[1:]:
+        rival_confidence = _number_or_none(rival.get("confidence")) or 0.0
+        if confidence - rival_confidence >= AVATAR_ATTRIBUTION_MARGIN:
+            break
+        # A tie against a sibling group of the same human (duplicate person groups
+        # share name tokens) is not ambiguity; a tie against a different person is.
+        if not (top_tokens & _person_name_tokens(rival.get("person_label"))):
+            return None
+    direct_name = _number_or_none(top.get("direct_name_strength")) or 0.0
+    floor = AVATAR_DIRECT_NAME_ATTRIBUTION_FLOOR if direct_name > 0.0 else AVATAR_ATTRIBUTION_FLOOR
+    if confidence < floor:
+        return None
+    return str(top.get("person_group_id")), confidence
+
+
+def _cluster_avatar_crops(
+    cluster: dict[str, Any],
+    tracks_by_id: dict[str, dict[str, Any]],
+    observations_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    crops: list[dict[str, Any]] = []
+    for track_id in cluster.get("face_track_ids") or []:
+        track = tracks_by_id.get(str(track_id))
+        if not track:
+            continue
+        for frame in track.get("top_frames") or []:
+            path = str(frame.get("crop_path") or "")
+            if path:
+                quality = (_number_or_none(frame.get("quality_w")) or 0.0) * _avatar_aspect_factor(frame.get("bbox"))
+                crops.append({"path": path, "quality": quality, "source": "track_frame"})
+        representative = track.get("representative") or {}
+        path = str(representative.get("thumbnail_path") or "")
+        if path:
+            base = _number_or_none((track.get("quality") or {}).get("max_w"))
+            if base is None:
+                base = _number_or_none(track.get("mean_det_score")) or 0.5
+            quality = base * _avatar_aspect_factor(representative.get("bbox")) * 0.98
+            crops.append({"path": path, "quality": quality, "source": "track_representative"})
+    for observation_id in cluster.get("face_observation_ids") or []:
+        observation = observations_by_id.get(str(observation_id))
+        if not observation:
+            continue
+        path = str(observation.get("face_thumbnail_path") or "")
+        if not path:
+            continue
+        # Keyframe-era crops rank below track frames: single-frame luck, no best-of-shot.
+        quality = (
+            (_number_or_none(observation.get("face_quality_weight")) or 0.0)
+            * _avatar_aspect_factor(observation.get("bbox"))
+            * 0.85
+        )
+        crops.append({"path": path, "quality": quality, "source": "observation"})
+    return crops
+
+
+def _avatar_candidates_by_person(
+    face_clusters: list[dict[str, Any]],
+    face_tracks: list[dict[str, Any]],
+    face_observations: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    tracks_by_id = {str(track.get("id")): track for track in face_tracks if track.get("id")}
+    observations_by_id = {str(row.get("id")): row for row in face_observations if row.get("id")}
+    best_by_person: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for cluster in face_clusters:
+        attribution = _cluster_avatar_attribution(cluster)
+        if not attribution:
+            continue
+        person_id, confidence = attribution
+        for crop in _cluster_avatar_crops(cluster, tracks_by_id, observations_by_id):
+            if crop["quality"] < AVATAR_CROP_QUALITY_FLOOR:
+                continue
+            candidate = {
+                "path": crop["path"],
+                "quality": round(crop["quality"], 4),
+                "attribution": round(confidence, 4),
+                "source": crop["source"],
+                "face_cluster_id": str(cluster.get("id") or ""),
+                "score": round(confidence * crop["quality"], 4),
+            }
+            existing = best_by_person[person_id].get(crop["path"])
+            if existing is None or candidate["score"] > existing["score"]:
+                best_by_person[person_id][crop["path"]] = candidate
+    return {
+        person_id: sorted(candidates.values(), key=lambda row: -row["score"])[:AVATAR_MAX_CANDIDATES]
+        for person_id, candidates in best_by_person.items()
+    }
 
 
 def _clusters_by_person_candidate(clusters: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
