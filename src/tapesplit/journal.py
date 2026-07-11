@@ -35,12 +35,57 @@ ENTITY_KINDS = {"person", "place", "event"}
 
 # Albums bigger than this read as trips, not days; posts stay day-sized.
 MAX_PACKET_EVENTS = 24
-MAX_PACKET_QUOTES = 16
+MAX_PACKET_QUOTES = 12
 MIN_QUOTE_WORDS = 3
 MAX_QUOTE_CHARS = 160
 REGENERATION_ROUNDS = 1
 
+# --- Memory salience ------------------------------------------------------
+# A quote earns its place by carrying a memory, not by parsing cleanly.
+# Layer 1 scores lexical signals of memorable moments (bilingual — the
+# archive narrates in Russian and English); layer 2 scores semantic
+# similarity to memory archetypes; layer 3 (terra) picks the finalists and
+# says why. Weights were tuned by reading the generated posts against the
+# bar "would this give Phillip a memory".
+SALIENCE_FIRST = 3.0
+SALIENCE_MILESTONE = 2.0
+SALIENCE_WONDER = 1.5
+SALIENCE_CHILD_VOICE = 1.5
+SALIENCE_NAMED = 1.0
+SALIENCE_DIRECT_ADDRESS = 1.0
+SALIENCE_EMOTIVE = 1.0
+SALIENCE_PLAY = 1.0
+SALIENCE_EXCLAIM = 0.75
+SALIENCE_PROCEDURAL = -2.0
+SALIENCE_CAMERA_TALK = -1.5
+SALIENCE_FILLER = -2.0
+SEMANTIC_SALIENCE_SCALE = 4.0  # (cosine - floor) * scale, capped at 2.0
+SEMANTIC_SALIENCE_FLOOR = 0.25
+HALLUCINATION_REPEAT_LIMIT = 3  # same normalized text N+ times in one tape = whisper loop
+
+MEMORY_ARCHETYPES = [
+    "a child seeing something wonderful for the first time",
+    "ребёнок впервые видит что-то удивительное",
+    "making a birthday wish before blowing out the candles",
+    "поздравление с днём рождения, задувание свечей",
+    "a parent saying something tender to their child",
+    "мама или папа говорит ребёнку что-то нежное",
+    "a joke or a silly moment that made the whole family laugh",
+    "шутка или глупость, над которой смеялась вся семья",
+    "a child proudly showing what they made or learned",
+    "ребёнок с гордостью показывает, что он сделал или чему научился",
+    "losing a tooth, learning to ride, the first day of school",
+    "выпал зуб, первый день в школе, научился кататься",
+    "singing a song together",
+    "поём песню все вместе",
+    "saying goodbye or greeting someone dearly missed",
+    "прощание или встреча с тем, по кому скучали",
+]
+
+_FIRST_RE = None  # compiled lazily in _salience_patterns()
+
 Generator = Callable[[dict[str, Any], list[str] | None], dict[str, Any]]
+Ranker = Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, str]]
 
 
 def generate_journal_posts(
@@ -50,6 +95,7 @@ def generate_journal_posts(
     album_ids: list[str] | None = None,
     deployment: str = DEFAULT_JOURNAL_DEPLOYMENT,
     generator: Generator | None = None,
+    ranker: Ranker | None = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
@@ -73,6 +119,9 @@ def generate_journal_posts(
         }
 
     generate = generator or _terra_generator(project, deployment)
+    # Live runs get the terra editorial pass; injected generators (tests)
+    # only rank when a ranker is injected alongside.
+    rank = ranker if ranker is not None else (_terra_ranker(project, deployment) if generator is None else None)
     existing_rows = read_jsonl(project / JOURNAL_POSTS_FILENAME)
     if force:
         wanted = {packet["album_id"] for packet in packets}
@@ -92,6 +141,8 @@ def generate_journal_posts(
         if packet["album_id"] in existing:
             skipped.append({"album_id": packet["album_id"], "reason": "post already exists"})
             continue
+        if rank is not None:
+            _apply_quote_ranking(packet, rank)
         try:
             post, rejected = _generate_one(packet, generate)
         except Exception as error:  # generation is best-effort per album
@@ -121,6 +172,7 @@ def generate_journal_posts(
                 },
             )
         writer.close()
+        _persist_salience(project, packets, generated={post["album_id"] for post in posts})
 
     return {
         "project": str(project),
@@ -201,6 +253,9 @@ def build_grounding_packets(
     if album_ids:
         wanted = {str(album_id) for album_id in album_ids}
         albums = [album for album in albums if str(album.get("id")) in wanted]
+    repeat_counts = _segment_repeat_counts(segments_by_video)
+    child_speakers = _child_speakers(project, people_groups)
+    archetype_scorer = _archetype_scorer_for(project)
     packets = []
     for album in albums:
         packet = _packet_for_album(
@@ -210,11 +265,17 @@ def build_grounding_packets(
             segments_by_video=segments_by_video,
             people_groups=people_groups,
             place_roles_by_event=place_roles_by_event,
+            repeat_counts=repeat_counts,
+            child_speakers=child_speakers,
+            archetype_scorer=archetype_scorer,
         )
         if packet is not None:
             packets.append(packet)
-    # Richest first: quotes are what make a post worth reading.
-    packets.sort(key=lambda p: (len(p["quotes"]), len(p["events"])), reverse=True)
+    # Richest first: memorable quotes are what make a post worth reading.
+    packets.sort(
+        key=lambda p: (sum(q.get("salience", 0.0) for q in p["quotes"][:4]), len(p["events"])),
+        reverse=True,
+    )
     return packets[: max(0, int(limit))] if not album_ids else packets
 
 
@@ -226,6 +287,9 @@ def _packet_for_album(
     segments_by_video: dict[str, list[dict[str, Any]]],
     people_groups: list[dict[str, Any]],
     place_roles_by_event: dict[str, list[dict[str, Any]]],
+    repeat_counts: dict[str, dict[str, int]] | None = None,
+    child_speakers: set[str] | None = None,
+    archetype_scorer: Callable[[list[str]], list[float]] | None = None,
 ) -> dict[str, Any] | None:
     event_ids = [str(event_id) for event_id in album.get("canonical_event_ids") or [] if event_id]
     events = [events_by_id[event_id] for event_id in event_ids if event_id in events_by_id]
@@ -254,7 +318,13 @@ def _packet_for_album(
             }
         )
 
-    quotes = _select_quotes(ranges_by_video, segments_by_video)
+    quotes = _select_quotes(
+        ranges_by_video,
+        segments_by_video,
+        repeat_counts=repeat_counts,
+        child_speakers=child_speakers,
+        archetype_scorer=archetype_scorer,
+    )
     people = _people_for_events(set(str(e["id"]) for e in event_entries), people_groups)
     places = _places_for_events(event_entries, place_roles_by_event)
     source_span = _album_source_span(ranges_by_video)
@@ -277,9 +347,16 @@ def _packet_for_album(
 def _select_quotes(
     ranges_by_video: dict[str, list[tuple[float, float]]],
     segments_by_video: dict[str, list[dict[str, Any]]],
+    *,
+    repeat_counts: dict[str, dict[str, int]] | None = None,
+    child_speakers: set[str] | None = None,
+    archetype_scorer: Callable[[list[str]], list[float]] | None = None,
 ) -> list[dict[str, Any]]:
+    repeat_counts = repeat_counts or {}
+    child_speakers = child_speakers or set()
     candidates = []
     for video_id, ranges in ranges_by_video.items():
+        video_repeats = repeat_counts.get(video_id) or {}
         for segment in segments_by_video.get(video_id, []):
             start = _number(segment.get("start_s"))
             end = _number(segment.get("end_s"))
@@ -291,12 +368,14 @@ def _select_quotes(
             words = len(text.split())
             if words < MIN_QUOTE_WORDS or len(text) > MAX_QUOTE_CHARS:
                 continue
+            # Whisper hallucination loops repeat one line dozens of times;
+            # a "quote" that occurs 3+ times in a tape is machinery, not memory.
+            if video_repeats.get(_normalized_text_key(text), 0) >= HALLUCINATION_REPEAT_LIMIT:
+                continue
             speaker = str(segment.get("speaker_label") or "")
             named = bool(speaker) and not speaker.startswith("AZ_SPEAKER")
-            liveliness = (
-                (2 if named else 0)
-                + (1 if any(mark in text for mark in ("!", "?")) else 0)
-                + (1 if 4 <= words <= 18 else 0)
+            score, reasons = _salience_heuristic(
+                text, named=named, child=named and speaker.casefold() in child_speakers
             )
             candidates.append(
                 {
@@ -306,14 +385,196 @@ def _select_quotes(
                     "source_video_id": video_id,
                     "start_s": start,
                     "end_s": end,
-                    "_score": liveliness,
+                    "salience": score,
+                    "salience_reasons": reasons,
                 }
             )
-    candidates.sort(key=lambda row: row["_score"], reverse=True)
-    quotes = candidates[:MAX_PACKET_QUOTES]
-    for quote in quotes:
-        quote.pop("_score", None)
-    return quotes
+    if candidates and archetype_scorer is not None:
+        try:
+            semantic = archetype_scorer([row["text"] for row in candidates])
+        except Exception:
+            semantic = [0.0] * len(candidates)  # embeddings are an upgrade, never a dependency
+        for row, boost in zip(candidates, semantic, strict=True):
+            if boost > 0:
+                row["salience"] = round(row["salience"] + boost, 3)
+                row["salience_reasons"] = row["salience_reasons"] + ["memory-archetype"]
+    candidates.sort(key=lambda row: (row["salience"], row["start_s"] or 0.0), reverse=True)
+    return candidates[:MAX_PACKET_QUOTES]
+
+
+def _salience_patterns() -> dict[str, Any]:
+    global _FIRST_RE
+    if _FIRST_RE is None:
+        import re
+
+        def rx(pattern: str) -> Any:
+            return re.compile(pattern, re.IGNORECASE)
+
+        _FIRST_RE = {
+            "first": rx(r"перв\w* раз|впервые|first time|for the first time"),
+            "milestone": rx(
+                r"день рождени|с днём|с днем|исполнилось|задува|свеч|birthday|"
+                r"зуб\b|зубик|tooth|школ\w|first day|новый год|рождеств|christmas|ёлк|елк"
+            ),
+            "wonder": rx(r"ух ты|ура|вот это|смотри|смотрите|гляди|погляди|look|wow|whoa|üра"),
+            "address": rx(r"\bмам\w?\b|\bпап\w?\b|\bбабушк|\bдедушк|mama|papa|mommy|daddy|grandma|grandpa"),
+            "emotive": rx(
+                r"любл|люби|красив|страшн|смешн|весел|счастлив|боюсь|обожа|нрав|скуча|"
+                r"love|beautiful|funny|scared|happy|miss you|proud"
+            ),
+            "play": rx(r"пою|поём|поем|споём|споем|песн|танцу|прыга|каталис|катаемся|sing|song|dance|jump"),
+            "procedural": rx(
+                r"передай|возьми|положи|поставь|садись|сядь|иди сюда|подожди|подвин|"
+                r"не трогай|быстрее|pass the|sit down|come here|hold on|hurry"
+            ),
+            "camera": rx(r"камер|снима|плёнк|пленк|кассет|батарейк|record|camera|filming|tape\b"),
+        }
+    return _FIRST_RE
+
+
+def _salience_heuristic(text: str, *, named: bool, child: bool) -> tuple[float, list[str]]:
+    patterns = _salience_patterns()
+    score = 0.0
+    reasons: list[str] = []
+
+    def hit(key: str, points: float) -> None:
+        nonlocal score
+        if patterns[key].search(text):
+            score += points
+            reasons.append(key)
+
+    hit("first", SALIENCE_FIRST)
+    hit("milestone", SALIENCE_MILESTONE)
+    hit("wonder", SALIENCE_WONDER)
+    hit("address", SALIENCE_DIRECT_ADDRESS)
+    hit("emotive", SALIENCE_EMOTIVE)
+    hit("play", SALIENCE_PLAY)
+    hit("procedural", SALIENCE_PROCEDURAL)
+    hit("camera", SALIENCE_CAMERA_TALK)
+    words = text.split()
+    if named:
+        score += SALIENCE_NAMED
+        reasons.append("named-speaker")
+    if child:
+        score += SALIENCE_CHILD_VOICE
+        reasons.append("child-voice")
+    if text.rstrip().endswith(("!", "?!")) and len(words) <= 10:
+        score += SALIENCE_EXCLAIM
+        reasons.append("exclaim")
+    if len(set(word.casefold() for word in words)) <= 2 or sum(ch.isdigit() for ch in text) > len(text) / 4:
+        score += SALIENCE_FILLER
+        reasons.append("filler")
+    return round(score, 3), reasons
+
+
+def _normalized_text_key(text: str) -> str:
+    import re
+
+    return re.sub(r"[\W\d_]+", " ", text.casefold()).strip()
+
+
+def _segment_repeat_counts(segments_by_video: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for video_id, segments in segments_by_video.items():
+        per_video: dict[str, int] = {}
+        for segment in segments:
+            text = str((segment.get("metadata") or {}).get("transcript_text") or "").strip()
+            if not text:
+                continue
+            key = _normalized_text_key(text)
+            if key:
+                per_video[key] = per_video.get(key, 0) + 1
+        counts[video_id] = per_video
+    return counts
+
+
+def _child_speakers(project: Path, people_groups: list[dict[str, Any]]) -> set[str]:
+    """Speaker labels belonging to people whose CONFIRMED age model says child.
+
+    Candidate-basis age models are polluted by event co-occurrence (a birthday
+    averages the guests), so only confirmed attributions vote — the set grows
+    as review decisions land, and an empty set just means no child boost yet.
+    """
+    aliases_by_group: dict[str, list[str]] = {
+        str(group.get("id")): [str(a) for a in group.get("aliases") or []] + [str(group.get("label") or "")]
+        for group in people_groups
+    }
+    labels: set[str] = set()
+    for row in read_jsonl(project / "person_age_models.jsonl"):
+        if row.get("adult") is not False or str(row.get("attribution_basis") or "") != "confirmed":
+            continue
+        for alias in aliases_by_group.get(str(row.get("person_group_id") or ""), []):
+            for part in alias.split("/"):
+                if part.strip():
+                    labels.add(part.strip().casefold())
+    return labels
+
+
+def _archetype_scorer_for(project: Path) -> Callable[[list[str]], list[float]] | None:
+    """Memory-archetype similarity via the semantic-search embedding stack.
+
+    Reuses the project's content-hash embedding cache so repeat scoring is
+    free; returns None when sentence-transformers is unavailable. Gated on
+    the cache db existing (i.e. semantic search has run on this project) so
+    small projects and unit tests never pay a model load.
+    """
+    try:
+        from tapesplit.semantic_search import SEMANTIC_CACHE_DB_NAME as _cache_name
+
+        if not (project / _cache_name).exists():
+            return None
+    except Exception:
+        return None
+    try:
+        from tapesplit.search import DEFAULT_EMBEDDING_MODEL
+        from tapesplit.semantic_search import (
+            SEMANTIC_CACHE_DB_NAME,
+            _cached_vectors,
+            _content_hash,
+            _ensure_cache_schema,
+            _sentence_transformer_encoder,
+        )
+
+        encode = _sentence_transformer_encoder(DEFAULT_EMBEDDING_MODEL)
+    except Exception:
+        return None
+    import json as json_module
+    import sqlite3
+
+    archetype_vectors = encode(MEMORY_ARCHETYPES)
+
+    def score(texts: list[str]) -> list[float]:
+        cache = sqlite3.connect(project / SEMANTIC_CACHE_DB_NAME)
+        try:
+            _ensure_cache_schema(cache)
+            hashes = [_content_hash(text) for text in texts]
+            found = _cached_vectors(cache, hashes, DEFAULT_EMBEDDING_MODEL)
+            missing = [(digest, text) for digest, text in zip(hashes, texts, strict=True) if digest not in found]
+            if missing:
+                fresh = encode([text for _, text in missing])
+                for (digest, _), vector in zip(missing, fresh, strict=True):
+                    found[digest] = vector
+                    cache.execute(
+                        "INSERT OR REPLACE INTO text_embeddings (hash, model, dim, vector_json) VALUES (?, ?, ?, ?)",
+                        (digest, DEFAULT_EMBEDDING_MODEL, len(vector), json_module.dumps(vector)),
+                    )
+                cache.commit()
+        finally:
+            cache.close()
+        scores = []
+        for digest in hashes:
+            vector = found.get(digest)
+            if not vector:
+                scores.append(0.0)
+                continue
+            best = max(
+                sum(a * b for a, b in zip(vector, archetype, strict=True))
+                for archetype in archetype_vectors
+            )
+            scores.append(round(min(2.0, max(0.0, (best - SEMANTIC_SALIENCE_FLOOR) * SEMANTIC_SALIENCE_SCALE)), 3))
+        return scores
+
+    return score
 
 
 def _people_for_events(event_ids: set[str], people_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -372,6 +633,76 @@ def _display_name(label: str, aliases: list[str]) -> str:
     latin = [c for c in candidates if c and all(ord(ch) < 0x400 for ch in c)]
     pool = latin or [c for c in candidates if c]
     return min(pool, key=len) if pool else label
+
+
+# ---------------------------------------------------------------------------
+# Terra quote ranking: a cheap editorial pass that picks the finalists and
+# says WHY each one matters — the why becomes the quote's micro-context.
+
+RANKER_MAX_CANDIDATES = 15
+RANKER_WHY_MAX_CHARS = 90
+
+RANKER_PROMPT = """You are choosing pull-quotes for a family journal entry built from home-video
+transcripts. Pick the 2-4 quotes most likely to hand a family member a MEMORY: firsts, milestones,
+a child's wonder, tenderness, a laugh — a concrete moment, never logistics or narration about
+filming. For each pick, say in one short clause what is happening when it is said (the reader sees
+this as context). Respond as JSON only:
+{"picks": [{"segment_id": str, "why": str (<= 12 words, concrete, present tense)}]}"""
+
+
+def _apply_quote_ranking(packet: dict[str, Any], ranker: Ranker) -> None:
+    candidates = packet["quotes"][:RANKER_MAX_CANDIDATES]
+    if not candidates:
+        return
+    try:
+        picks = ranker(packet, candidates)
+    except Exception:
+        return  # salience order stands; ranking is an upgrade, not a dependency
+    known = {quote["segment_id"] for quote in candidates}
+    picks = {
+        segment_id: str(why)[:RANKER_WHY_MAX_CHARS].strip()
+        for segment_id, why in picks.items()
+        if segment_id in known and str(why).strip()
+    }
+    if not picks:
+        return
+    for quote in packet["quotes"]:
+        if quote["segment_id"] in picks:
+            quote["why"] = picks[quote["segment_id"]]
+    packet["quotes"].sort(key=lambda quote: (quote["segment_id"] not in picks, -quote.get("salience", 0.0)))
+
+
+def _terra_ranker(project: Path, deployment: str) -> Ranker:
+    from tapesplit.azure_openai_adapter import reasoning_chat_completion
+
+    def rank(packet: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, str]:
+        album_line = f"{packet.get('title_hint') or 'A day'} — {packet.get('date_label') or 'undated'}; events: " + "; ".join(
+            event["title"] for event in packet["events"][:8]
+        )
+        payload = [
+            {"segment_id": quote["segment_id"], "speaker": quote.get("speaker") or "?", "text": quote["text"]}
+            for quote in candidates
+        ]
+        result = reasoning_chat_completion(
+            deployment=deployment,
+            messages=[
+                {"role": "system", "content": RANKER_PROMPT},
+                {"role": "user", "content": album_line + "\n" + json.dumps(payload, ensure_ascii=False)},
+            ],
+            max_completion_tokens=600,
+            reasoning_effort="low",
+            response_format={"type": "json_object"},
+            project_dir=project,
+            operation="journal_rank_quotes",
+        )
+        parsed = json.loads(result["choices"][0]["message"]["content"])
+        return {
+            str(pick.get("segment_id") or ""): str(pick.get("why") or "")
+            for pick in parsed.get("picks") or []
+            if isinstance(pick, dict)
+        }
+
+    return rank
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +794,8 @@ def _validate_blocks(
                     "start_s": segment["start_s"],
                     "end_s": segment["end_s"],
                     "citations": [segment["segment_id"]],
+                    "context": str(segment.get("why") or ""),
+                    "salience": segment.get("salience"),
                 }
         elif kind == "clip":
             event_id = _valid_event_id(block.get("event_id"), packet)
@@ -503,6 +836,64 @@ def _validate_entities(
             return [], f"entity span {span_text!r} not present in block text"
         clean.append({"span_text": span_text, "kind": kind, "id": entity_id})
     return clean, None
+
+
+JOURNAL_SALIENCE_FILENAME = "journal_salience.jsonl"
+
+
+def _persist_salience(project: Path, packets: list[dict[str, Any]], *, generated: set[str]) -> None:
+    """Salience scores become claims so 'best moments' outlives the posts.
+
+    The review UI (or a future Memories reel) can rank moments from these
+    without re-running selection — the seam is the artifact + attribute
+    claims, keyed by segment id and media span.
+    """
+    rows = []
+    for packet in packets:
+        if packet["album_id"] not in generated:
+            continue
+        for quote in packet["quotes"]:
+            rows.append(
+                {
+                    "id": f"journal_salience_{quote['segment_id']}",
+                    "album_id": packet["album_id"],
+                    "segment_id": quote["segment_id"],
+                    "source_video_id": quote["source_video_id"],
+                    "start_s": quote["start_s"],
+                    "end_s": quote["end_s"],
+                    "speaker": quote.get("speaker") or "",
+                    "text": quote["text"],
+                    "salience": quote.get("salience"),
+                    "reasons": quote.get("salience_reasons") or [],
+                    "why": quote.get("why") or "",
+                }
+            )
+    if not rows:
+        return
+    path = project / JOURNAL_SALIENCE_FILENAME
+    existing = {row.get("id") for row in read_jsonl(path)}
+    fresh = [row for row in rows if row["id"] not in existing]
+    if not fresh:
+        return
+    writer = DualWriter.open(project, artifact=JOURNAL_SALIENCE_FILENAME, producer="journal/salience")
+    for row in fresh:
+        append_jsonl(path, row)
+        writer.write_row(
+            row,
+            kind="attribute",
+            media_id=row["source_video_id"],
+            start_s=row["start_s"],
+            end_s=row["end_s"],
+            confidence=None,
+            assertion={
+                "attribute": "memory_salience",
+                "value": row["salience"],
+                "reasons": row["reasons"],
+                "segment_id": row["segment_id"],
+                "album_id": row["album_id"],
+            },
+        )
+    writer.close()
 
 
 def _post_citations(post: dict[str, Any]) -> set[str]:
@@ -556,7 +947,13 @@ Write as remembered life, never as footage review: no "the video shows", "we beg
 footage", "the recording", "we see". Use people's names from the roster whenever the events or
 quotes make clear who is who; when identity is genuinely unclear, prefer warm phrasing ("the
 birthday boy", "one of the kids") over clinical phrasing ("the child", "an individual"). It is
-always "his room", "our kitchen" — a journal writes from inside the family."""
+always "his room", "our kitchen" — a journal writes from inside the family.
+
+Pull-quotes are the heart of the entry. The quotes are ordered by memory value and the best carry a
+"why" — the moment in which they were said. Choose quotes from the TOP of the list, and set each one
+up with its moment in the sentence before it (use the "why", in your own words). A quote must land
+as a memory: a first, a milestone, wonder, tenderness, a laugh. Never quote logistics; skip a quote
+entirely rather than use a flat one."""
 
 JOURNAL_RULES = """Write the post as JSON only, with this shape:
 {"kicker": str (2-3 words), "title": str (short, warm, specific), "dek": str (one sentence),
