@@ -162,7 +162,7 @@ def build_person_merge_candidates(
     obs_by_cluster = _observations_by_cluster(observations)
     labse = _LabseScorer(enabled=use_labse)
     face_embedder = _FaceCentroidScorer(project, obs_by_cluster, enabled=use_face_embeddings)
-    voice = _VoiceCentroidScorer(project, speaker_segments, enabled=use_voice)
+    voice = _VoiceCentroidScorer(project, speaker_segments, groups=persons, enabled=use_voice)
     age_models = _load_age_models(project)
 
     scored: list[dict[str, Any]] = []
@@ -815,6 +815,7 @@ class _VoiceCentroidScorer:
         project: Path,
         speaker_segments: list[Any],
         *,
+        groups: list[dict[str, Any]] | None = None,
         enabled: bool | str = "auto",
     ) -> None:
         self.project = project
@@ -822,10 +823,34 @@ class _VoiceCentroidScorer:
         self._classifier: Any = None
         self._centroids: dict[str, Any] = {}
         self._segments_by_person: dict[str, list[dict[str, Any]]] = {}
+        # Named diarization labels (e.g. "Filia") are person-anchored by
+        # construction — reference clips were mined from confirmed identities —
+        # so an unambiguous alias match attributes the segment when no explicit
+        # person_group_id is present. Ambiguous aliases attribute nothing.
+        alias_to_group: dict[str, str] = {}
+        alias_collisions: set[str] = set()
+        for group in groups or []:
+            group_id = str(group.get("id") or "")
+            names = [group.get("label") or "", *(group.get("aliases") or [])]
+            for name in names:
+                for part in str(name).split("/"):
+                    normalized = _normalize_name(part)
+                    if not normalized or _is_role_name(normalized):
+                        continue
+                    existing = alias_to_group.get(normalized)
+                    if existing is not None and existing != group_id:
+                        alias_collisions.add(normalized)
+                    else:
+                        alias_to_group[normalized] = group_id
+        for collision in alias_collisions:
+            alias_to_group.pop(collision, None)
         for segment in speaker_segments:
             if not isinstance(segment, dict):
                 continue
             person_id = str(segment.get("person_group_id") or "")
+            if not person_id:
+                label = _normalize_name(str(segment.get("speaker_label") or ""))
+                person_id = alias_to_group.get(label, "")
             duration = float(segment.get("end_s") or 0) - float(segment.get("start_s") or 0)
             if person_id and VOICE_MIN_SEGMENT_S <= duration <= VOICE_MAX_SEGMENT_S:
                 self._segments_by_person.setdefault(person_id, []).append(segment)
@@ -852,6 +877,8 @@ class _VoiceCentroidScorer:
         if len(segments) < 2:
             self._centroids[person_id] = None
             return None
+        import wave
+
         import numpy
         import torchaudio
 
@@ -863,13 +890,20 @@ class _VoiceCentroidScorer:
                 source="speechbrain/spkrec-ecapa-voxceleb", savedir=str(cache_dir)
             )
         vectors = []
+        sample_rates: dict[str, int] = {}
         for segment in segments:
             wav_path = self.project / "audio" / f"{segment.get('source_video_id')}.wav"
             if not wav_path.exists():
                 continue
-            info = torchaudio.info(str(wav_path))
-            start = int(float(segment["start_s"]) * info.sample_rate)
-            frames = int((float(segment["end_s"]) - float(segment["start_s"])) * info.sample_rate)
+            # torchaudio.info was removed in torchaudio 2.10+; project audio is
+            # ffmpeg-extracted PCM wav, so stdlib wave reads the rate reliably.
+            key = str(wav_path)
+            if key not in sample_rates:
+                with wave.open(key, "rb") as handle:
+                    sample_rates[key] = handle.getframerate()
+            sample_rate = sample_rates[key]
+            start = int(float(segment["start_s"]) * sample_rate)
+            frames = int((float(segment["end_s"]) - float(segment["start_s"])) * sample_rate)
             waveform, _rate = torchaudio.load(str(wav_path), frame_offset=start, num_frames=frames)
             embedding = self._classifier.encode_batch(waveform).squeeze().detach().numpy()
             norm = numpy.linalg.norm(embedding)

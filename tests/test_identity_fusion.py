@@ -292,3 +292,30 @@ def test_review_item_suggestion_and_tier():
     tier, reason = _review_item_tier(blocked_item)
     assert tier == "backlog"
     assert "contradicting" in reason.casefold()
+
+
+def test_voice_scorer_attributes_named_diarization_labels(tmp_path: Path):
+    from tapesplit.identity_fusion import _VoiceCentroidScorer
+
+    groups = [
+        {"id": "people_group_000001", "label": "Filia / Filip", "aliases": ["Filia", "Filip", "Филя"]},
+        {"id": "people_group_000002", "label": "Ekaterina / Katya", "aliases": ["Ekaterina", "Katya"]},
+        # Colliding alias appears in two groups -> attributes nothing.
+        {"id": "people_group_000003", "label": "Tanya", "aliases": ["Tanya"]},
+        {"id": "people_group_000004", "label": "Tanya (school)", "aliases": ["Tanya"]},
+    ]
+    segments = [
+        # explicit person_group_id always wins
+        {"person_group_id": "people_group_000002", "speaker_label": "AZ_SPEAKER_00",
+         "source_video_id": "video_000001", "start_s": 0.0, "end_s": 4.0},
+        # named label attributes via unambiguous alias (cross-script)
+        {"speaker_label": "Филя", "source_video_id": "video_000001", "start_s": 5.0, "end_s": 9.0},
+        {"speaker_label": "Filia", "source_video_id": "video_000001", "start_s": 10.0, "end_s": 14.0},
+        # ambiguous alias attributes nothing
+        {"speaker_label": "Tanya", "source_video_id": "video_000001", "start_s": 15.0, "end_s": 19.0},
+        # anonymous bulk label attributes nothing
+        {"speaker_label": "AZ_SPEAKER_01", "source_video_id": "video_000001", "start_s": 20.0, "end_s": 24.0},
+    ]
+    scorer = _VoiceCentroidScorer(tmp_path, segments, groups=groups, enabled=False)
+    by_person = {k: len(v) for k, v in scorer._segments_by_person.items()}
+    assert by_person == {"people_group_000002": 1, "people_group_000001": 2}
