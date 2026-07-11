@@ -30,6 +30,7 @@ CLAIM_EXPORT_FILENAME = "claim_store_export.jsonl"
 CLAIM_KINDS = {
     "event",
     "place_link",
+    "context",
     "date",
     "identity",
     "relationship",

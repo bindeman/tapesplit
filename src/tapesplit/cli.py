@@ -543,6 +543,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "corrections.jsonl",
             "date_groups.jsonl",
             "capture_windows.jsonl",
+            "geo_contexts.jsonl",
+            "era_contexts.jsonl",
+            "segment_contexts.jsonl",
         ],
         help="v1 artifact to diff against the claim store.",
     )

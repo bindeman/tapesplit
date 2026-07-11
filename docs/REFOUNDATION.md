@@ -255,6 +255,23 @@ diff continuously, cut over per module, retire v1 artifacts last.
 | M1 | Claim substrate | Storage + schema + validators; importers dual-write claims alongside v1 artifacts; `media.jsonl` + `source_media_id` shim | Round-trip: v1 artifacts regenerable from claims byte-for-byte for one full rebuild | 3–4 d |
 | M2 | Date model | Origin enum, capture windows, DateRef contract to UI — **landed** (`date_model.py`; per-media windows in `capture_windows.jsonl`; 1912/1922/1974/1870 auto-classify `narrated_historical` from windows alone, no UI filter; oracle diff green on both date artifacts) | Zero impossible years in chrono view; grounded precision on date claims ≥ v1 | 1–2 d |
 | M3 | Context model | GeoContext/EraContext split, segment continuity, anchors, contradiction guard, 110-correction remediation | Fleet's named conflations resolve correctly (Moscow-Russia vs Idaho vs Eugene vs Wisconsin); place-claim grounded precision ≥ v1 | 3–5 d |
+
+> **M3 status (2026-07-10, `context_model.py`):** landed. Typed geo/era
+> contexts dual-write (`geo_contexts`/`era_contexts`/`segment_contexts`,
+> oracle-diff clean); anchors rank human > verification-vote > geocode, with
+> veto anchors for refutations whose true region doesn't parse (continents);
+> break-signal segments gate continuity; the contradiction guard blocks
+> `confirm_place_context` auto-accepts on disjoint anchored parents; all 110
+> machine corrections superseded and re-derived (replay skips superseded
+> rows). Data note: the archive's derived residence eras are
+> **Madison, Wisconsin (2002–2004) → Eugene, Oregon (2005→)** — University
+> Houses Nursery School anchors the Wisconsin era; "Moscow, Idaho" appears
+> only as visited places (Pinecrest Park), and Moscow-Russia footage is
+> trip-scoped (school day Sep 2005 flagged as a conflict year for review).
+> Remaining for M3.1: era-keyed bucketing of generic place groups (today the
+> era resolves the group's scope; splitting "home" per era changes group
+> identity and waits for a quiet moment), residence-role inference beyond
+> schools.
 | M4 | Event assembly | Stitcher consumes claims; temporal_basis-aware grouping | Event diff vs v1 reviewed; event grounded precision ≥ v1 (chunked tapes must exceed v1's 74%) | 2–3 d |
 | M5 | Evidence compaction | 27MB evidence.jsonl → indexed claim store; graph edges reference claims | Rebuild wall-time and artifact size drop; no consumer regression | 1–2 d |
 | M6 | Photo track Phase 0 | Photo ingest lands directly on v2 substrate (no v1 debt) | Photos in Albums/People with shared face graph | 3–4 d |

@@ -182,6 +182,9 @@ def _add_place_context_edges(
                 metadata={
                     "basis": candidate.get("basis") or [],
                     "not_exportable_as_gps": bool(candidate.get("not_exportable_as_gps", True)),
+                    "context_kind": candidate.get("context_kind"),
+                    "contradiction": bool(candidate.get("contradiction")),
+                    "contradiction_notes": candidate.get("contradiction_notes") or [],
                 },
             )
 

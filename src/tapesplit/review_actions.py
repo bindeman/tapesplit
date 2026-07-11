@@ -198,7 +198,14 @@ def reapply_review_corrections(
     applied: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
 
+    superseded_count = 0
     for correction in corrections:
+        if correction.get("superseded"):
+            # M3 remediation: machine-made corrections marked superseded are
+            # never replayed — re-derivation under the current model starts
+            # from a clean slate instead of re-cementing old conflations.
+            superseded_count += 1
+            continue
         try:
             effects = _apply_action(state, correction)
         except ValueError as exc:
@@ -222,6 +229,7 @@ def reapply_review_corrections(
         "corrections": len(corrections),
         "corrections_applied": len(applied),
         "corrections_skipped": len(skipped),
+        "corrections_superseded": superseded_count,
         "by_action": _count_by(applied, "action"),
         "touched_files": sorted(touched_files),
         "skipped": skipped,
@@ -1284,6 +1292,21 @@ def _safe_policy_block_reason(
 
     if action_name == "confirm_relationship":
         return _relationship_block_reason(action, target_row)
+    if action_name == "confirm_place_context":
+        return _place_context_block_reason(target_row)
+    return None
+
+
+def _place_context_block_reason(target_row: dict[str, Any] | None) -> str | None:
+    """The M3 contradiction guard: a context claim whose geographic parent is
+    disjoint from the place's anchored parent is never auto-acceptable."""
+
+    row = target_row if isinstance(target_row, dict) else {}
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    if metadata.get("contradiction") or row.get("contradiction"):
+        notes = metadata.get("contradiction_notes") or row.get("contradiction_notes") or []
+        detail = f" ({notes[0]})" if notes else ""
+        return f"geographically contradicted context; carries both hypotheses for review{detail}"
     return None
 
 

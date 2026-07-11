@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from tapesplit import date_model
+from tapesplit import context_model, date_model
 from tapesplit.claim_store import DualWriter
 from tapesplit.event_stitching import load_source_events
 from tapesplit.place_roles import events_with_role_filtered_places, infer_event_place_roles
@@ -314,10 +314,22 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     person_alias_keys = _person_alias_keys(project)
 
     people_groups = _build_people_groups(context_events, evidence_by_id, person_alias_keys)
-    place_groups = _build_place_groups(context_events, evidence_by_id)
-    event_continuity_contexts = _build_event_continuity_contexts(context_events, evidence_by_id)
+    # Dates and languages come first: capture windows and language runs are
+    # break-signal inputs for the segment-scoped context model (M3).
     date_groups, capture_windows = _build_date_groups(context_events, evidence_by_id, project=project)
     language_groups = _build_language_groups(context_events, evidence_by_id)
+    context_inputs = _build_context_inputs(
+        project,
+        context_events,
+        evidence_by_id,
+        date_groups=date_groups,
+        language_groups=language_groups,
+        capture_windows=capture_windows,
+    )
+    place_groups = _build_place_groups(context_events, evidence_by_id, context_inputs=context_inputs)
+    event_continuity_contexts = _build_event_continuity_contexts(
+        context_events, evidence_by_id, context_inputs=context_inputs
+    )
     event_groups = _build_event_groups(context_events, date_groups)
     albums = _build_albums(events, event_groups, evidence_by_id)
 
@@ -331,6 +343,9 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "language_groups": project / "language_groups.jsonl",
         "event_groups": project / "event_groups.jsonl",
         "albums": project / "albums.jsonl",
+        "geo_contexts": project / context_model.GEO_CONTEXTS_FILENAME,
+        "era_contexts": project / context_model.ERA_CONTEXTS_FILENAME,
+        "segment_contexts": project / context_model.SEGMENT_CONTEXTS_FILENAME,
     }
     _write_jsonl(outputs["event_place_roles"], place_roles)
     _write_jsonl(outputs["event_continuity_contexts"], event_continuity_contexts)
@@ -341,8 +356,12 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
     _write_jsonl(outputs["language_groups"], language_groups)
     _write_jsonl(outputs["event_groups"], event_groups)
     _write_jsonl(outputs["albums"], albums)
+    _write_jsonl(outputs["geo_contexts"], context_inputs.geo_contexts(place_groups))
+    _write_jsonl(outputs["era_contexts"], context_inputs.eras)
+    _write_jsonl(outputs["segment_contexts"], context_inputs.segments)
 
     date_claims = _dual_write_date_claims(project, date_groups, capture_windows)
+    context_claims = _dual_write_context_claims(project, context_inputs, place_groups)
 
     return {
         "project": str(project),
@@ -357,9 +376,202 @@ def build_project_groups(project_dir: Path, *, prefer_canonical: bool = True) ->
         "language_groups": len(language_groups),
         "event_groups": len(event_groups),
         "albums": len(albums),
+        "geo_contexts": len(context_inputs.geo_context_rows),
+        "era_contexts": len(context_inputs.eras),
+        "segment_contexts": len(context_inputs.segments),
+        "context_contradictions": context_inputs.contradiction_count,
         "date_claims": date_claims,
+        "context_claims": context_claims,
         "outputs": {name: str(path) for name, path in outputs.items()},
     }
+
+
+class _ContextInputs:
+    """M3 context-model inputs threaded through place grouping.
+
+    Carries the anchor lookup, break-signal segments, and (after groups
+    exist) group anchors, eras, and the typed context rows.
+    """
+
+    def __init__(
+        self,
+        *,
+        anchor_lookup: dict[str, dict[str, Any]],
+        segments: list[dict[str, Any]],
+        segment_of: dict[str, str],
+        event_years: dict[str, list[int]],
+        event_regions: dict[str, dict[str, Any]],
+        event_media: dict[str, list[str]] | None = None,
+        windows_by_media: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        self.anchor_lookup = anchor_lookup
+        self.segments = segments
+        self.segment_of = segment_of
+        self.event_years = event_years
+        self.event_regions = event_regions
+        self.event_media = event_media or {}
+        self.windows_by_media = windows_by_media or {}
+        self.group_anchors: dict[str, dict[str, Any]] = {}
+        self.eras: list[dict[str, Any]] = []
+        self.geo_context_rows: list[dict[str, Any]] = []
+        self.contradiction_count = 0
+
+    def bind_groups(self, groups: list[dict[str, Any]]) -> None:
+        self.group_anchors = context_model.map_anchors_to_groups(self.anchor_lookup, groups)
+        horizon = max((row["end_year"] for row in self.windows_by_media.values()), default=None)
+        self.eras = context_model.build_era_contexts(
+            residence_votes=self._residence_votes(groups), extend_last_to=horizon
+        )
+        self.geo_context_rows = context_model.build_geo_contexts(groups, self.group_anchors)
+
+    def geo_contexts(self, groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not self.geo_context_rows:
+            self.geo_context_rows = context_model.build_geo_contexts(groups, self.group_anchors)
+        return self.geo_context_rows
+
+    def _residence_votes(self, groups: list[dict[str, Any]]) -> list[tuple[int, dict[str, Any], str]]:
+        votes: list[tuple[int, dict[str, Any], str]] = []
+        for group in groups:
+            anchor = self.group_anchors.get(str(group.get("id") or ""))
+            if not anchor:
+                continue
+            is_school = str(group.get("place_type") or "") == "school"
+            role_counts = (group.get("metadata") or {}).get("location_role_counts") or {}
+            daily_life = is_school or "residence" in role_counts or "home_base" in role_counts
+            if not daily_life:
+                continue
+            basis = "school_anchor" if is_school else "residence_role"
+            for event_id in group.get("canonical_event_ids") or []:
+                years = self.event_years.get(str(event_id), [])
+                if years:
+                    votes.extend((year, anchor["region"], basis) for year in years)
+                    continue
+                # No confirmed year on the event: a TIGHT capture window on
+                # its tape still localizes the era, at reduced weight.
+                for media_id in self.event_media.get(str(event_id), []):
+                    window = self.windows_by_media.get(media_id)
+                    if window and window["end_year"] - window["start_year"] <= 3:
+                        votes.extend(
+                            (year, anchor["region"], "capture_window")
+                            for year in range(window["start_year"], window["end_year"] + 1)
+                        )
+        return votes
+
+
+def _build_context_inputs(
+    project: Path,
+    events: list[dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    *,
+    date_groups: list[dict[str, Any]],
+    language_groups: list[dict[str, Any]],
+    capture_windows: list[dict[str, Any]] | None = None,
+) -> _ContextInputs:
+    anchor_lookup = context_model.load_anchor_lookup(project)
+
+    event_years: dict[str, list[int]] = {}
+    for group in date_groups:
+        if group.get("excluded_as_event_date"):
+            continue
+        year = date_model._year_of(group.get("date_value"))
+        if year is None:
+            continue
+        for event_id in group.get("canonical_event_ids") or []:
+            years = event_years.setdefault(str(event_id), [])
+            if year not in years:
+                years.append(year)
+
+    event_languages: dict[str, str] = {}
+    for group in sorted(language_groups, key=lambda row: len(row.get("canonical_event_ids") or [])):
+        language = str(group.get("language") or "")
+        for event_id in group.get("canonical_event_ids") or []:
+            if language:
+                event_languages[str(event_id)] = language
+
+    event_regions: dict[str, dict[str, Any]] = {}
+    event_media: dict[str, list[str]] = {}
+    for event in events:
+        event_id = str(event.get("id") or "")
+        if not event_id:
+            continue
+        event_media[event_id] = _event_source_video_ids(event, evidence_by_id)
+        anchor = context_model.anchor_for_labels(anchor_lookup, _metadata_list(event, "place_candidates"))
+        if anchor:
+            event_regions[event_id] = anchor["region"]
+
+    segments, segment_of = context_model.build_segment_contexts(
+        project,
+        events,
+        event_media=event_media,
+        event_years=event_years,
+        event_regions=event_regions,
+        event_languages=event_languages,
+    )
+    return _ContextInputs(
+        anchor_lookup=anchor_lookup,
+        segments=segments,
+        segment_of=segment_of,
+        event_years=event_years,
+        event_regions=event_regions,
+        event_media=event_media,
+        windows_by_media={row["media_id"]: row for row in capture_windows or []},
+    )
+
+
+def _dual_write_context_claims(
+    project: Path,
+    context_inputs: _ContextInputs,
+    place_groups: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Mirror the typed context artifacts into the claim substrate."""
+
+    summaries: dict[str, Any] = {}
+    for artifact, rows, assertion_of in (
+        (
+            context_model.GEO_CONTEXTS_FILENAME,
+            context_inputs.geo_contexts(place_groups),
+            lambda row: {
+                "context_kind": "geo",
+                "place_label": row.get("place_label"),
+                "region": row.get("region"),
+                "chain": row.get("chain"),
+                "basis": row.get("basis"),
+            },
+        ),
+        (
+            context_model.ERA_CONTEXTS_FILENAME,
+            context_inputs.eras,
+            lambda row: {
+                "context_kind": "era",
+                "label": row.get("label"),
+                "residence_label": row.get("residence_label"),
+                "window": {"start_year": row.get("start_year"), "end_year": row.get("end_year")},
+                "conflict_years": row.get("conflict_years"),
+            },
+        ),
+        (
+            context_model.SEGMENT_CONTEXTS_FILENAME,
+            context_inputs.segments,
+            lambda row: {
+                "context_kind": "era",
+                "segment": {"start_s": row.get("start_s"), "end_s": row.get("end_s")},
+                "break_after": row.get("break_after"),
+                "canonical_event_ids": row.get("canonical_event_ids"),
+            },
+        ),
+    ):
+        dual = DualWriter.open(project, artifact=artifact, producer="grouping/context_model_v2")
+        dual.supersede_previous()
+        for row in rows:
+            dual.write_row(
+                row,
+                kind="context",
+                media_id=row.get("media_id"),
+                confidence=row.get("confidence"),
+                assertion=assertion_of(row),
+            )
+        summaries[artifact] = dual.summary()
+    return summaries
 
 
 def _load_groupable_events(project: Path, *, prefer_canonical: bool) -> list[dict[str, Any]]:
@@ -441,11 +653,13 @@ def _build_people_groups(
 def _build_place_groups(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
+    *,
+    context_inputs: "_ContextInputs | None" = None,
 ) -> list[dict[str, Any]]:
     place_aliases = _place_admin_alias_resolution(
         place for event in events for place in _metadata_list(event, "place_candidates")
     )
-    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases)
+    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases, context_inputs=context_inputs)
     buckets: dict[str, dict[str, Any]] = {}
     for event in events:
         for place in _metadata_list(event, "place_candidates"):
@@ -546,7 +760,11 @@ def _build_place_groups(
                 },
             }
         )
-    return _attach_place_context_candidates(groups, events, evidence_by_id, event_contexts)
+    if context_inputs is not None:
+        context_inputs.bind_groups(groups)
+    return _attach_place_context_candidates(
+        groups, events, evidence_by_id, event_contexts, context_inputs=context_inputs
+    )
 
 
 def _build_date_groups(
@@ -1308,6 +1526,7 @@ def _place_contexts_by_event(
     place_aliases: dict[str, Any],
     *,
     nearby_gap_s: float = 1800.0,
+    context_inputs: "_ContextInputs | None" = None,
 ) -> dict[str, dict[str, Any]]:
     base_contexts: dict[str, dict[str, Any]] = {}
     for event in events:
@@ -1363,6 +1582,14 @@ def _place_contexts_by_event(
             separation = _event_separation_seconds(event, other)
             if separation > nearby_gap_s:
                 continue
+            if context_inputs is not None and not _same_continuity_segment(context_inputs, event_id, other_id):
+                # Segment-scoped continuity (M3): context never carries across
+                # a break signal — a non-content gap, language shift,
+                # overlay-date jump, or anchored region change. One tape can
+                # span the family's move; its segments must not share an era.
+                continue
+            if context_inputs is not None and _anchor_vetoes_carry(context_inputs, event_id, other_id):
+                continue
             strong_continuity = _has_strong_place_continuity(events, event_index_by_id[event_id], event_index_by_id[other_id])
             if not strong_continuity and not _can_carry_place_context_between(events, event_index_by_id[event_id], event_index_by_id[other_id]):
                 continue
@@ -1388,14 +1615,36 @@ def _place_contexts_by_event(
     return base_contexts
 
 
+def _same_continuity_segment(context_inputs: "_ContextInputs", left_id: str, right_id: str) -> bool:
+    left = context_inputs.segment_of.get(left_id)
+    right = context_inputs.segment_of.get(right_id)
+    if left is None or right is None:
+        # Multi-media or unplaceable events fall back to the legacy checks.
+        return True
+    return left == right
+
+
+def _anchor_vetoes_carry(context_inputs: "_ContextInputs", target_id: str, anchor_id: str) -> bool:
+    """A target with its own anchored region rejects carried context from a
+    disjoint region — a named institution never inherits a residence label."""
+
+    target_region = context_inputs.event_regions.get(target_id)
+    source_region = context_inputs.event_regions.get(anchor_id)
+    if not target_region or not source_region:
+        return False
+    return context_model.regions_disjoint(target_region, source_region)
+
+
 def _build_event_continuity_contexts(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
+    *,
+    context_inputs: "_ContextInputs | None" = None,
 ) -> list[dict[str, Any]]:
     place_aliases = _place_admin_alias_resolution(
         place for event in events for place in _metadata_list(event, "place_candidates")
     )
-    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases)
+    event_contexts = _place_contexts_by_event(events, evidence_by_id, place_aliases, context_inputs=context_inputs)
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     rows = []
     for event_id, context in sorted(event_contexts.items(), key=lambda item: _event_order(events_by_id.get(item[0]))):
@@ -1691,6 +1940,8 @@ def _attach_place_context_candidates(
     events: list[dict[str, Any]],
     evidence_by_id: dict[str, dict[str, Any]],
     event_contexts: dict[str, dict[str, Any]],
+    *,
+    context_inputs: "_ContextInputs | None" = None,
 ) -> list[dict[str, Any]]:
     events_by_id = {str(event.get("id")): event for event in events if event.get("id")}
     groups_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1771,15 +2022,20 @@ def _attach_place_context_candidates(
 
         parent_list = _place_context_candidate_list(parent_candidates)
         nearby_list = _place_context_candidate_list(nearby_candidates)
+        if context_inputs is not None:
+            parent_list = _classify_candidate_list(context_inputs, group, parent_list)
+            nearby_list = _classify_candidate_list(context_inputs, group, nearby_list)
         # Geographic containment (direct evidence) and era/continuity
         # inheritance are different kinds of context: a beach is IN Hawaii,
         # while "Moscow" may only mean "filmed during the Moscow years".
-        # Direct geography leads; inherited era labels never mix into it.
+        # Direct geography leads; inherited era labels never mix into it,
+        # and a contradicting candidate never contributes a label at all.
+        clean_parents = [candidate for candidate in parent_list if not candidate.get("contradiction")]
         direct_parent_labels = _unique_items(
-            candidate["label"] for candidate in parent_list if "direct" in str(candidate.get("basis") or "")
+            candidate["label"] for candidate in clean_parents if "direct" in str(candidate.get("basis") or "")
         )
         inherited_parent_labels = _unique_items(
-            candidate["label"] for candidate in parent_list if "direct" not in str(candidate.get("basis") or "")
+            candidate["label"] for candidate in clean_parents if "direct" not in str(candidate.get("basis") or "")
         )
         group["parent_place_labels"] = _unique_items([*direct_parent_labels, *inherited_parent_labels])[:6]
         group["nearby_place_labels"] = _unique_items(candidate["label"] for candidate in nearby_list[:6])
@@ -1804,12 +2060,107 @@ def _attach_place_context_candidates(
             group["scope_label"] = _place_source_scope_label(group.get("metadata", {}).get("scope", {}))
             group["metadata"]["scope"]["admin_context_keys"] = []
             group["metadata"]["scope"]["admin_context_labels"] = []
+        if context_inputs is not None:
+            _apply_typed_context_scope(context_inputs, group)
         if parent_list:
             group["notes"] = _unique_items([*group.get("notes", []), "Has reviewable broader-place context; not exportable as GPS until confirmed."])
         if nearby_list:
             group["notes"] = _unique_items([*group.get("notes", []), "Has reviewable same-area/nearby-place context."])
 
     return groups
+
+
+def _classify_candidate_list(
+    context_inputs: "_ContextInputs",
+    group: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Type each context candidate and apply the contradiction guard (M3)."""
+
+    group_anchor = context_inputs.group_anchors.get(str(group.get("id") or ""))
+    for candidate in candidates:
+        parent_anchor = context_inputs.group_anchors.get(str(candidate.get("place_group_id") or ""))
+        verdict = context_model.classify_context_candidate(
+            basis=str(candidate.get("basis") or ""),
+            group_anchor=group_anchor,
+            parent_anchor=parent_anchor,
+            confidence=float(candidate.get("confidence") or 0.0),
+        )
+        candidate["context_kind"] = verdict["context_kind"]
+        if verdict["contradiction"]:
+            candidate["contradiction"] = True
+            candidate["confidence"] = verdict["confidence"]
+            candidate["contradiction_notes"] = verdict["notes"]
+            context_inputs.contradiction_count += 1
+    return candidates
+
+
+def _apply_typed_context_scope(context_inputs: "_ContextInputs", group: dict[str, Any]) -> None:
+    """Scope labels from typed contexts: anchored geography wins outright;
+    generic places resolve through the era ("Home · Eugene, Oregon")."""
+
+    group_id = str(group.get("id") or "")
+    anchor = context_inputs.group_anchors.get(group_id)
+    if anchor is not None and anchor.get("veto"):
+        # A refutation vetoed this place's context without asserting a new
+        # region; suppress any inherited scope rather than guess.
+        group["scope_label"] = ""
+        group["metadata"]["geo_context_vetoed"] = {
+            "basis": anchor.get("basis"),
+            "actual_region_text": anchor.get("actual_region_text"),
+        }
+        group["notes"] = _unique_items(
+            [*group.get("notes", []), "Attached context was refuted by verification; needs a human to place this."]
+        )
+        return
+    if context_model.anchor_asserts_region(anchor):
+        region = context_model.region_label(anchor["region"])
+        own_label = str(group.get("label") or "")
+        if region and context_model._fold(region) != context_model._fold(own_label):
+            group["scope_label"] = region
+            group["metadata"]["geo_context"] = {
+                "region_label": region,
+                "basis": anchor.get("basis"),
+                "confidence": anchor.get("confidence"),
+            }
+        return
+    if str(group.get("kind") or "") != "generic_place_context" or not context_inputs.eras:
+        return
+    years = sorted(
+        {
+            year
+            for event_id in group.get("canonical_event_ids") or []
+            for year in context_inputs.event_years.get(str(event_id), [])
+        }
+    )
+    if not years:
+        # Undated events: a tight capture window on their tape still places
+        # the group in an era, at the window's (not an event's) precision.
+        years = sorted(
+            {
+                year
+                for event_id in group.get("canonical_event_ids") or []
+                for media_id in context_inputs.event_media.get(str(event_id), [])
+                for window in [context_inputs.windows_by_media.get(media_id)]
+                if window and window["end_year"] - window["start_year"] <= 3
+                for year in range(window["start_year"], window["end_year"] + 1)
+            }
+        )
+    eras = [era for era in (context_model.era_for_year(context_inputs.eras, year) for year in years) if era]
+    if not eras:
+        return
+    labels = _unique_items(era["residence_label"] for era in eras)
+    dominant = Counter(era["residence_label"] for era in eras).most_common(1)[0][0]
+    group["scope_label"] = dominant
+    group["metadata"]["era_context"] = {
+        "residence_label": dominant,
+        "era_ids": _unique_items(era["id"] for era in eras),
+        "spans_multiple_eras": len(labels) > 1,
+    }
+    if len(labels) > 1:
+        group["notes"] = _unique_items(
+            [*group.get("notes", []), f"Spans multiple residence eras ({', '.join(labels)}); events resolve per era."]
+        )
 
 
 def _scoped_place_label(direct_labels: list[str], inherited_labels: list[str], fallback: str) -> str:
