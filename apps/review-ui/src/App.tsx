@@ -241,13 +241,15 @@ export function App() {
   const primaryReviewItems = bundle?.data.review_queue ?? [];
   const reviewBacklog = bundle?.data.review_backlog ?? [];
   const reviewItems = useMemo(() => {
-    if (reviewScope === "backlog") {
-      return reviewBacklog;
-    }
-    if (reviewScope === "all") {
-      return [...primaryReviewItems, ...reviewBacklog];
-    }
-    return primaryReviewItems;
+    const pool =
+      reviewScope === "backlog"
+        ? reviewBacklog
+        : reviewScope === "all"
+          ? [...primaryReviewItems, ...reviewBacklog]
+          : primaryReviewItems;
+    // Lead with the strongest guesses: quick confirmations build momentum,
+    // and the archive learns fastest from decisions it was nearly sure of.
+    return [...pool].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
   }, [primaryReviewItems, reviewBacklog, reviewScope]);
   const pendingActions = bundle?.pendingActions ?? [];
   const taskCounts = useMemo(() => countBy(reviewItems, (item) => item.task_type), [reviewItems]);
@@ -366,9 +368,9 @@ export function App() {
           <div className="brand-mark">
             <Film size={17} />
           </div>
-          <div className="brand-copy">
+          <div className="brand-copy" title={bundle.projectDir}>
             <strong>Tapes</strong>
-            <span>{shortPath(bundle.projectDir)}</span>
+            <span>{archiveByline(bundle)}</span>
           </div>
         </header>
 
@@ -738,7 +740,9 @@ function EventCard({
   const image = event.thumbnail_path || event.keyframe_path;
   const year = eventYear(event);
   const place = placeDisplayLabel(event.places[0]?.label);
-  const subtitle = [year, place, formatEventDuration(event)].filter(Boolean).join(" · ");
+  // The year earns one appearance; a place that repeats it forfeits its copy.
+  const placeSansYear = year && place.includes(year) ? place.replace(year, "").replace(/\s*·\s*$/, "").trim() : place;
+  const subtitle = [year, placeSansYear, formatEventDuration(event)].filter(Boolean).join(" · ");
   const [previewing, setPreviewing] = useState(false);
   const hoverTimer = useRef<number | null>(null);
   const moment = useMemo(() => momentFromEvent(event, media), [event, media]);
@@ -824,13 +828,19 @@ function EventSheet({
   const summaryText = event.reconciliation?.reconciled_summary || event.summary;
   const recordedDate = event.dates.find((date) => date.date_value && plausibleEventDate(date))?.date_value;
   const mentionedDates = event.dates.filter((date) => !plausibleEventDate(date));
+  const sheetPlace = placeDisplayLabel(event.places[0]?.label);
+  const tapeMoment = momentFromEvent(event, media);
+  const tapeToken = tapeMoment
+    ? `${tapeDisplayLabel(tapeMoment.videoId, media)} · ${formatTime(tapeMoment.startS)}`
+    : null;
   const byline = [
     event.event_type ? humanizeToken(event.event_type) : null,
-    eventYear(event),
-    recordedDate,
+    recordedDate || eventYear(event),
+    sheetPlace,
+    tapeToken,
   ]
     .filter(Boolean)
-    .slice(0, 2)
+    .slice(0, 4)
     .join(" · ");
 
   return (
@@ -883,7 +893,7 @@ function EventSheet({
 
           {summaryText && <p className="sheet-summary">{summaryText}</p>}
 
-          {strip.length > 0 && (
+          {strip.length >= 3 && (
             <div className="filmstrip" aria-label="Moments">
               {strip.map((frame) => (
                 <button
@@ -1313,6 +1323,13 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
   });
 }
 
+// One vocabulary for naming tapes everywhere: the library's roll numbers,
+// never raw video ids.
+function tapeDisplayLabel(videoId: string, media: MediaRecord[]): string {
+  const index = media.findIndex((row) => row.id === videoId);
+  return index >= 0 ? `Tape ${index + 1}` : "Loose footage";
+}
+
 // Camcorders don't predate ~1970; narrated years older than that (volcano
 // eruptions, building cornerstones) are historical context, not event dates.
 const EARLIEST_PLAUSIBLE_YEAR = 1970;
@@ -1644,6 +1661,15 @@ function contextDisplayLabel(raw: string): string {
 // Machine scopes ("video_000003 context") and contradictory compound scopes
 // ("Hawaii, Moscow context") assert things the archive has not earned; only a
 // scope that reads as one coherent place survives to the screen.
+// Generic labels arrive lowercase from the pipeline ("home", "zoo"); on
+// screen they read as proper nouns.
+function titleCasePlace(label: string): string {
+  if (!label || label !== label.toLowerCase()) {
+    return label;
+  }
+  return label.replace(/(^|[\s-])(\p{Ll})/gu, (full, sep, ch) => sep + ch.toUpperCase());
+}
+
 function placeDisplayLabel(raw?: string): string {
   if (!raw) {
     return "";
@@ -1651,9 +1677,9 @@ function placeDisplayLabel(raw?: string): string {
   const trimmed = raw.trim();
   const match = /^(.*?)\s*\(([^()]*)\)$/.exec(trimmed);
   if (!match) {
-    return trimmed;
+    return titleCasePlace(trimmed);
   }
-  const label = match[1].trim() || trimmed;
+  const label = titleCasePlace(match[1].trim() || trimmed);
   let scope = match[2].trim();
   if (!scope || /video_\d+/i.test(scope)) {
     return label;
@@ -1662,10 +1688,16 @@ function placeDisplayLabel(raw?: string): string {
     return `${label} · ${scope}`;
   }
   scope = scope.replace(/\s*context$/i, "").trim();
-  if (!scope) {
+  const parts = scope
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    // Years and placeholder words are provenance, not geography — never
+    // part of a place name on screen ("home (2006, unplaced)" → "Home").
+    .filter((part) => !/^(19|20)\d{2}$/.test(part) && !/^(unplaced|unknown|unresolved)$/i.test(part));
+  if (!parts.length) {
     return label;
   }
-  const parts = scope.split(",").map((part) => part.trim()).filter(Boolean);
   const regionHits = new Set(
     parts.map((part) => part.toLowerCase()).filter((part) => DISJOINT_REGIONS.includes(part)),
   );
@@ -1673,7 +1705,7 @@ function placeDisplayLabel(raw?: string): string {
   if (regionHits.size > 1 || parts.length > 2 || (leadsWithRegion && parts.length > 1)) {
     return label;
   }
-  return `${label} · ${scope}`;
+  return `${label} · ${parts.join(", ")}`;
 }
 
 function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
@@ -1723,7 +1755,7 @@ function ReviewQueue({
               <strong>
                 <ReviewItemTitle item={item} />
               </strong>
-              <small>
+              <small title={typeof item.confidence === "number" ? `${Math.round(item.confidence * 100)}% confidence` : undefined}>
                 {taskLabel(item.task_type)} · {formatConfidence(item.confidence)}
               </small>
             </span>
@@ -2245,9 +2277,10 @@ function FaceClusterActions({
               <strong>
                 <PersonNameBadge label={candidate.person_label} />
               </strong>
-              <small>
-                {formatConfidence(candidate.confidence)} · {candidate.candidate_ambiguity ?? "unknown"} ambiguity
-                {candidate.direct_name_event_ids?.length ? " · named in event" : " · co-occurrence only"}
+              <small title={typeof candidate.confidence === "number" ? `${Math.round(candidate.confidence * 100)}% confidence` : undefined}>
+                {formatConfidence(candidate.confidence)}
+                {candidate.candidate_ambiguity === "high" ? " · crowded scenes" : ""}
+                {candidate.direct_name_event_ids?.length ? " · named on tape" : " · seen at the same events"}
                 {candidate.face_quality_status && candidate.face_quality_status !== "usable"
                   ? ` · ${qualityShortLabel(candidate.face_quality_status)}`
                   : ""}
@@ -3384,6 +3417,8 @@ function SemanticSearchPanel({
 
   const sections = response?.sections ?? {};
   const hasHits = (Object.keys(sections) as SemanticSectionId[]).some((key) => (sections[key] ?? []).length > 0);
+  const searching = busy && !response;
+  const emptyResult = !busy && response !== null && !hasHits && text.trim().length > 0;
 
   return (
     <div className="semantic-search">
@@ -3423,6 +3458,21 @@ function SemanticSearchPanel({
         </div>
       ) : null}
 
+      {searching && (
+        <div className="search-state">
+          <RefreshCw size={16} className="spin" />
+          <span>Searching the archive…</span>
+        </div>
+      )}
+      {emptyResult && (
+        <div className="search-state">
+          <Search size={16} />
+          <span>
+            Nothing matched “{text.trim()}” — try a person, a place, a year, or what’s on screen.
+          </span>
+        </div>
+      )}
+
       <div className="semantic-sections">
         {(Object.keys(semanticSectionLabels) as SemanticSectionId[]).map((sectionId) => {
           const hits = sections[sectionId] ?? [];
@@ -3459,19 +3509,23 @@ function SemanticSearchPanel({
               )}
               {sectionId === "moments" && (
                 <div className="moment-hit-grid">
-                  {hits.map((hit) => {
-                    const event = eventsById.get(hit.source_id);
-                    const thumb = event?.thumbnail_path;
-                    return (
-                      <button key={`${hit.record_type}:${hit.source_id}`} className="moment-hit" onClick={() => event && onOpenEvent(event)} disabled={!event}>
-                        <span className="moment-hit-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" loading="lazy" /> : <ImageIcon size={18} />}</span>
-                        <span className="moment-hit-copy">
-                          <strong>{hit.title || event?.title || hit.source_id}</strong>
-                          {hit.snippet ? <small>{hit.snippet}</small> : null}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {hits
+                    // A moment the library can't open isn't a result — graph
+                    // rows and stale ids stay out of the grid entirely.
+                    .filter((hit) => eventsById.has(hit.source_id))
+                    .map((hit) => {
+                      const event = eventsById.get(hit.source_id)!;
+                      const thumb = event.thumbnail_path;
+                      return (
+                        <button key={`${hit.record_type}:${hit.source_id}`} className="moment-hit" onClick={() => onOpenEvent(event)}>
+                          <span className="moment-hit-thumb">{thumb ? <img src={assetUrl(thumb)} alt="" loading="lazy" /> : <ImageIcon size={18} />}</span>
+                          <span className="moment-hit-copy">
+                            <strong>{hit.title || event.title}</strong>
+                            {cleanSnippet(hit.snippet) ? <small>{cleanSnippet(hit.snippet)}</small> : null}
+                          </span>
+                        </button>
+                      );
+                    })}
                 </div>
               )}
               {sectionId === "spoken" && (
@@ -3579,41 +3633,51 @@ function AlbumsView({
   const visibleAlbums = dedupeAlbumsForDisplay(albums.filter((album) => album.events?.length || album.thumbnail_path));
   return (
     <section className="albums-view">
-      {visibleAlbums.map((album) => (
-        <article key={album.id} className="album-row">
-          <div className="album-cover">
-            {album.thumbnail_path ? <img src={assetUrl(album.thumbnail_path)} alt="" /> : <AlbumCoverFallback album={album} eventsById={eventsById} />}
-          </div>
-          <div className="album-body">
-            <div className="row-heading">
-              <div className="event-title-stack">
-                <h2>{album.title}</h2>
-                <small>{[album.date_label, placeDisplayLabel(album.place_label)].filter(Boolean).join(" · ") || humanizeToken(album.album_type ?? "album")}</small>
+      {visibleAlbums.map((album) => {
+        const cover = albumCoverPath(album, eventsById) || album.thumbnail_path;
+        // A bare-date title with the same date underneath says it twice.
+        const subtitleParts = [album.date_label, placeDisplayLabel(album.place_label)].filter(Boolean) as string[];
+        const subtitle =
+          subtitleParts.filter((part) => !album.title.toLowerCase().includes(part.toLowerCase())).join(" · ") ||
+          (subtitleParts.length ? "" : humanizeToken(album.album_type ?? "album"));
+        const tiles = (album.events ?? []).slice(0, 8);
+        const showTiles = tiles.length > 1;
+        return (
+          <article key={album.id} className="album-row">
+            <div className="album-cover">
+              {cover ? <img src={assetUrl(cover)} alt="" /> : <AlbumCoverFallback album={album} eventsById={eventsById} />}
+            </div>
+            <div className="album-body">
+              <div className="row-heading">
+                <div className="event-title-stack">
+                  <h2>{album.title}</h2>
+                  {subtitle && <small>{subtitle}</small>}
+                </div>
+                <span>{(album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`}</span>
               </div>
-              <span>{(album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`}</span>
+              <div className="token-row">
+                <Token>{humanizeToken(album.album_type ?? "album")}</Token>
+                {(album.people_labels ?? []).slice(0, 5).map((label) => (
+                  <Token key={label}>{personDisplayName(label)}</Token>
+                ))}
+              </div>
+              {showTiles && (
+                <div className="album-events">
+                  {tiles.map((event) => {
+                    const fullEvent = eventsById.get(event.event_id);
+                    return (
+                      <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
+                        {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                        <span>{event.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="token-row">
-              <Token>{humanizeToken(album.album_type ?? "album")}</Token>
-              {(album.people_labels ?? []).slice(0, 5).map((label) => (
-                <Token key={label}>{personDisplayName(label)}</Token>
-              ))}
-            </div>
-            <div className="album-events">
-              {(album.events ?? []).slice(0, 8).map((event) => {
-                const fullEvent = eventsById.get(event.event_id);
-                const moment = momentFromEvent(event, media);
-                return (
-                  <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
-                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
-                    <span>{event.title}</span>
-                    <small>{moment ? formatTime(moment.startS) : ""}</small>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
       {!visibleAlbums.length ? <EmptyState icon={CalendarDays} title="No albums" /> : null}
     </section>
   );
@@ -3627,10 +3691,20 @@ function memoriesRowAlbums(albums: AlbumRecord[]): AlbumRecord[] {
     .slice(0, 6);
 }
 
+// A memory's cover should show its people, not the scenery the camera warmed
+// up on — rank candidate frames by how many people their event carries.
 function albumCoverPath(album: AlbumRecord, eventsById: Map<string, EventRecord>, avoid?: Set<string>): string {
+  const ranked = (album.events ?? [])
+    .map((entry) => eventsById.get(entry.event_id))
+    .filter((event): event is EventRecord => Boolean(event?.thumbnail_path))
+    .sort(
+      (a, b) =>
+        (b.people?.length ?? 0) - (a.people?.length ?? 0) ||
+        ((b.end_s ?? 0) - (b.start_s ?? 0)) - ((a.end_s ?? 0) - (a.start_s ?? 0)),
+    );
   const candidates = [
+    ...ranked.map((event) => event.thumbnail_path ?? ""),
     album.thumbnail_path ?? "",
-    ...(album.events ?? []).map((entry) => eventsById.get(entry.event_id)?.thumbnail_path ?? ""),
   ].filter(Boolean);
   return candidates.find((path) => !avoid?.has(path)) ?? candidates[0] ?? "";
 }
@@ -3955,7 +4029,7 @@ function momentFromEvent(event: EventEntry | EventRecord, media: MediaRecord[]):
   const end = typeof event.end_s === "number" ? Math.max(start, event.end_s - offset) : undefined;
   return {
     videoId,
-    videoLabel: tape?.filename || videoId,
+    videoLabel: tapeDisplayLabel(videoId, media),
     startS: start,
     endS: end,
     title: event.title,
@@ -3973,7 +4047,7 @@ function momentFromSourceRange(range: SourceRange, media: MediaRecord[], title: 
   const end = typeof rawEnd === "number" ? Math.max(start, rawEnd) : undefined;
   return {
     videoId,
-    videoLabel: tape?.filename || videoId,
+    videoLabel: tapeDisplayLabel(videoId, media),
     startS: start,
     endS: end,
     title,
@@ -4076,8 +4150,15 @@ function taskLabel(task: string) {
   return taskLabels[task] ?? task.replace(/_/g, " ");
 }
 
+// Percentages read like exam grades; the queue speaks in plain terms and
+// keeps the exact number a hover away.
 function formatConfidence(value?: number) {
-  return typeof value === "number" ? `${Math.round(value * 100)}%` : "n/a";
+  if (typeof value !== "number") {
+    return "needs a look";
+  }
+  if (value >= 0.75) return "strong guess";
+  if (value >= 0.45) return "possible match";
+  return "needs a look";
 }
 
 function formatScore(value?: number) {
@@ -4107,6 +4188,32 @@ function formatSignedSeconds(value: number) {
 function shortPath(path: string) {
   const parts = path.split("/");
   return parts.slice(-2).join("/");
+}
+
+// Index snippets carry pipeline vocabulary (record types, video ids); a
+// search result speaks the user's language or stays quiet.
+function cleanSnippet(snippet?: string): string {
+  if (!snippet) {
+    return "";
+  }
+  return snippet
+    .replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, " ")
+    .replace(/\bvideo_\d+\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^\W+|\W+$/g, "")
+    .trim();
+}
+
+// The sidebar introduces the archive, not its directory; the path lives in
+// the tooltip for anyone who needs it.
+function archiveByline(bundle: ProjectBundle): string {
+  const media = bundle.data.media ?? [];
+  const seconds = media.reduce((sum, row) => sum + (row.duration_s ?? 0), 0);
+  const hours = Math.round(seconds / 3600);
+  if (!media.length) {
+    return shortPath(bundle.projectDir);
+  }
+  return `${media.length} tapes · ${hours} hours`;
 }
 
 function JournalView({
@@ -4303,8 +4410,14 @@ function JournalPostArticle({
         <p className="journal-paragraph">
           {renderEntities(block.text ?? "", block.entities)}
           {block.citations?.length ? (
-            <span className="journal-footnote" title={`Grounded in ${block.citations.join(", ")}`}>
-              {"·".repeat(Math.min(block.citations.length, 3))}
+            <span
+              className="journal-footnote"
+              title={`Grounded in ${block.citations.length === 1 ? "1 source" : `${block.citations.length} sources`} from the tapes`}
+              aria-label="This paragraph is grounded in the tapes"
+            >
+              {Array.from({ length: Math.min(block.citations.length, 3) }).map((_, dot) => (
+                <i key={dot} />
+              ))}
             </span>
           ) : null}
         </p>

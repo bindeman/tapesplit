@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
+import { gzipSync } from "node:zlib";
 import { createReadStream, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
@@ -30,7 +31,7 @@ function reviewApiPlugin(): Plugin {
         }
         try {
           if (req.method === "GET" && req.url.startsWith("/api/project")) {
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           if (req.method === "GET" && req.url.startsWith("/api/asset")) {
@@ -57,29 +58,29 @@ function reviewApiPlugin(): Plugin {
             const body = await readJson(req);
             const actions = Array.isArray(body) ? body : [body];
             await appendPendingActions(actions);
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           if (req.method === "DELETE" && req.url.startsWith("/api/actions")) {
             const url = new URL(req.url, "http://localhost");
             const actionId = url.searchParams.get("id");
             await removePendingAction(actionId);
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           if (req.method === "POST" && req.url.startsWith("/api/apply-suggestions")) {
             await applySuggestedActions(req);
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           if (req.method === "POST" && req.url.startsWith("/api/apply")) {
             await applyPendingActions();
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           if (req.method === "POST" && req.url.startsWith("/api/reapply")) {
             await reapplyCorrections();
-            await sendJson(res, await loadProject());
+            await sendProjectJson(req, res, await loadProject());
             return;
           }
           sendJson(res, { error: "not_found" }, 404);
@@ -430,6 +431,24 @@ function resolveVideoPath(tape: Record<string, unknown>) {
 function sendJson(res: ServerResponse, payload: unknown, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(payload));
+}
+
+// The project bundle is tens of megabytes of JSON; compressing it turns the
+// first paint from a file download into a page load.
+function sendProjectJson(req: IncomingMessage, res: ServerResponse, payload: unknown) {
+  const body = JSON.stringify(payload);
+  const acceptsGzip = /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""));
+  if (!acceptsGzip || body.length < 262144) {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(body);
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Content-Encoding": "gzip",
+    "Cache-Control": "no-store",
+  });
+  res.end(gzipSync(body));
 }
 
 function mimeType(ext: string) {

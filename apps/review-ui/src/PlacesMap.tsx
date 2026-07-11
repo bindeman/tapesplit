@@ -2,7 +2,7 @@
 // places. Local-first by design: a bundled Natural Earth 110m vector base
 // (world countries + US states) rendered as styled SVG, no tile service.
 // See docs/DESIGN.md ("Places map: rendering rationale").
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { feature } from "topojson-client";
 import type { FeatureCollection, Geometry, Position } from "geojson";
@@ -156,7 +156,7 @@ export function PlacesMapView({
   );
 
   const rollups = useMemo(() => {
-    const byCity = new Map<string, { label: string; lat: number; lng: number; count: number }>();
+    const byCity = new Map<string, { label: string; lat: number; lng: number; count: number; uncertain: boolean }>();
     for (const item of mapped) {
       const geo = item.place.geocode;
       const label = [geo?.city || geo?.state, geo?.country === "United States" ? geo?.state : geo?.country]
@@ -164,16 +164,24 @@ export function PlacesMapView({
         .filter((value, index, list) => list.indexOf(value) === index)
         .join(", ");
       if (!label) continue;
+      const solid = !item.approximate && !geo?.context_suspect;
       const current = byCity.get(label) || {
         label,
         lat: item.place.coordinates!.lat,
         lng: item.place.coordinates!.lng,
         count: 0,
+        uncertain: true,
       };
       current.count += item.count;
+      // One confidently-placed member makes the region itself confident.
+      current.uncertain = current.uncertain && !solid;
       byCity.set(label, current);
     }
-    return [...byCity.values()].sort((a, b) => b.count - a.count);
+    // Confident regions lead; approximate ones sink below the divider so the
+    // rail never presents a guess with the same face as a fact.
+    return [...byCity.values()].sort(
+      (a, b) => Number(a.uncertain) - Number(b.uncertain) || b.count - a.count,
+    );
   }, [mapped]);
 
   // Camera: start framed on the full pin set.
@@ -187,7 +195,9 @@ export function PlacesMapView({
     const maxY = Math.max(...ys);
     const spanX = Math.max(maxX - minX, 40);
     const spanY = Math.max(maxY - minY, 40);
-    const k = Math.min(Math.max(Math.min(VIEW_W / (spanX * 1.4), VIEW_H / (spanY * 1.4)), MIN_K), 6);
+    // Generous framing: pins are ~54px boxes, so the fitted view needs real
+    // margin or the outermost pin (Alaska) sits half-clipped at the edge.
+    const k = Math.min(Math.max(Math.min(VIEW_W / (spanX * 1.85), VIEW_H / (spanY * 1.85)), MIN_K), 6);
     return { k, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
   }, [mapped]);
 
@@ -383,11 +393,20 @@ export function PlacesMapView({
           <aside className="map-rail">
             <h2>By region</h2>
             <div className="map-rollups">
-              {rollups.map((rollup) => (
-                <button key={rollup.label} onClick={() => flyTo(rollup.lat, rollup.lng, 14)}>
-                  <span>{rollup.label}</span>
-                  <em>{rollup.count === 1 ? "1 moment" : `${rollup.count} moments`}</em>
-                </button>
+              {rollups.map((rollup, index) => (
+                <React.Fragment key={rollup.label}>
+                  {rollup.uncertain && (index === 0 || !rollups[index - 1].uncertain) && (
+                    <div className="rollup-divider">Approximate</div>
+                  )}
+                  <button
+                    className={rollup.uncertain ? "uncertain" : ""}
+                    title={rollup.uncertain ? "Location is a best guess until its context is confirmed" : undefined}
+                    onClick={() => flyTo(rollup.lat, rollup.lng, 14)}
+                  >
+                    <span>{rollup.label}</span>
+                    <em>{rollup.count === 1 ? "1 moment" : `${rollup.count} moments`}</em>
+                  </button>
+                </React.Fragment>
               ))}
             </div>
             {unplaced.length > 0 && (

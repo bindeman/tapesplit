@@ -2551,6 +2551,38 @@ p {
   padding: 0 2px;
 }
 
+/* Searching / no-results occupy the stage calmly instead of leaving a void. */
+.search-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 56px 16px;
+  font-size: var(--fs-callout);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Grounding marks: quiet dots, not punctuation; they wake on hover. */
+.journal-footnote {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: 0.45em;
+}
+
+.journal-footnote i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.journal-paragraph:hover .journal-footnote i {
+  background: var(--accent);
+}
+
 .semantic-sections {
   overflow-y: auto;
   min-height: 0;
@@ -3079,7 +3111,8 @@ p {
 }
 
 .map-country {
-  fill: var(--bg-elev-2);
+  /* Land must read against ocean at a glance in both themes. */
+  fill: color-mix(in srgb, var(--bg-elev-2) 82%, var(--text-tertiary));
   stroke: var(--line-strong);
   stroke-width: 0.6px;
 }
@@ -3197,6 +3230,25 @@ p {
   font-size: var(--fs-footnote);
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+.map-rollups button.uncertain span {
+  color: var(--text-secondary);
+}
+
+.map-rollups button.uncertain span::before {
+  content: "≈ ";
+  color: var(--text-tertiary);
+}
+
+.rollup-divider {
+  margin-top: var(--sp-2x);
+  padding: var(--sp-1) var(--sp-2x);
+  font-size: var(--fs-caption1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
 .map-unplaced summary {
