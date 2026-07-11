@@ -12,6 +12,16 @@ from tapesplit.storage import append_jsonl, read_jsonl
 DEFAULT_MIN_SPEAKER_IDENTITY_CONFIDENCE = 0.28
 DEFAULT_MAX_CANDIDATES_PER_SPEAKER = 5
 
+# Anonymous diarization buckets (AZ_SPEAKER_*) are per-tape buckets, not
+# people: measured cross-tape voiceprint self-consistency is 0.25-0.33 vs
+# 0.52-0.64 for named speakers, so unifying them across tapes conflates
+# different voices. Named labels stay archive-wide (reference-anchored).
+ANONYMOUS_SPEAKER_PREFIX = "AZ_SPEAKER_"
+VOICE_BUCKET_ANALYSIS_FILENAME = "voice_bucket_analysis.jsonl"
+VOICE_BUCKET_STRONG_WEIGHT = 0.62
+VOICE_BUCKET_AMBIGUOUS_WEIGHT = 0.40
+VOICE_BUCKET_RECURRING_WEIGHT = 0.40
+
 ROLE_ONLY_PEOPLE = {
     "adult",
     "adults",
@@ -72,10 +82,18 @@ def build_speaker_identity_candidates(
     role_identity_options = _role_identity_options_by_person(people, relationships, events_by_id)
     face_context = _face_candidate_context(face_identity_candidates, face_clusters)
 
+    voice_bucket_analysis = _load_voice_bucket_analysis(project)
+
     rows: list[dict[str, Any]] = []
     for speaker_label, track in sorted(speaker_tracks.items()):
         buckets: dict[str, dict[str, Any]] = {}
         mentioned_people = _mentioned_people(track, people)
+        _add_voice_bucket_candidates(
+            buckets,
+            track=track,
+            analysis=voice_bucket_analysis,
+            people=people,
+        )
         _add_role_context_candidates(
             buckets,
             track=track,
@@ -125,10 +143,21 @@ def build_speaker_identity_candidates(
         row["id"] = f"speaker_identity_candidate_{index:06d}"
     output = project / "speaker_identity_candidates.jsonl"
     _write_jsonl(output, rows)
+
+    voice_flags = _voice_bucket_flags(voice_bucket_analysis)
+    if voice_flags:
+        flags_path = project / "verification_flags.jsonl"
+        existing_ids = {str(row.get("id") or "") for row in read_jsonl(flags_path)}
+        for flag in voice_flags:
+            if flag["id"] not in existing_ids:
+                append_jsonl(flags_path, flag)
+
     return {
         "project": str(project),
         "speaker_tracks": len(speaker_tracks),
         "speaker_identity_candidates": len(rows),
+        "voice_bucket_rows": len(voice_bucket_analysis),
+        "voice_bucket_flags": len(voice_flags),
         "output": str(output),
         "by_speaker": _count_by(rows, "speaker_label"),
     }
@@ -144,6 +173,8 @@ def _speaker_tracks(
         speaker_label = str(segment.get("speaker_label") or "").strip()
         if not speaker_label:
             continue
+        if speaker_label.startswith(ANONYMOUS_SPEAKER_PREFIX):
+            speaker_label = f"{speaker_label}@{segment.get('source_video_id')}"
         track = grouped.setdefault(
             speaker_label,
             {
@@ -191,6 +222,157 @@ def _speaker_tracks(
         track["last_end_s"] = max((_number_or_none(row.get("end_s")) or 0.0 for row in track["segments"]), default=None)
         track["total_duration_s"] = round(track["total_duration_s"], 3)
     return grouped
+
+
+def _load_voice_bucket_analysis(project: Path) -> dict[str, dict[str, Any]]:
+    """Analysis rows keyed by scoped anonymous label ('AZ_SPEAKER_00@video_000005')."""
+    analysis: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(project / VOICE_BUCKET_ANALYSIS_FILENAME):
+        if not isinstance(row, dict):
+            continue
+        key = f"{row.get('speaker_label')}@{row.get('tape')}"
+        analysis[key] = row
+    return analysis
+
+
+def _person_by_alias(people: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    """Resolve a name to one person group, preferring alias-pure groups.
+
+    Groups with accreted stray aliases (the known contamination blobs) match
+    many names incidentally; the wanted name being a small minority of a
+    group's alias parts is evidence the match is stray, not identity.
+    """
+    wanted = str(name or "").strip().casefold()
+    if not wanted:
+        return None
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for person in people:
+        aliases = [str(person.get("label") or ""), *(str(a) for a in person.get("aliases") or [])]
+        parts = [part.strip().casefold() for alias in aliases for part in alias.split("/") if part.strip()]
+        unique_parts = set(parts)
+        if wanted not in unique_parts:
+            continue
+        purity = sum(1 for part in parts if part == wanted) / max(1, len(parts))
+        scored.append((purity, person))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: -item[0])
+    if len(scored) == 1:
+        return scored[0][1]
+    best, runner = scored[0], scored[1]
+    if best[0] >= runner[0] + 0.15:
+        return best[1]
+    # Duplicate twin groups (same normalized label, e.g. two "Ekaterina / Katya"
+    # rows re-split by a rebuild) are safe to resolve to the richer twin:
+    # they are each other's top merge candidates and converge after merging.
+    label_a = str(best[1].get("label") or "").strip().casefold()
+    label_b = str(runner[1].get("label") or "").strip().casefold()
+    if label_a and label_a == label_b:
+        richer = max(
+            (item[1] for item in scored if str(item[1].get("label") or "").strip().casefold() == label_a),
+            key=lambda g: len(g.get("canonical_event_ids") or []),
+        )
+        return richer
+    return None
+
+
+def _add_voice_bucket_candidates(
+    buckets: dict[str, dict[str, Any]],
+    *,
+    track: dict[str, Any],
+    analysis: dict[str, dict[str, Any]],
+    people: list[dict[str, Any]],
+) -> None:
+    row = analysis.get(str(track.get("speaker_label") or ""))
+    if not row:
+        return
+    verdict = str(row.get("verdict") or "")
+    if verdict == "named_overflow":
+        person = _person_by_alias(people, str(row.get("match_label") or ""))
+        if person is None:
+            return
+        ambiguous = bool(row.get("ambiguous"))
+        weight = VOICE_BUCKET_AMBIGUOUS_WEIGHT if ambiguous else VOICE_BUCKET_STRONG_WEIGHT
+        detail = (
+            f"same-channel voiceprint cosine {row.get('match_cosine')} vs {row.get('match_label')}"
+            + (f" (runner-up {row.get('second_cosine')} — ambiguous)" if ambiguous else "")
+        )
+        _add_signal(
+            _bucket(buckets, track, person),
+            weight=weight,
+            signal="anonymous diarization bucket matches this person's voiceprint on the same tape",
+            basis=f"{track['speaker_label']}: {detail}",
+            source="voice_bucket_match",
+        )
+    elif verdict == "recurring_adult":
+        # A recurring unnamed adult voice across family tapes: directive
+        # register, rarely on screen — the camera-operator profile. Emitted
+        # only as a low-confidence hypothesis; the review item carries the
+        # full evidence and a human decides who this is.
+        person = _person_by_alias(people, "Viktor Sokolov")
+        if person is None:
+            return
+        _add_signal(
+            _bucket(buckets, track, person),
+            weight=VOICE_BUCKET_RECURRING_WEIGHT,
+            signal="recurring unnamed adult voice (camera-operator profile) — identity hypothesis",
+            basis=(
+                f"{track['speaker_label']}: cross-tape voiceprint cohesion "
+                f"{row.get('recurring_cluster_mean_cosine')} across the recurring-adult cluster; "
+                f"on-screen {float(row.get('onscreen_fraction') or 0) * 100:.0f}% of speech; "
+                f"directive register {float(row.get('directive_rate') or 0) * 100:.1f}%; "
+                "hypothesis only — most-frequent unnamed adult in the archive; confirm in review"
+            ),
+            source="voice_bucket_recurring_adult",
+        )
+
+
+def _voice_bucket_flags(analysis: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    flags: list[dict[str, Any]] = []
+    for key, row in sorted(analysis.items()):
+        verdict = str(row.get("verdict") or "")
+        if verdict == "broadcast":
+            flags.append(
+                {
+                    "id": f"vflag_voice_{row.get('tape')}_{row.get('speaker_label')}",
+                    "verification_id": str(row.get("id") or ""),
+                    "target_type": "speaker_track",
+                    "target_id": key,
+                    "claim_type": "speaker_identity",
+                    "claim_text": f"{key} carries family speech",
+                    "action": "mark_unrelated",
+                    "reason": (
+                        f"broadcast/TV audio profile: on-screen {float(row.get('onscreen_fraction') or 0) * 100:.0f}%, "
+                        f"directive register {float(row.get('directive_rate') or 0) * 100:.1f}%, "
+                        f"no voiceprint match to any named speaker ({row.get('segment_count')} segments, "
+                        f"{row.get('duration_min')} min) — exclude from people, quotes, and journal sources"
+                    ),
+                    "source_video_id": str(row.get("tape") or ""),
+                    "clip_path": None,
+                }
+            )
+        elif verdict == "recurring_adult":
+            flags.append(
+                {
+                    "id": f"vflag_voice_{row.get('tape')}_{row.get('speaker_label')}",
+                    "verification_id": str(row.get("id") or ""),
+                    "target_type": "speaker_track",
+                    "target_id": key,
+                    "claim_type": "speaker_identity",
+                    "claim_text": f"{key} is an unidentified speaker",
+                    "action": "confirm_speaker_identity",
+                    "reason": (
+                        "recurring unnamed adult across family tapes (camera-operator profile): "
+                        f"cross-tape voiceprint cohesion {row.get('recurring_cluster_mean_cosine')}, "
+                        f"on-screen {float(row.get('onscreen_fraction') or 0) * 100:.0f}%, "
+                        f"directive register {float(row.get('directive_rate') or 0) * 100:.1f}% — "
+                        "likely the person filming; needs a human name"
+                    ),
+                    "source_video_id": str(row.get("tape") or ""),
+                    "clip_path": None,
+                }
+            )
+    return flags
 
 
 def _add_role_context_candidates(
@@ -344,6 +526,11 @@ def _candidate_record(
     confidence = max_weight + support_bonus + event_bonus + segment_bonus
     if not any(signal.get("source") in {"self_identification_phrase", "role_identity_bridge"} for signal in signals):
         confidence = min(confidence, 0.72)
+    sources = {str(signal.get("source") or "") for signal in signals}
+    if sources and all(source.startswith("voice_bucket") for source in sources):
+        # Voiceprint alone is one dimension — keep single-signal buckets below
+        # the confirm_speaker_identity auto-accept floor; a human confirms.
+        confidence = min(confidence, 0.68)
     if str(person.get("kind") or "") == "role_candidate":
         confidence = min(confidence, 0.78)
     confidence = max(0.05, min(0.94, confidence))
