@@ -1241,7 +1241,13 @@ p {
   padding: 12px 14px;
 }
 
-.suggested-resolution small {
+.suggested-resolution > div {
+  min-width: 0;
+}
+
+/* Child selectors: a descendant `span` rule would also restyle the Accept
+   button's label and the alias badge inside the best-guess name. */
+.suggested-resolution > div > small {
   display: block;
   text-transform: uppercase;
   letter-spacing: 0.6px;
@@ -1251,15 +1257,19 @@ p {
   margin-bottom: 2px;
 }
 
-.suggested-resolution strong {
+.suggested-resolution > div > strong {
   font-size: var(--fs-body);
 }
 
-.suggested-resolution span {
+.suggested-resolution > div > span {
   display: block;
   color: var(--text-2);
   font-size: var(--fs-callout);
   margin-top: 2px;
+}
+
+.suggested-resolution .command-button {
+  flex: none;
 }
 
 .relation-preview {
