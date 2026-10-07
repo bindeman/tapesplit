@@ -1,145 +1,235 @@
-# TapeSplit
+<p align="center">
+  <img src="site/media/readme/hero.webp" alt="TapeSplit: polaroids of moments from old family tapes (lava at Kīlauea, brown bears in Katmai, a boy's weather report on the Oregon coast, a cable car over Davos, Moscow from the river), each labeled with where and when TapeSplit thinks it was filmed" width="100%">
+</p>
 
-TapeSplit is a local-first VHS and home-video intelligence layer.
+<p align="center">
+  <a href="https://bindeman.github.io/tapesplit/"><b>Website</b></a> ·
+  <a href="#quickstart"><b>Quickstart</b></a> ·
+  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#api-keys"><b>API keys</b></a> ·
+  <a href="docs/"><b>Docs</b></a>
+</p>
 
-It takes unorganized digitized tapes (long VHS/DVD/camcorder transfers) and
-automatically produces a reviewable modern archive:
+<p align="center">
+  <a href="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
+  <img alt="Runs locally" src="https://img.shields.io/badge/runs-locally-2f8a87">
+  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-c9a87a"></a>
+</p>
 
-- canonical events, albums, and a browsable timeline
-- likely dates, people, places, relationships, and related/unrelated labels
-- transcript, frame, face, speaker, OCR, and visual evidence with provenance
-- multilingual transcript preservation and semantic search over moments
-- a local review UI where every remaining guess is one click to correct
-- durable corrections that survive re-runs
+**TapeSplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
 
-The system defaults to best guesses with provenance ("appears to be …"),
-auto-accepts only well-corroborated inferences, and keeps everything else one
-click away in the review UI. It runs fully locally on a Mac (Apple Vision OCR
-and face detection, whisper.cpp transcription, pyannote/speechbrain
-diarization, ArcFace face identity, BLIP captions), with an optional
-Vertex Gemini backend for deep video understanding.
+> Every picture on this page is a real frame from my family's tapes (1997–2007), labeled by TapeSplit. Names other than mine are changed.
+
+## From the tapes
+
+<p align="center">
+  <img src="site/media/readme/weather.gif" alt="Polaroid: a grinning boy in a rain hood on a windy beach. Label: Oregon coast, 2006" width="24%">
+  <img src="site/media/readme/lava.gif" alt="Polaroid: lava glowing where it meets the ocean at dusk. Label: Kīlauea, Hawaiʻi, 2006" width="24%">
+  <img src="site/media/readme/bears.gif" alt="Polaroid: brown bears fishing along a river. Label: Katmai, Alaska, 2002" width="24%">
+  <img src="site/media/readme/stbasil.gif" alt="Polaroid: Saint Basil's Cathedral seen from a river boat. Label: Moscow, 2007" width="24%">
+</p>
+
+The captions are scrapbook notes. The label tape is TapeSplit's: where each trip was and what year, worked out from what's on screen, what's said on tape and the camcorder's date stamp.
+
+## One tape, split
+
+<p align="center">
+  <img src="site/media/readme/tape-16.webp" alt="Tape 16 as a timeline: 43 colored blocks for moments in Hawaii (March 2006), on the Oregon coast (April 2006) and at home (May 2006), with hatched gaps where the tape is blank or static, and polaroid thumbnails for eight of the moments" width="100%">
+</p>
+
+Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minutes with no label. TapeSplit found 43 moments in it across a trip to Hawaii, a weekend on the Oregon coast and a spring at home, and skipped the blank tape, blue screens and static in between. The whole first archive was 19 tapes and 31 hours; it came back as 279 moments, 101 people and 244 places.
+
+## What you get
+
+A local review app that feels like a photo library. Every card links to the second of tape it came from.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/library-tape16-dark.webp">
+  <img alt="Library view: a grid of moments from tape 16 (arrival in Hawaii, sea turtles, the volcano crater, lava entering the ocean at night) with years and places" src="site/media/ui/library-tape16-light.webp">
+</picture>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/event-davos-dark.webp">
+        <img alt="A moment opened: Cable Car Ride to Jakobshorn, dated 2002-08-22, with keyframes and place chips" src="site/media/ui/event-davos-light.webp">
+      </picture>
+      <p><b>A moment</b> plays from the right second, with its keyframes, people and places. This date came off the camcorder stamp in the frame.</p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/journal-post-dark.webp">
+        <img alt="A Journal entry titled Filip's Ocean Questions, drafted from beach footage" src="site/media/ui/journal-post-light.webp">
+      </picture>
+      <p><b>The Journal</b> drafts days from the tapes into short entries. Every sentence cites its clip, and quotes are verbatim, Russian included.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/review-dark.webp">
+        <img alt="The review queue: duplicate people, unnamed speakers, relationships and places waiting for confirmation, with evidence" src="site/media/ui/review-light.webp">
+      </picture>
+      <p><b>Review</b> holds the guesses that are left, each with its evidence. Accept the strong ones in bulk or fix one in a click.</p>
+    </td>
+    <td width="50%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/places-dark.webp">
+        <img alt="Places view: a world map with photo pins for every place on the tapes" src="site/media/ui/places-light.webp">
+      </picture>
+      <p><b>Places</b> puts everywhere the camera went on a map that works offline. Dashed pins are rough guesses.</p>
+    </td>
+  </tr>
+</table>
+
+## How it works
+
+One command runs everything:
+
+```bash
+tapesplit auto ~/Tapes
+```
+
+`auto` is a 21-stage pipeline. Each stage checks what your machine can do and skips with a reason when it can't. Every stage is resumable, cloud stages are priced before they run, and the run ends by auto-accepting only the guesses that clear per-type safety rules.
+
+```mermaid
+flowchart TB
+  tapes["Digitized tapes · mp4, mov, avi, dv…"]
+  subgraph watch["1 · Watch, on your Mac"]
+    direction LR
+    w1["Scene cuts and<br/>blank-tape removal"] ~~~ w2["Transcripts<br/>whisper.cpp"] ~~~ w3["Speakers<br/>pyannote"] ~~~ w4["On-screen text<br/>and date stamps<br/>Apple Vision"] ~~~ w5["Face tracks<br/>InsightFace"]
+  end
+  understand["2 · Understand · Gemini watches each tape in chunks · optional, cost-capped"]
+  subgraph reconcile["3 · Reconcile, on your Mac"]
+    direction LR
+    r1["Claims that keep<br/>their evidence"] --> r2["Events, dates, places,<br/>people, relationships"] --> r3["Blind verification<br/>against the clips"]
+  end
+  review["4 · Review · safe auto-accept, then your queue"]
+  archive[("Archive · timeline, people, places, journal, search")]
+  tapes --> watch --> understand --> reconcile --> review --> archive
+  watch --> reconcile
+  review -. "your corrections, replayed on every rebuild" .-> reconcile
+```
+
+| Pass | What happens |
+| --- | --- |
+| **Watch** | ffmpeg finds scene cuts and throws out blank tape, blue screen and static. whisper.cpp transcribes every word in whatever language was spoken. pyannote separates the voices. Apple Vision reads text in the frame, including the camcorder's burned-in date. InsightFace follows each face through the shot, and tracks are clustered into people. |
+| **Understand** | Gemini on Vertex AI watches each tape in chunks and proposes events with timestamps: what happened, who is there, where and when. Long tapes are chunked, and each chunk is told its own duration so timestamps can't drift. Every batch is estimated first and skipped if it would exceed `--max-cloud-usd`. Without Gemini, TapeSplit still builds a timeline from local signals. |
+| **Reconcile** | Every signal becomes a claim that keeps its source: a transcript line, a frame, a face track. Events are stitched across chunks and dated from stamps, speech and context. Names are reconciled, so Mom, Katya and Катя become one person, while home in 2003 and home in 2006 stay two places. A blind verifier re-checks a sample of claims against the clips. |
+| **Review** | Strong guesses are accepted automatically under per-type confidence floors; a relationship also needs both people resolved and agreeing evidence. Everything else waits in the review queue. Corrections live in their own file and are replayed after every rebuild. |
+
+The full stage list, state handling and safety policy are in [docs/AUTOMATION.md](docs/AUTOMATION.md).
+
+### Built to be checked
+
+- **Guesses look like guesses.** Inferred facts read "appears to be…", carry a confidence, and link to their evidence.
+- **Your fixes stick.** Re-run the pipeline as often as you like; corrections replay on top.
+- **It measures itself.** Blind clip verification gives each module a grounded-precision score, and that score decides when new logic ships.
+- **Plain files.** A project is a folder of JSONL files, a SQLite search index and thumbnails. Nothing is locked in the app.
 
 ## Quickstart
 
-```bash
-/opt/homebrew/bin/python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
-brew install ffmpeg
+You need Python 3.11+ and ffmpeg. Apple Silicon Macs are the best-tested setup; Linux runs everything except the Apple Vision stages, which fall back to OpenCV.
 
-.venv/bin/tapesplit doctor                      # what will run on this machine
-.venv/bin/tapesplit auto /path/to/tape-folder   # tapes in, archive out
-.venv/bin/tapesplit ui /path/to/tape-folder.tapesplit
+```bash
+brew install ffmpeg whisper-cpp        # on Linux: your package manager, and build whisper.cpp
+git clone https://github.com/bindeman/tapesplit
+cd tapesplit
+python3.12 -m venv .venv
+.venv/bin/pip install -e '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
+cp .env.example .env                   # every key in it is optional
+
+.venv/bin/tapesplit doctor                 # what this machine can run, stage by stage
+.venv/bin/tapesplit auto ~/Tapes --plan    # what would run, without running it
+.venv/bin/tapesplit auto ~/Tapes           # tapes in, archive out (~/Tapes.tapesplit)
+.venv/bin/tapesplit ui ~/Tapes.tapesplit   # browse and review
 ```
 
-`tapesplit auto` runs the whole pipeline end to end:
+For transcription, point `WHISPER_CPP_MODEL` in `.env` at a whisper.cpp model such as [`ggml-large-v3-turbo.bin`](https://huggingface.co/ggerganov/whisper.cpp/tree/main). The review app needs Node 18+; `tapesplit ui` installs its packages on first run.
 
-ingest → non-content/scene detection → transcription → speaker diarization →
-(optional) Gemini video analysis → event stitching → keyframes → OCR →
-captions → visual embeddings → faces → clustering → groups/relationships →
-search index → story/report/visualization → safe auto-acceptance of
-high-confidence suggestions.
-
-Key properties:
-
-- **Capability aware.** Stages that lack a backend (no cloud keys, missing
-  optional ML package, non-macOS) are skipped with a reason instead of
-  failing; the archive is built from whatever evidence exists. `tapesplit
-  doctor` shows per-stage readiness.
-- **Resumable.** Per-stage state lives in `pipeline_state.json` inside the
-  project; re-running `auto` continues where it stopped, and per-video stages
-  skip already-processed videos. `tapesplit status <project>` shows progress.
-- **Cost guarded.** Cloud analysis is estimated first and skipped when the
-  estimate exceeds `--max-cloud-usd` (default $10).
-- **Local events without cloud.** Tapes with no cloud analysis still get
-  low-confidence "recording segment" events synthesized from scene/non-content
-  boundaries and transcript keywords, so the timeline is never empty.
-- **Minimal-intervention.** After the build, high-confidence suggestions are
-  auto-accepted as durable corrections under a per-action-type safety policy
-  (`--no-suggestions` to disable). Relationships require resolved identities
-  on both sides, no contradicting evidence, and corroboration before
-  auto-accept.
+| Extra | Adds |
+| --- | --- |
+| `local-ai` | openai-whisper, sentence-transformers and sqlite-vec for dense multilingual search |
+| `vision` | OpenCV face detection and frame analysis |
+| `macos` | Apple Vision OCR and face detection |
+| `visual-ai` | Image captions and visual embeddings |
+| `face-ai` | InsightFace / ArcFace identity embeddings on ONNX Runtime (Core ML on Apple Silicon) |
+| `speaker-ai` | pyannote.audio and SpeechBrain diarization |
 
 Useful variants:
 
 ```bash
-tapesplit auto INPUT --plan                 # show what would run, then exit
-tapesplit auto INPUT --profile local        # never call cloud providers
-tapesplit auto INPUT --profile minimal      # deterministic stages only
-tapesplit auto INPUT --max-cloud-usd 25 --language ru
-tapesplit auto INPUT --force-from scenes    # redo scenes and everything after
-tapesplit auto INPUT --skip captions --skip diarize
-tapesplit status PROJECT                    # stage state + archive metrics
-tapesplit synthesize-events PROJECT         # heuristic events on demand
+tapesplit auto ~/Tapes --profile local           # never call a cloud service
+tapesplit auto ~/Tapes --max-cloud-usd 25        # raise the cloud budget for this run
+tapesplit auto ~/Tapes --language ru             # transcription language hint
+tapesplit auto ~/Tapes.tapesplit --force-from scenes   # redo scenes and everything after
+tapesplit status ~/Tapes.tapesplit               # stage state and archive metrics
+tapesplit search query ~/Tapes.tapesplit "first day of school"
 ```
 
-## Review UI
+Every stage is also its own command (`detect-scenes`, `transcribe`, `speakers diarize`, `gemini analyze-video`, `detect-faces`, `cluster-faces`, `search build`, `journal generate`, …). See `tapesplit --help` and [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
-```bash
-.venv/bin/tapesplit ui /path/to/project.tapesplit
+## API keys
+
+TapeSplit works with no keys at all. Each service you add makes one part of the archive better. Keys go in `.env` (gitignored); `tapesplit doctor` reports what it found without printing secrets.
+
+| Service | What it adds | Setup | Without it |
+| --- | --- | --- | --- |
+| **Google Cloud (Vertex AI · Gemini)** | Watches the video itself: rich event titles, summaries, people, places and dates | Create a project with the Vertex AI API enabled and a Cloud Storage bucket, then run `gcloud auth application-default login`. Set `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and `GEMINI_GCS_BUCKET`. | Low-confidence "recording segment" events from local signals |
+| **Hugging Face** | pyannote speaker diarization | Create a read token, accept the terms of [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1), set `HF_TOKEN` | SpeechBrain fallback |
+| **Azure OpenAI** | Diarized transcription that names known speakers, the blind verifier, frame descriptions and Journal drafting | Set `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION` and the deployment names in `.env.example`. Opt in with `TAPESPLIT_DIARIZE_BACKEND=azure-openai` and `TAPESPLIT_VERIFIER_BACKEND=azure`. | Those stages skip with a reason |
+| **Google Maps** | Sharper geocoding for named places | `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_ENABLED=true` and a `GOOGLE_MAPS_DAILY_BUDGET_USD` cap | OpenStreetMap Nominatim (free; set `TAPESPLIT_CONTACT_EMAIL` to identify yourself) |
+| **TwelveLabs** | An optional hosted video index for search experiments | `TWELVELABS_API_KEY` and the `twelvelabs` extra | Local hybrid search |
+
+**What it costs.** Gemini analysis of all 31 hours of the sample archive came to about $8 on Vertex AI. Three guards keep it bounded: `tapesplit auto` estimates each batch against `--max-cloud-usd` (default $10), `GEMINI_PROJECT_BUDGET_USD` caps cumulative Gemini spend, and `GOOGLE_MAPS_DAILY_BUDGET_USD` caps geocoding. Copy `cost_rates.example.json` to `cost_rates.json` to price calls with your own rates.
+
+## Privacy
+
+- **Local by default.** Every stage has a local path, and `--profile local` never makes a network call to an AI service.
+- **What leaves your machine, when you opt in.** Gemini analysis uploads low-resolution proxies of your tapes to a Cloud Storage bucket in *your* Google Cloud project. The Azure stages send individual frames and short audio clips. Geocoding sends place names.
+- **Your archive stays out of git.** Project folders (`*.tapesplit/`), media files, `.env` and `cost_rates.json` are all gitignored. Facts about one family (who usually held the camera, for example) go in `<project>/project_hints.json`, never in the code.
+- **The review app is local-only.** Its dev server binds to 127.0.0.1 and refuses requests from other hosts or other websites.
+
+## Project layout
+
+```
+src/tapesplit/     Python package and the `tapesplit` CLI: pipeline stages, models, adapters
+apps/review-ui/    React + Vite review app (`tapesplit ui`)
+docs/              Design notes: automation, entity resolution, relationships, retrieval, …
+tests/             pytest suite (runs without the ML extras; heavy tests skip themselves)
+site/              The project website, deployed to GitHub Pages
 ```
 
-The UI supports timeline, albums, people, places, search, and review views,
-source-video playback by timestamp, a pending correction queue, and one-click
-`Accept Best Guesses` (which uses the same safe policy). Corrections are
-durable: `tapesplit auto`/`rebuild` replays them after every regeneration.
+Start with [docs/HANDOFF.md](docs/HANDOFF.md) for the architecture tour. The other design notes:
 
-## Cloud providers (optional)
+- [AUTOMATION.md](docs/AUTOMATION.md): `tapesplit auto` stages, state, degradation and safety policies
+- [REFOUNDATION.md](docs/REFOUNDATION.md): the claim-based semantic core and how it is verified
+- [ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) and [RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md): people, aliases, roles and family graphs
+- [TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md): the long-term evidence model
+- [RETRIEVAL_ARCHITECTURE.md](docs/RETRIEVAL_ARCHITECTURE.md): hybrid full-text and vector search
+- [LOCAL_FACE_STACK.md](docs/LOCAL_FACE_STACK.md): face tracks, embeddings and clustering
+- [JOURNAL.md](docs/JOURNAL.md) and [DESIGN.md](docs/DESIGN.md): the Journal's grounding contract and the UI design standard
 
-Copy `.env.example` to `.env`. Vertex Gemini video analysis uses gcloud ADC:
+## Status
 
-```bash
-gcloud auth application-default login
-gcloud config set project <your-project>
-```
+TapeSplit is an alpha. It runs end to end on a real 31-hour archive, and the review queue exists because it still makes mistakes, such as borrowing a place from the wrong era or attributing a quote to the wrong speaker. Next up:
 
-`GEMINI_PROJECT_BUDGET_USD` caps cumulative spend; `tapesplit auto` also
-pre-estimates each run against `--max-cloud-usd`. TwelveLabs indexing and
-Azure OpenAI claim extraction remain available as manual commands.
+- API-key backends for Gemini (AI Studio) and OpenAI, alongside Vertex AI and Azure
+- A packaged desktop app with a native project picker
+- A watch mode that picks up new tapes dropped into a folder
 
-## Manual pipeline commands
+## Contributing
 
-Every stage is still exposed as an individual command (`ingest`,
-`detect-non-content`, `detect-scenes`, `extract-visuals`, `transcribe local`,
-`speakers diarize`, `gemini analyze-video`, `rebuild`, `detect-text`,
-`caption-visuals`, `embed-visuals`, `build-visual-similarity`,
-`classify-content`, `detect-faces`, `cluster-faces`, `search build`,
-`export-visualization`, `review apply-suggestions`, …). See
-`docs/LOCAL_SETUP.md` and `tapesplit --help`.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, house rules and the terms for contributions, and [SECURITY.md](SECURITY.md) to report a vulnerability privately. Please use fictional people and places in tests and bug reports, never real family footage, names or transcripts.
 
-Local transcripts can also be imported from JSON/SRT/VTT
-(`transcribe import`), and speaker segments from JSON/RTTM
-(`speakers import`), so the pipeline works even with zero ML dependencies.
+## License
 
-Search:
+TapeSplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, study, change and share it for personal, family, educational, research and other noncommercial purposes. Commercial use, including use inside a business or as part of a paid product or service, needs written permission from the author ([phillipbindeman.com](https://phillipbindeman.com)).
 
-```bash
-.venv/bin/tapesplit search query /path/to/project.tapesplit "first day of school"
-.venv/bin/tapesplit search similar /path/to/project.tapesplit canonical_event_000001 --record-type event
-```
+The footage, stills, clips and screenshots under `site/media/` and on this page come from my family's tapes. They are © Phillip Bindeman, all rights reserved, and are not covered by the code license.
 
-`search build` defaults to SQLite FTS5 plus a dependency-free local sparse
-vector scorer; install the `local-ai` extra for dense sentence-transformer
-embeddings with `sqlite-vec` ANN indexing. See
-`docs/RETRIEVAL_ARCHITECTURE.md` for the hybrid search design.
+---
 
-Evaluation packets for family review:
-
-```bash
-.venv/bin/tapesplit eval build /path/to/project.tapesplit --force
-.venv/bin/tapesplit eval score /path/to/project.tapesplit --annotations annotations.csv
-```
-
-## Docs
-
-- [docs/HANDOFF.md](docs/HANDOFF.md) — blind-takeover entry point for agents/contributors
-- [docs/AUTOMATION.md](docs/AUTOMATION.md) — `tapesplit auto` design: stages, state, degradation, policies
-- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — install, provider config, per-command reference
-- [docs/MVP_ENGINEERING_PLAN.md](docs/MVP_ENGINEERING_PLAN.md) — MVP shape and rationale
-- [docs/TEMPORAL_EVIDENCE_FABRIC.md](docs/TEMPORAL_EVIDENCE_FABRIC.md) — long-term data model
-- [docs/ENTITY_RESOLUTION.md](docs/ENTITY_RESOLUTION.md) — alias/role/merge strategy
-- [docs/RELATIONSHIP_INFERENCE.md](docs/RELATIONSHIP_INFERENCE.md) — family-graph inference
-- [docs/LOCAL_FACE_STACK.md](docs/LOCAL_FACE_STACK.md) — Apple Vision + ArcFace identity plan
-- [docs/LOCAL_MODEL_UPGRADE_PLAN.md](docs/LOCAL_MODEL_UPGRADE_PLAN.md) — local model roadmap
-- [docs/CONTEXT_GRAPH_VISUALIZATION.md](docs/CONTEXT_GRAPH_VISUALIZATION.md) — context graph model
-- [docs/VISUALIZATION_BACKEND.md](docs/VISUALIZATION_BACKEND.md) — UI data model and review queues
-- [docs/EVALUATION_WORKFLOW.md](docs/EVALUATION_WORKFLOW.md) — eval packet + scoring workflow
+<p align="center"><sub>Built by <a href="https://phillipbindeman.com">Phillip Bindeman</a> with a box of family tapes.</sub></p>

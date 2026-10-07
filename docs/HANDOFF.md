@@ -5,11 +5,12 @@ design docs or chat history.
 
 ## Current State
 
-- Repo: `/path/to/tapesplit`
+- Repo: this checkout
 - GitHub remote: `https://github.com/bindeman/tapesplit`
 - Project type: local-first, source-available VHS and home-video intelligence backend
   with a React/Vite review UI and a one-command `tapesplit auto` orchestrator.
-- Sample project: `examples/family-haul.tapesplit`
+- Sample project: any `examples/<name>.tapesplit` (gitignored). The maintainer's
+  19-tape family archive is private and not part of the repo.
 - Secrets: never commit `.env`, tokens, raw media, project outputs, caches, or
   `cost_rates.json`.
 
@@ -88,12 +89,13 @@ npm --prefix apps/review-ui run build
 git diff --check
 ```
 
-Expected at this handoff: `166 passed`, UI build passes, and `git diff --check`
-has no output.
+Expected: `333 passed` with all extras installed (a bare `pip install -e . pytest`
+skips the ML-dependent tests), the UI build passes, and `git diff --check` has no
+output.
 
-## Current Sample Project Snapshot
+## Maintainer Archive Snapshot (2026-07-02)
 
-`examples/family-haul.tapesplit` was fully processed by `tapesplit auto` on
+The maintainer's private archive (`examples/family-haul.tapesplit` locally) was fully processed by `tapesplit auto` on
 2026-07-02 (all 19 tapes / 31.4 hours Gemini-analyzed, ~$4.2 incremental
 cloud spend) and now has:
 
