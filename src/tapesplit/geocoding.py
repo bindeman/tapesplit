@@ -149,8 +149,14 @@ def _google_places_text_search(api_key: str, query: str, max_results: int) -> li
 
 GEOCODES_FILENAME = "place_geocodes.jsonl"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_USER_AGENT = "TapeSplit/1.0 (family-archive tool; contact: you@example.com)"
+NOMINATIM_USER_AGENT = "TapeSplit/0.1 (family-archive tool; +https://github.com/bindeman/tapesplit)"
 NOMINATIM_SLEEP_S = 1.1
+
+
+def _nominatim_user_agent() -> str:
+    """Nominatim's usage policy asks heavy users for a contact address."""
+    contact = os.environ.get("TAPESPLIT_CONTACT_EMAIL", "").strip()
+    return f"{NOMINATIM_USER_AGENT[:-1]}; contact: {contact})" if contact else NOMINATIM_USER_AGENT
 
 # Region families used to spot geographically contradictory scopes (#12
 # victims). A scope naming tokens from two DIFFERENT families is disjoint
@@ -185,7 +191,7 @@ def nominatim_search(query: str, *, limit: int = 3, timeout: int = 30) -> list[d
     )
     request = Request(
         f"{NOMINATIM_URL}?{params}",
-        headers={"User-Agent": NOMINATIM_USER_AGENT},
+        headers={"User-Agent": _nominatim_user_agent()},
     )
     with urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))

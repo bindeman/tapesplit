@@ -270,8 +270,6 @@ BROAD_PLACE_ALIASES = {
     },
     "moscow": {
         "moscow",
-        "school no 123",
-        "school no. 123",
     },
 }
 

@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
 import { gzipSync } from "node:zlib";
-import { createReadStream, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -10,8 +10,7 @@ import { defineConfig, type Plugin } from "vite";
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(appRoot, "../..");
-const defaultProject = resolve(repoRoot, "examples/family-haul.tapesplit");
-const projectDir = resolve(process.env.TAPESPLIT_PROJECT || defaultProject);
+const projectDir = resolve(process.env.TAPESPLIT_PROJECT || discoverDefaultProject());
 const pendingActionsPath = join(projectDir, "review-actions.pending.jsonl");
 const appliedActionsPath = join(projectDir, "review-actions.applied.jsonl");
 const tapesplitBin = existsSync(join(repoRoot, ".venv/bin/tapesplit"))
@@ -19,6 +18,16 @@ const tapesplitBin = existsSync(join(repoRoot, ".venv/bin/tapesplit"))
   : "tapesplit";
 const searchEmbeddingBackend = process.env.TAPESPLIT_SEARCH_EMBEDDING_BACKEND || "local-sparse";
 const searchEmbeddingModel = process.env.TAPESPLIT_SEARCH_EMBEDDING_MODEL || "";
+
+// Without TAPESPLIT_PROJECT, open the first *.tapesplit project under examples/.
+function discoverDefaultProject(): string {
+  const examplesDir = resolve(repoRoot, "examples");
+  if (existsSync(examplesDir)) {
+    const projects = readdirSync(examplesDir).filter((name) => name.endsWith(".tapesplit")).sort();
+    if (projects.length) return join(examplesDir, projects[0]);
+  }
+  return resolve(examplesDir, "my-tapes.tapesplit");
+}
 
 function reviewApiPlugin(): Plugin {
   return {

@@ -238,6 +238,12 @@ def test_voice_bucket_analysis_scopes_and_classifies(tmp_path: Path):
         ],
     )
 
+    # Without a camera-operator hint the recurring adult stays unattributed.
+    build_speaker_identity_candidates(tmp_path, min_confidence=0.2)
+    unhinted = {row["speaker_label"] for row in read_jsonl(tmp_path / "speaker_identity_candidates.jsonl")}
+    assert "AZ_SPEAKER_01@video_000003" not in unhinted
+
+    (tmp_path / "project_hints.json").write_text(json.dumps({"camera_operator": "Viktor Sokolov"}))
     result = build_speaker_identity_candidates(tmp_path, min_confidence=0.2)
     rows = read_jsonl(tmp_path / "speaker_identity_candidates.jsonl")
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from tapesplit.project_hints import load_project_hints
 from tapesplit.storage import append_jsonl, read_jsonl
 
 
@@ -83,6 +84,7 @@ def build_speaker_identity_candidates(
     face_context = _face_candidate_context(face_identity_candidates, face_clusters)
 
     voice_bucket_analysis = _load_voice_bucket_analysis(project)
+    camera_operator = str(load_project_hints(project).get("camera_operator") or "").strip()
 
     rows: list[dict[str, Any]] = []
     for speaker_label, track in sorted(speaker_tracks.items()):
@@ -93,6 +95,7 @@ def build_speaker_identity_candidates(
             track=track,
             analysis=voice_bucket_analysis,
             people=people,
+            camera_operator=camera_operator,
         )
         _add_role_context_candidates(
             buckets,
@@ -282,6 +285,7 @@ def _add_voice_bucket_candidates(
     track: dict[str, Any],
     analysis: dict[str, dict[str, Any]],
     people: list[dict[str, Any]],
+    camera_operator: str = "",
 ) -> None:
     row = analysis.get(str(track.get("speaker_label") or ""))
     if not row:
@@ -308,8 +312,12 @@ def _add_voice_bucket_candidates(
         # A recurring unnamed adult voice across family tapes: directive
         # register, rarely on screen — the camera-operator profile. Emitted
         # only as a low-confidence hypothesis; the review item carries the
-        # full evidence and a human decides who this is.
-        person = _person_by_alias(people, "Viktor Sokolov")
+        # full evidence and a human decides who this is. Who usually held
+        # the camera is a fact about one family, so it comes from the
+        # project's hints file; without it the voice stays unattributed.
+        if not camera_operator:
+            return
+        person = _person_by_alias(people, camera_operator)
         if person is None:
             return
         _add_signal(
