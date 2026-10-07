@@ -35,6 +35,7 @@ dist/
 
 # Local-only scratch space, throwaway virtualenvs, and per-machine agent notes.
 CLAUDE.local.md
+.claude/worktrees/
 .private/
 .venv-*/
 
