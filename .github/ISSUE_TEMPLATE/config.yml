@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: TapeSplit website
+    url: https://bindeman.github.io/tapesplit/
+    about: What TapeSplit does, how it works, and how to get started.
+  - name: Report a security vulnerability
+    url: https://github.com/bindeman/tapesplit/security/advisories/new
+    about: Report vulnerabilities privately. Please do not open a public issue for them.

@@ -1,0 +1,93 @@
+name: Bug report
+description: Something in TapeSplit crashed, gave a wrong result, or behaved unexpectedly.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Do not paste API keys, family names, transcripts, or frames from private tapes into this issue.** Issues are public. If the bug only shows up on your own footage, reproduce it on a synthetic project (a few JSONL rows with made-up names) or describe the shape of the data instead. Screenshots of the review UI count too, so crop or blur real faces and names.
+
+        Security problems do not belong here. Use the repository's **Security** tab and choose **Report a vulnerability**; see [SECURITY.md](https://github.com/bindeman/tapesplit/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran, in order. For example `tapesplit auto INPUT --profile local`, then the stage that failed.
+      placeholder: |
+        1. tapesplit auto ...
+        2. tapesplit ui ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: tapesplit doctor output
+      description: |
+        Run `tapesplit doctor` and paste the whole output. It shows which tools, models, and `tapesplit auto` stages are available on your machine.
+
+        It reports API keys only as "configured" or "missing" and never prints a secret. It does print values such as your Google Cloud project ID and Azure deployment names, so remove any of those you would rather keep private.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: The traceback or the relevant lines of console output. Remove family names, place names, and transcript text before pasting.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: TapeSplit version
+      description: The commit from `git rev-parse --short HEAD` in your checkout, or the output of `pip show tapesplit`.
+      placeholder: e.g. 1a2b3c4
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: The output of `python --version` inside the environment where TapeSplit is installed.
+      placeholder: e.g. Python 3.12.11
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Command line / pipeline stages
+        - Review UI
+        - Search
+        - Documentation
+        - Not sure
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed API keys, family names, transcripts, and frames from private tapes from everything above.
+          required: true
