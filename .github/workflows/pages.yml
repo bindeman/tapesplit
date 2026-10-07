@@ -16,33 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # `hashFiles()` is not available in a job-level `if`, and a job cannot see the
-  # repository before it has checked it out. This small job looks for the site
-  # first, so `deploy` is skipped (not failed) while site/index.html is missing.
-  check:
-    name: Look for site/index.html
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      has_site: ${{ steps.probe.outputs.has_site }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - id: probe
-        run: |
-          if [ -f site/index.html ]; then
-            echo "has_site=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_site=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::site/index.html does not exist yet, so the Pages deploy is skipped."
-          fi
-
   deploy:
     name: Deploy to GitHub Pages
-    needs: check
-    if: needs.check.outputs.has_site == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

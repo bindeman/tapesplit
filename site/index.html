@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TapeSplit</title>
+<meta name="description" content="TapeSplit turns digitized VHS and camcorder tapes into a searchable family archive: dated, placed, transcribed moments with a review queue for every guess. Local-first and free for personal use.">
+<meta property="og:title" content="TapeSplit">
+<meta property="og:description" content="A box of old tapes in. A family archive out. Local-first home-video intelligence, free for personal use.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://bindeman.github.io/tapesplit/">
+<meta property="og:image" content="https://bindeman.github.io/tapesplit/media/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#c9a87a">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=VT323&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="kraft">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="TapeSplit home">
+        <svg viewBox="0 0 40 26" aria-hidden="true"><rect x="1" y="1" width="38" height="24" rx="3" fill="currentColor"/><rect x="6" y="4" width="28" height="7" rx="1" fill="var(--rec)"/><circle cx="13" cy="17" r="4" fill="var(--kraft)"/><circle cx="27" cy="17" r="4" fill="var(--kraft)"/><circle cx="13" cy="17" r="1.6" fill="currentColor"/><circle cx="27" cy="17" r="1.6" fill="currentColor"/></svg>
+        <span class="brand-name">TapeSplit</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a class="nav-link" href="#tape-16">The idea</a>
+        <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#tour">The archive</a>
+        <a class="nav-link" href="#start">Get started</a>
+        <a class="button button-primary" href="https://github.com/bindeman/tapesplit">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="wrap">
+      <div class="hero-copy">
+        <span class="dymo dymo-red">Free for personal use · Local-first</span>
+        <h1><span class="line"><span class="rec-dot" aria-hidden="true"></span>A box of old tapes in.</span><span class="line">A family archive out.</span></h1>
+        <p class="lead">TapeSplit watches your digitized VHS and camcorder tapes so you don't have to. It splits hours of unlabeled footage into moments, works out when each one happened, where, and who was there, and leaves anything it isn't sure about in a review queue for you.</p>
+        <div class="cta-row">
+          <a class="button button-primary" href="https://github.com/bindeman/tapesplit">View the code on GitHub</a>
+          <a class="button button-quiet" href="#how">See how it works</a>
+        </div>
+        <p class="stat-line">First archive: <strong>19 tapes</strong>, <strong>31 hours</strong> of 1997–2007 footage in, <strong>279 moments</strong>, <strong>101 people</strong> and <strong>244 places</strong> out.</p>
+      </div>
+
+      <div class="wall" aria-label="Moments TapeSplit found on the tapes">
+        <figure class="polaroid" style="--x:30%; --y:36%; --w:42%; --r:-2.5deg; z-index:5">
+          <span class="washi" style="--wc:var(--tape-pink); --wr:-5deg"></span>
+          <video class="shot" data-autoplay muted loop playsinline preload="none" poster="media/clips/weather.webp" aria-label="A grinning boy in a rain hood on a windy beach">
+            <source src="media/clips/weather.mp4" type="video/mp4">
+          </video>
+          <figcaption class="hand">Filip's weather report</figcaption>
+          <span class="dymo">Oregon coast · 2006</span>
+        </figure>
+        <figure class="polaroid" style="--x:0%; --y:2%; --w:40%; --r:3.5deg; z-index:2">
+          <span class="washi" style="--wc:var(--tape-butter); --wr:3deg"></span>
+          <video class="shot" data-autoplay muted loop playsinline preload="none" poster="media/clips/lava.webp" aria-label="Lava glowing where it meets the ocean at dusk">
+            <source src="media/clips/lava.mp4" type="video/mp4">
+          </video>
+          <figcaption class="hand">lava meets the Pacific</figcaption>
+          <span class="dymo dymo-red">Kīlauea · Hawaiʻi · 2006</span>
+        </figure>
+        <figure class="polaroid" style="--x:58%; --y:0%; --w:40%; --r:-3deg; z-index:1">
+          <span class="washi" style="--wc:var(--tape-mint); --wr:-2deg"></span>
+          <video class="shot" data-autoplay muted loop playsinline preload="none" poster="media/clips/bears.webp" aria-label="Brown bears fishing along a river bank">
+            <source src="media/clips/bears.mp4" type="video/mp4">
+          </video>
+          <figcaption class="hand">brown bears, fishing</figcaption>
+          <span class="dymo at-right" style="--lr:3deg">Katmai, Alaska · 2002</span>
+        </figure>
+        <figure class="polaroid" style="--x:1%; --y:56%; --w:38%; --r:-3deg; z-index:3">
+          <span class="washi" style="--wc:var(--tape-sky); --wr:4deg"></span>
+          <video class="shot" data-autoplay muted loop playsinline preload="none" poster="media/clips/davos.webp" aria-label="View from a cable car over an alpine town, with the camcorder date stamp AUG 22 2002">
+            <source src="media/clips/davos.mp4" type="video/mp4">
+          </video>
+          <figcaption class="hand">cable car over Davos</figcaption>
+          <span class="dymo dymo-blue">Davos · Aug 22 2002</span>
+        </figure>
+        <figure class="polaroid" style="--x:62%; --y:58%; --w:37%; --r:3deg; z-index:4">
+          <span class="washi" style="--wc:var(--tape-pink); --wr:-3deg"></span>
+          <video class="shot" data-autoplay muted loop playsinline preload="none" poster="media/clips/stbasil.webp" aria-label="Saint Basil's Cathedral and the Kremlin seen from a river boat">
+            <source src="media/clips/stbasil.mp4" type="video/mp4">
+          </video>
+          <figcaption class="hand">Moscow from the river</figcaption>
+          <span class="dymo at-right" style="--lr:2deg">Moscow · 2007</span>
+        </figure>
+        <p class="wall-note hand">frames from my family's tapes. the label tape is TapeSplit's
+          <svg viewBox="0 0 64 40" aria-hidden="true"><path d="M2 30 C 18 34, 40 30, 58 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M47 9 L59 9 L57 21" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </p>
+        <p class="wall-caption hand">frames from my family's tapes. the label tape is TapeSplit's.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<main id="main" class="paper-grain">
+
+  <section class="section" id="tape-16" aria-labelledby="tape-16-title">
+    <div class="wrap">
+      <div class="tape-intro">
+        <svg class="cassette" viewBox="0 0 300 184" role="img" aria-label="A VHS cassette with a handwritten label reading 16 and three question marks">
+          <rect class="shell" x="4" y="4" width="292" height="176" rx="10"/>
+          <rect class="label-paper" x="38" y="14" width="224" height="58" rx="3"/>
+          <rect class="label-stripe" x="38" y="14" width="224" height="10" rx="2"/>
+          <text class="label-hand" x="56" y="60" font-size="34">16</text>
+          <text class="label-hand" x="104" y="58" font-size="26">??? hawaii? '06</text>
+          <rect class="window" x="66" y="88" width="168" height="54" rx="8"/>
+          <circle class="tape-wind" cx="112" cy="115" r="23"/>
+          <circle class="reel" cx="112" cy="115" r="15"/>
+          <circle class="reel" cx="188" cy="115" r="15"/>
+          <circle class="hub" cx="112" cy="115" r="6"/>
+          <circle class="hub" cx="188" cy="115" r="6"/>
+          <rect class="window" x="40" y="156" width="220" height="16" rx="3"/>
+        </svg>
+        <div class="prose">
+          <span class="eyebrow">The idea</span>
+          <h2 id="tape-16-title">What's on tape 16?</h2>
+          <p>Most families have a box like this somewhere. Getting it digitized gets you a folder of two-hour files called <span class="filename">tape-18.mp4</span>, with no dates, no names, and no way to find the afternoon you remember.</p>
+          <p><strong>TapeSplit does the part nobody has time for: watching all of it.</strong> Below is one real tape, split. It holds two trips and a spring at home. The camcorder never said so; the footage did.</p>
+        </div>
+      </div>
+
+      <div class="strip" id="strip" aria-label="Tape 16 split into moments">
+        <div class="strip-top">
+          <span class="strip-title">Tape 16, split into moments</span>
+          <span class="strip-meta" id="strip-meta">2 h 04 min · 43 moments</span>
+        </div>
+        <div class="strip-scroll">
+          <div class="strip-body">
+            <div class="strip-chapters" id="strip-chapters"></div>
+            <div class="strip-track" id="strip-track" role="group" aria-label="Moments on the tape, in order"></div>
+            <div class="strip-axis" id="strip-axis" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="strip-legend">
+          <span><i class="swatch" style="--sw:var(--hawaii)"></i> Hawaiʻi, March 2006</span>
+          <span><i class="swatch" style="--sw:var(--coast)"></i> Oregon coast, April 2006</span>
+          <span><i class="swatch" style="--sw:var(--spring)"></i> Spring at home, May 2006</span>
+          <span><i class="swatch swatch-gap"></i> Blank tape, blue screen and static it skipped</span>
+        </div>
+        <div class="strip-detail" id="strip-detail" aria-live="polite">
+          <img id="strip-img" src="media/strip/266.webp" alt="">
+          <div class="strip-detail-body">
+            <h3 id="strip-name">Night view of lava entering the ocean</h3>
+            <div class="strip-facts" id="strip-facts"></div>
+            <p class="strip-hint">Pick any block on the tape to see what TapeSplit found there. Titles and timestamps come straight from the pipeline; only names are changed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">How it works</span>
+        <h2 id="how-title">Four passes over every tape</h2>
+        <p>One command runs the whole pipeline. Each stage checks what your machine can do, skips with a reason when it can't, and picks up where it stopped if you run it again.</p>
+      </div>
+
+      <div class="steps">
+        <article class="index-card" style="--r:-0.8deg">
+          <h3>Watch</h3>
+          <span class="dymo">Runs on your Mac</span>
+          <ul>
+            <li><strong>Scene cuts</strong> from ffmpeg, with blue screen, black frames and static thrown out.</li>
+            <li><strong>Every word transcribed</strong> by whisper.cpp, in whatever language was spoken.</li>
+            <li><strong>Voices separated</strong> with pyannote, then matched to people from context and known voice samples.</li>
+            <li><strong>Text in the picture read</strong> by Apple Vision, including the camcorder's own date stamp.</li>
+            <li><strong>Every face followed</strong> through each shot and clustered into people with InsightFace.</li>
+          </ul>
+        </article>
+        <article class="index-card" style="--r:0.6deg">
+          <h3>Understand</h3>
+          <span class="dymo dymo-blue">Cloud, optional</span>
+          <ul>
+            <li><strong>Gemini watches each tape</strong> in chunks and proposes events with timestamps: what happened, who is there, where and when.</li>
+            <li><strong>Priced before it runs.</strong> Each batch is estimated first and capped by <code>--max-cloud-usd</code>.</li>
+            <li><strong>Optional by design.</strong> Without it, TapeSplit still builds a timeline from local signals.</li>
+          </ul>
+        </article>
+        <article class="index-card" style="--r:-0.4deg">
+          <h3>Reconcile</h3>
+          <span class="dymo">Runs on your Mac</span>
+          <ul>
+            <li><strong>Every signal becomes a claim</strong> that keeps its source: a transcript line, a frame, a face track.</li>
+            <li><strong>Events are stitched</strong> across chunks and dated from stamps, speech and context.</li>
+            <li><strong>Names are reconciled.</strong> Mom, Katya and Катя become one person; home in 2003 and home in 2006 stay two places.</li>
+            <li><strong>A blind verifier</strong> re-checks a sample of claims against the clips themselves.</li>
+          </ul>
+        </article>
+        <article class="index-card" style="--r:0.9deg">
+          <h3>Review</h3>
+          <span class="dymo dymo-red">You, a few minutes</span>
+          <ul>
+            <li><strong>Strong guesses are accepted</strong> automatically, under safety rules for each kind of fact.</li>
+            <li><strong>The rest wait in a queue</strong> with the evidence and the clip one click away.</li>
+            <li><strong>Your fixes are kept apart</strong> and replayed on every rebuild, so re-running never undoes them.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="command-strip">
+        <div class="command"><span class="prompt">$ </span>tapesplit auto ~/Tapes</div>
+        <p class="command-note">That's the whole pipeline: 21 stages, resumable, cost-capped, with the safe auto-accept pass near the end. <code>tapesplit doctor</code> shows which stages your machine can run.</p>
+      </div>
+      <p class="stage-list">ingest → exif → non-content → scenes → transcribe → diarize → gemini → core-build → visuals → ocr → captions → visual-embed → visual-similarity → faces → face-tracks → face-cluster → reground → finalize → apply-suggestions → semantic-embed → verify</p>
+    </div>
+  </section>
+
+  <section class="section" id="tour" aria-labelledby="tour-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">The archive</span>
+        <h2 id="tour-title">What you get back</h2>
+        <p>A local review app that feels like a photo library. Every card links to the second of tape it came from. Names below are changed, except mine.</p>
+      </div>
+
+      <div class="tour">
+        <div class="tabs" role="tablist" aria-label="Archive views">
+          <button class="tab" role="tab" id="tab-library" aria-controls="panel-library" aria-selected="true">Library</button>
+          <button class="tab" role="tab" id="tab-moment" aria-controls="panel-moment" aria-selected="false" tabindex="-1">A moment</button>
+          <button class="tab" role="tab" id="tab-journal" aria-controls="panel-journal" aria-selected="false" tabindex="-1">Journal</button>
+          <button class="tab" role="tab" id="tab-places" aria-controls="panel-places" aria-selected="false" tabindex="-1">Places</button>
+          <button class="tab" role="tab" id="tab-review" aria-controls="panel-review" aria-selected="false" tabindex="-1">Review</button>
+        </div>
+
+        <div class="tour-panel" role="tabpanel" id="panel-library" aria-labelledby="tab-library">
+          <p class="tour-caption"><strong>Every moment as a card,</strong> grouped by tape, by year or by place. This is tape 16 again: Hawaiʻi, sea turtles, lava at night.</p>
+          <div class="window"><div class="window-bar"><i></i><i></i><i></i><span>TapeSplit · Library</span></div>
+            <img class="only-light" src="media/ui/library-tape16-light.webp" alt="Library view: cards for each moment on tape 16, with titles, years and places" width="1600" height="844" loading="lazy">
+            <img class="only-dark" src="media/ui/library-tape16-dark.webp" alt="Library view in dark mode" width="1600" height="844" loading="lazy">
+          </div>
+        </div>
+        <div class="tour-panel" role="tabpanel" id="panel-moment" aria-labelledby="tab-moment" hidden>
+          <p class="tour-caption"><strong>Open a moment</strong> and it plays from the right second, with keyframes and the places and people behind its labels. The date here came straight off the camcorder stamp.</p>
+          <div class="window"><div class="window-bar"><i></i><i></i><i></i><span>TapeSplit · Cable Car Ride to Jakobshorn</span></div>
+            <img class="only-light" src="media/ui/event-davos-light.webp" alt="A moment opened: cable car ride above Davos, dated 2002-08-22 from the camcorder stamp" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/event-davos-dark.webp" alt="A moment opened, dark mode" width="1600" height="1000" loading="lazy">
+          </div>
+        </div>
+        <div class="tour-panel" role="tabpanel" id="panel-journal" aria-labelledby="tab-journal" hidden>
+          <p class="tour-caption"><strong>Days from the tapes, written down.</strong> Each journal entry is drafted from the footage. Every sentence cites the clip it came from, and quotes are verbatim, Russian included, with a translation alongside.</p>
+          <div class="window"><div class="window-bar"><i></i><i></i><i></i><span>TapeSplit · Journal</span></div>
+            <img class="only-light" src="media/ui/journal-post-light.webp" alt="Journal entry titled Filip's Ocean Questions, drafted from beach footage" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/journal-post-dark.webp" alt="Journal entry, dark mode" width="1600" height="1000" loading="lazy">
+          </div>
+        </div>
+        <div class="tour-panel" role="tabpanel" id="panel-places" aria-labelledby="tab-places" hidden>
+          <p class="tour-caption"><strong>Everywhere the camera went,</strong> on a map that works offline. Dashed pins mark places TapeSplit could only place roughly.</p>
+          <div class="window"><div class="window-bar"><i></i><i></i><i></i><span>TapeSplit · Places</span></div>
+            <img class="only-light" src="media/ui/places-light.webp" alt="Places view: a world map with photo pins for each place on the tapes" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/places-dark.webp" alt="Places view, dark mode" width="1600" height="1000" loading="lazy">
+          </div>
+        </div>
+        <div class="tour-panel" role="tabpanel" id="panel-review" aria-labelledby="tab-review" hidden>
+          <p class="tour-caption"><strong>The guesses that are left,</strong> each with its evidence and the moments it touches. Accept the strong ones in bulk, or fix one in a click.</p>
+          <div class="window"><div class="window-bar"><i></i><i></i><i></i><span>TapeSplit · Review</span></div>
+            <img class="only-light" src="media/ui/review-light.webp" alt="Review queue: duplicate people, speakers and places waiting for confirmation" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/review-dark.webp" alt="Review queue, dark mode" width="1600" height="1000" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="trust" aria-labelledby="trust-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Built to be checked</span>
+        <h2 id="trust-title">It shows its work</h2>
+        <p>Family history is easy to get wrong and hard to un-learn. TapeSplit treats every label as a claim with evidence, and makes being wrong cheap to fix.</p>
+      </div>
+      <div class="notes">
+        <article class="note" style="--nc:var(--rec)">
+          <h3>Guesses look like guesses</h3>
+          <p>Inferred facts read "appears to be…", carry a confidence, and link to the transcript line, frame or face track they came from.</p>
+        </article>
+        <article class="note" style="--nc:var(--label-blue)">
+          <h3>Auto-accept has rules</h3>
+          <p>Each kind of fact has its own confidence floor. A relationship is only accepted when both people are resolved and the evidence agrees.</p>
+        </article>
+        <article class="note" style="--nc:var(--coast)">
+          <h3>Your fixes stick</h3>
+          <p>Corrections live in their own file and are replayed after every rebuild. Re-run the pipeline as often as you like.</p>
+        </article>
+        <article class="note" style="--nc:var(--spring)">
+          <h3>It measures itself</h3>
+          <p>A blind verifier samples claims and checks them against the clips, and per-module precision decides when new logic ships.</p>
+        </article>
+        <article class="note" style="--nc:var(--hawaii)">
+          <h3>Your tapes stay home</h3>
+          <p>Every stage has a local path. Cloud stages are opt-in, estimated before they run, and capped at a dollar amount you set.</p>
+        </article>
+        <article class="note" style="--nc:var(--ink-3)">
+          <h3>Plain files underneath</h3>
+          <p>A project is a folder of JSONL files, a SQLite search index and thumbnails. Nothing is locked inside the app.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section kraft box-band" id="box" aria-labelledby="box-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">From the rest of the box</span>
+        <h2 id="box-title">31 hours, 1997 to 2007</h2>
+        <p>A few more frames with the labels TapeSplit gave them. Two are still waiting for a person: it found no date for the zoo or for the tricycle.</p>
+      </div>
+      <div class="band">
+        <figure class="polaroid" style="--r:-2.5deg">
+          <span class="washi" style="--wc:var(--tape-mint); --wr:-3deg"></span>
+          <img class="shot" src="media/photos/turtle.webp" alt="A green sea turtle in a tide pool" loading="lazy" width="800" height="600">
+          <figcaption class="hand">a sea turtle!</figcaption>
+          <span class="dymo">Hawaii · Mar 20 2006</span>
+        </figure>
+        <figure class="polaroid" style="--r:2deg">
+          <span class="washi" style="--wc:var(--tape-butter); --wr:4deg"></span>
+          <img class="shot" src="media/photos/redwoods.webp" alt="Looking up a redwood trunk, camcorder stamp SEP. 14 1998" loading="lazy" width="800" height="600">
+          <figcaption class="hand">up in the redwoods</figcaption>
+          <span class="dymo dymo-blue">Redwood forest · Sep 14 1998</span>
+        </figure>
+        <figure class="polaroid" style="--r:-1.5deg">
+          <span class="washi" style="--wc:var(--tape-pink); --wr:-2deg"></span>
+          <img class="shot" src="media/photos/tricycle.webp" alt="A toddler on a red and yellow tricycle on a sidewalk" loading="lazy" width="800" height="600">
+          <figcaption class="hand">Filip's tricycle</figcaption>
+          <span class="dymo dymo-red">Near home · no date</span>
+        </figure>
+        <figure class="polaroid" style="--r:2.5deg">
+          <span class="washi" style="--wc:var(--tape-sky); --wr:3deg"></span>
+          <img class="shot" src="media/photos/flight.webp" alt="A snowy volcano seen from an airplane window, camcorder clock 1:41 PM" loading="lazy" width="800" height="600">
+          <figcaption class="hand">flying over Alaska</figcaption>
+          <span class="dymo">Mount Redoubt · Alaska</span>
+        </figure>
+        <figure class="polaroid" style="--r:-2deg">
+          <span class="washi" style="--wc:var(--tape-butter); --wr:-4deg"></span>
+          <img class="shot" src="media/photos/paraglider.webp" alt="A paraglider above clouds and mountains" loading="lazy" width="800" height="600">
+          <figcaption class="hand">paraglider over the Alps</figcaption>
+          <span class="dymo">Jakobshorn · Davos</span>
+        </figure>
+        <figure class="polaroid" style="--r:1.5deg">
+          <span class="washi" style="--wc:var(--tape-mint); --wr:2deg"></span>
+          <img class="shot" src="media/photos/rhino.webp" alt="A white rhino grazing in a grassy enclosure" loading="lazy" width="800" height="600">
+          <figcaption class="hand">rhinos at the zoo</figcaption>
+          <span class="dymo dymo-red">Zoo · no date</span>
+        </figure>
+        <figure class="polaroid" style="--r:-2.5deg">
+          <span class="washi" style="--wc:var(--tape-sky); --wr:-3deg"></span>
+          <img class="shot" src="media/photos/sealions.webp" alt="Sea lions piled on a rock with surf around them" loading="lazy" width="800" height="600">
+          <figcaption class="hand">the sea lion caves</figcaption>
+          <span class="dymo">Sea lion cave · Oregon</span>
+        </figure>
+        <figure class="polaroid" style="--r:2deg">
+          <span class="washi" style="--wc:var(--tape-pink); --wr:4deg"></span>
+          <img class="shot" src="media/photos/sunhat.webp" alt="A boy in a white sun hat at the edge of a volcanic crater" loading="lazy" width="800" height="600">
+          <figcaption class="hand">Filip at the crater</figcaption>
+          <span class="dymo">Kīlauea Iki · Hawaii</span>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="start" aria-labelledby="start-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Get started</span>
+        <h2 id="start-title">Run it on your tapes</h2>
+        <p>TapeSplit is best tested on Apple Silicon Macs. Linux runs everything except the Apple Vision stages, which fall back to OpenCV. You need Python 3.11+ and ffmpeg.</p>
+      </div>
+      <div class="start-grid">
+        <div>
+          <div class="terminal">
+            <div class="terminal-bar"><span>Terminal</span><button class="copy-button" type="button" data-copy="#install-cmds">Copy</button></div>
+<pre id="install-cmds"><span class="c"># install</span>
+brew install ffmpeg
+git clone https://github.com/bindeman/tapesplit
+cd tapesplit
+python3.12 -m venv .venv
+.venv/bin/pip install -e \
+  '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
+
+<span class="c"># check what this machine can run</span>
+.venv/bin/tapesplit doctor
+
+<span class="c"># tapes in, archive out</span>
+.venv/bin/tapesplit auto ~/Tapes
+
+<span class="c"># browse and review</span>
+.venv/bin/tapesplit ui ~/Tapes.tapesplit</pre>
+          </div>
+          <div class="start-steps">
+            <p><code>tapesplit auto ~/Tapes --plan</code> prints what would run without running it. <code>--profile local</code> never calls a cloud service.</p>
+            <p>Keys go in a <code>.env</code> file next to the code; copy <code>.env.example</code> to start. Every key is optional.</p>
+          </div>
+        </div>
+
+        <div class="keys-wrap">
+          <table class="keys">
+            <caption>API keys, and what each one adds</caption>
+            <colgroup><col class="service"><col class="adds"><col class="without"></colgroup>
+            <thead>
+              <tr><th scope="col">Service</th><th scope="col">What it adds</th><th scope="col">Without it</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Nothing at all</td>
+                <td>Scenes, transcripts, speakers, on-screen text, faces, local events, search and the review app.</td>
+                <td>This is the baseline.</td>
+              </tr>
+              <tr>
+                <td>Google Cloud<br><span class="tag">Vertex AI · Gemini</span></td>
+                <td>Watches the video itself: rich event titles, summaries, people, places and dates. Sign in with <code>gcloud auth application-default login</code> and set <code>GOOGLE_CLOUD_PROJECT</code> and <code>GEMINI_GCS_BUCKET</code>.</td>
+                <td>Low-confidence "recording segment" events from local signals.</td>
+              </tr>
+              <tr>
+                <td>Hugging Face<br><span class="tag">HF_TOKEN</span></td>
+                <td>pyannote speaker diarization (accept the model's terms on huggingface.co first).</td>
+                <td>SpeechBrain fallback.</td>
+              </tr>
+              <tr>
+                <td>Azure OpenAI<br><span class="tag">AZURE_OPENAI_*</span></td>
+                <td>Diarized transcription that names known speakers, the blind verifier, frame descriptions and Journal drafting.</td>
+                <td>Those stages are skipped with a reason.</td>
+              </tr>
+              <tr>
+                <td>Google Maps<br><span class="tag">GOOGLE_MAPS_API_KEY</span></td>
+                <td>Sharper geocoding for named places, with a daily budget cap.</td>
+                <td>OpenStreetMap's free Nominatim.</td>
+              </tr>
+              <tr>
+                <td>TwelveLabs<br><span class="tag">TWELVELABS_API_KEY</span></td>
+                <td>An optional hosted video index for search experiments.</td>
+                <td>Local hybrid search.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="keys-foot">Cost, for scale: Gemini analysis of all 31 hours of the sample archive came to about $8 on Vertex AI. <code>tapesplit doctor</code> reports which keys it found without printing them.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Questions</span>
+        <h2 id="faq-title">Before you dig out the box</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Do my videos leave my computer?</summary>
+          <p>Only if you turn on a cloud stage. Gemini analysis uploads low-resolution proxies to a Cloud Storage bucket in your own Google Cloud project; the Azure stages send individual frames and audio snippets. With <code>--profile local</code>, nothing leaves your machine.</p>
+        </details>
+        <details>
+          <summary>Which files does it take?</summary>
+          <p>Anything ffmpeg can read: MP4, MOV, MKV, AVI, DV, MPEG, VOB and M2TS. One file per tape works best, since a tape's own timeline is part of the evidence.</p>
+        </details>
+        <details>
+          <summary>Does it handle more than one language?</summary>
+          <p>Yes. The sample archive is a mix of Russian and English. Transcripts keep the original language, search works across both, and Journal quotes stay verbatim with a translation alongside.</p>
+        </details>
+        <details>
+          <summary>How does it know when something was filmed?</summary>
+          <p>It combines the camcorder's burned-in date stamp (read from the frame), dates spoken on tape, Gemini's reading of the scene, and the order of events on the tape. When those disagree, the date stays a reviewable guess instead of a fact.</p>
+        </details>
+        <details>
+          <summary>Is it finished?</summary>
+          <p>It's an alpha. The pipeline runs end to end on a real archive, and the review queue exists because it still makes mistakes, like the occasional place borrowed from the wrong era. Issues and pull requests are welcome.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer kraft">
+  <div class="wrap">
+    <p class="footer-note hand">made with a box of my family's tapes. — Phillip</p>
+    <p class="footer-small">TapeSplit is built by Phillip Bindeman. The code is free for noncommercial use under the PolyForm Noncommercial License 1.0.0; commercial use needs my written permission. The footage, stills and screenshots on this page come from my family's tapes and are not covered by the code license. Names other than mine are changed.</p>
+    <div class="footer-links">
+      <a href="https://github.com/bindeman/tapesplit">GitHub</a>
+      <a href="https://github.com/bindeman/tapesplit/tree/main/docs">Docs</a>
+      <a href="https://github.com/bindeman/tapesplit/blob/main/LICENSE">License</a>
+      <a href="https://phillipbindeman.com">phillipbindeman.com</a>
+    </div>
+  </div>
+</footer>
+
+<script type="application/json" id="strip-data">{"tape":"Tape 16","file":"tape-18.mp4","duration":7463.5,"events":[{"id":"259","t0":0.0,"t1":21.0,"title":"Anticipating Hawaii Trip","places":["home"],"date":"tomorrow","confidence":0.9,"thumb":"media/strip/259.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"260","t0":21.0,"t1":119.0,"title":"Arrival in Hawaii and Beach Exploration","places":["beach (Eugene, Oregon)","Hawaii"],"date":"MAR 20 2006","confidence":0.9,"thumb":"media/strip/260.webp","people":[]},{"id":"261","t0":139.0,"t1":232.0,"title":"Observing Sea Turtles","places":["Hawaii beach (Hawaii)"],"date":"MAR 20 2006","confidence":0.9,"thumb":"media/strip/261.webp","people":["Roman / Роман"]},{"id":"262","t0":294.0,"t1":350.0,"title":"Driving to a Wild Beach","places":["lava road (Hawaii)","wild beach (Hawaii context)"],"date":null,"confidence":0.8,"thumb":"media/strip/262.webp","people":[]},{"id":"263","t0":885.0,"t1":1099.0,"title":"Exploring the volcano crater","places":["Kilauea Iki Lava Lake (Hawaii)"],"date":null,"confidence":0.9,"thumb":"media/strip/263.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя","Roman / Роман"]},{"id":"264","t0":1099.0,"t1":1424.0,"title":"Journey to see lava enter the ocean","places":["Kilauea (Hawaii)","ocean (Eugene, Oregon)"],"date":"MAR 24 2006","confidence":0.9,"thumb":"media/strip/264.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"265","t0":1424.0,"t1":1510.0,"title":"Observing lava flow at sunset","places":["ocean (Eugene, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/265.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"266","t0":1510.0,"t1":1631.0,"title":"Night view of lava entering the ocean","places":["ocean (Eugene, Oregon)"],"date":null,"confidence":0.95,"thumb":"media/strip/266.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"267","t0":1797.0,"t1":1922.0,"title":"Feeding Ducks on Black Sand Beach","places":["Black Sand Beach (Hawaii)","Hawaii"],"date":null,"confidence":0.9,"thumb":"media/strip/267.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"268","t0":2083.0,"t1":2200.0,"title":"Exploring Kilauea Volcano Summit","places":["Caldera (Hawaii)","Kilauea volcano (Hawaii)"],"date":null,"confidence":0.9,"thumb":"media/strip/268.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"269","t0":2200.0,"t1":2297.0,"title":"Volcanic Observatory and Caldera Views","places":["Hawaiian Volcano Observatory (Kilauea Caldera, Hawaii)","Kilauea Caldera (Hawaii Island, Hawaii)"],"date":null,"confidence":0.9,"thumb":"media/strip/269.webp","people":[]},{"id":"270","t0":2297.0,"t1":2516.4,"title":"Kilauea Lava Fields and Sulfur Vents","places":["Kilauea Lava Fields (Hawaii Island, Hawaii)","Sulfur Vents (Oregon Coast, Oregon)"],"date":"1974","confidence":0.9,"thumb":"media/strip/270.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"271","t0":2655.0,"t1":2673.5,"title":"Ocean beach visit","places":["ocean beach (Oregon Coast)"],"date":null,"confidence":0.9,"thumb":"media/strip/271.webp","people":[]},{"id":"272","t0":2686.5,"t1":2727.8,"title":"Philip and Pavel at parking lot","places":["parking lot (2006, unplaced)"],"date":"APR 30 2006","confidence":0.9,"thumb":"media/strip/272.webp","people":["Ekaterina / Katya","Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя","Pavel"]},{"id":"273","t0":2727.8,"t1":2797.5,"title":"Elk in a field","places":["grassy field (Florence, Oregon context)"],"date":null,"confidence":0.9,"thumb":"media/strip/273.webp","people":[]},{"id":"274","t0":2806.7,"t1":2911.0,"title":"Philip at the resort porch","places":["lake (Florence, Oregon context)","Westlake Resort (Near Florence, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/274.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"275","t0":2912.2,"t1":2964.0,"title":"Windy beach and dunes","places":["dunes (Lakeside, Oregon)","ocean beach (Oregon Coast)"],"date":null,"confidence":0.9,"thumb":"media/strip/275.webp","people":["Ekaterina / Katya","Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя","Pavel"]},{"id":"276","t0":2964.0,"t1":3023.9,"title":"Ocean beach walk","places":["ocean beach (Oregon Coast)"],"date":null,"confidence":0.9,"thumb":"media/strip/276.webp","people":[]},{"id":"277","t0":3023.9,"t1":3096.1,"title":"Family on windy beach","places":["ocean beach (Oregon Coast)"],"date":null,"confidence":0.9,"thumb":"media/strip/277.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"278","t0":3105.3,"t1":3227.4,"title":"Weather report from Philip","places":["ocean overlook (near grassy dunes)"],"date":null,"confidence":0.9,"thumb":"media/strip/278.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"279","t0":3227.4,"t1":3274.9,"title":"Positive weather outlook","places":["grassy dunes (near ocean overlook)"],"date":null,"confidence":0.9,"thumb":"media/strip/279.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"280","t0":3274.9,"t1":3300.9,"title":"Stagecoach Trailhead","places":["forest park (Oregon)","Stagecoach Trailhead (Florence, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/280.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"281","t0":3300.9,"t1":3469.9,"title":"Swimming in the dune lake","places":["dune lake (Near Florence, Oregon)","pier (Portland, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/281.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"282","t0":3480.4,"t1":3492.1,"title":"Philip singing on car","places":["parking lot (2006, unplaced)"],"date":null,"confidence":0.9,"thumb":"media/strip/282.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"283","t0":3516.1,"t1":3684.0,"title":"Exploring Oregon Dunes","places":["Oregon Dunes","sand dunes (Oregon Coast, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/283.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя","Oksana"]},{"id":"284","t0":3684.0,"t1":3850.8,"title":"Coastal Walk and Ocean View","places":["Oregon coast (Oregon)","Pacific Ocean (Florence, Oregon context)"],"date":null,"confidence":0.8,"thumb":"media/strip/284.webp","people":[]},{"id":"285","t0":3850.8,"t1":3933.0,"title":"Florence, Oregon Visit","places":["Florence, Oregon","Suislaw River (Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/285.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя","Oksana"]},{"id":"286","t0":3933.0,"t1":4048.2,"title":"Lake at Sunset","places":["lake (Florence, Oregon context)"],"date":null,"confidence":0.8,"thumb":"media/strip/286.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филипп / Филя"]},{"id":"287","t0":4425.0,"t1":4653.0,"title":"Street Market Exploration","places":["street market (Florence, Oregon context)"],"date":null,"confidence":0.9,"thumb":"media/strip/287.webp","people":[]},{"id":"288","t0":4653.0,"t1":4684.0,"title":"Crafts and Souvenirs","places":["street market (Florence, Oregon context)"],"date":null,"confidence":0.8,"thumb":"media/strip/288.webp","people":[]},{"id":"289","t0":4684.0,"t1":4867.0,"title":"City Exploration","places":["Broadway (Oregon)","Chinatown (Portland, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/289.webp","people":[]},{"id":"290","t0":4867.0,"t1":5152.0,"title":"Park Visit and Church Sightseeing","places":["Christian church (Florence, Oregon context)","park (Florence, Oregon context)"],"date":null,"confidence":0.9,"thumb":"media/strip/290.webp","people":["Filia / Filip / Filipp / Filya / Philip / Филип / Филя"]},{"id":"291","t0":5310.0,"t1":5490.0,"title":"Room Tour","places":["Halcyon (Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/291.webp","people":[]},{"id":"292","t0":5549.0,"t1":5610.0,"title":"Native American Cultural Event","places":["Oregon"],"date":"MAY 14 2006","confidence":0.9,"thumb":"media/strip/292.webp","people":[]},{"id":"293","t0":5610.0,"t1":5670.0,"title":"House Tour","places":[],"date":null,"confidence":0.85,"thumb":"media/strip/293.webp","people":[]},{"id":"294","t0":6195.0,"t1":6225.5,"title":"House Tour","places":[],"date":null,"confidence":0.8,"thumb":"media/strip/294.webp","people":[]},{"id":"295","t0":6225.5,"t1":6292.7,"title":"Meal with Friends","places":[],"date":null,"confidence":0.9,"thumb":"media/strip/295.webp","people":["Garik","Rex","Mateo"]},{"id":"296","t0":6330.8,"t1":6539.0,"title":"Veranda and Garden View","places":["Brazil (Oregon context)","Panama (Oregon context)"],"date":null,"confidence":0.9,"thumb":"media/strip/296.webp","people":["Colette","Hope","Oksana"]},{"id":"297","t0":6539.0,"t1":6956.6,"title":"Park Walk and Flowers","places":["Hendricks Park (Eugene, Oregon)"],"date":null,"confidence":0.9,"thumb":"media/strip/297.webp","people":["Roman / Роман"]},{"id":"298","t0":7080.0,"t1":7088.0,"title":"Family in Rhododendron Garden","places":["park (Moscow context)"],"date":null,"confidence":0.9,"thumb":"media/strip/298.webp","people":[]},{"id":"299","t0":7088.0,"t1":7218.1,"title":"Rhododendron Blooms","places":["park (Moscow context)"],"date":null,"confidence":0.9,"thumb":"media/strip/299.webp","people":[]},{"id":"300","t0":7218.1,"t1":7262.9,"title":"Woman in Rhododendron Garden","places":["park (Moscow context)"],"date":null,"confidence":0.9,"thumb":"media/strip/300.webp","people":[]},{"id":"301","t0":7262.9,"t1":7346.9,"title":"Park Scenes and Volunteers","places":["park (Moscow context)"],"date":null,"confidence":0.8,"thumb":"media/strip/301.webp","people":[]}],"gaps":[[140.0,146.0],[150.0,154.0],[172.0,206.0],[222.0,240.0],[252.0,260.0],[292.0,322.0],[326.0,348.0],[404.0,408.0],[428.0,444.0],[448.0,454.0],[528.0,544.0],[556.0,570.0],[596.0,610.0],[664.0,668.0],[692.0,698.0],[734.0,742.0],[776.0,782.0],[872.0,880.0],[884.0,888.0],[904.0,908.0],[920.0,924.0],[962.0,966.0],[1002.0,1040.0],[1044.0,1074.0],[1080.0,1090.0],[1098.0,1118.0],[1124.0,1156.0],[1160.0,1166.0],[1170.0,1176.0],[1186.0,1190.0],[1206.0,1220.0],[1226.0,1250.0],[1262.0,1272.0],[1302.0,1310.0],[1434.0,1440.0],[1448.0,1460.0],[1710.0,1722.0],[1734.0,1744.0],[1788.0,1798.0],[1802.0,1806.0],[1814.0,1820.0],[1844.0,1860.0],[1964.0,2012.0],[2042.0,2056.0],[2062.0,2066.0],[2268.0,2274.0],[2374.0,2382.0],[2402.0,2416.0],[2420.0,2430.0],[2434.0,2440.0],[2458.0,2472.0],[2568.0,2584.0],[2612.0,2618.0],[2630.0,2642.0],[2654.0,2672.0],[2692.0,2718.0],[2730.0,2734.0],[2878.0,2882.0],[2886.0,2902.0],[2916.0,2928.0],[2944.0,2950.0],[3118.0,3140.0],[3164.0,3170.0],[3264.0,3272.0],[3298.0,3302.0],[3340.0,3382.0],[3408.0,3448.0],[3484.0,3494.0],[3502.0,3508.0],[3532.0,3546.0],[3552.0,3572.0],[3580.0,3586.0],[3592.0,3596.0],[3614.0,3618.0],[3708.0,3736.0],[3764.0,3772.0],[3778.0,3782.0],[3788.0,3792.0],[3858.0,3864.0],[3878.0,3882.0],[3932.0,3964.0],[3980.0,4002.0],[4012.0,4016.0],[4020.0,4034.0],[4046.0,4050.0],[4054.0,4058.0],[4062.0,4072.0],[4088.0,4096.0],[4108.0,4144.0],[4148.0,4184.0],[4254.0,4270.0],[4274.0,4280.0],[4286.0,4316.0],[4338.0,4356.0],[4372.0,4376.0],[4382.0,4392.0],[4398.0,4402.0],[4414.0,4418.0],[4426.0,4436.0],[4442.0,4448.0],[4454.0,4458.0],[4576.0,4580.0],[4606.0,4630.0],[4638.0,4654.0],[4662.0,4688.0],[4770.0,4774.0],[4778.0,4782.0],[4824.0,4832.0],[4856.0,4860.0],[4880.0,4890.0],[4912.0,4916.0],[4920.0,4930.0],[4964.0,4988.0],[5024.0,5038.0],[5086.0,5090.0],[5132.0,5140.0],[5162.0,5184.0],[5192.0,5198.0],[5210.0,5214.0],[5220.0,5224.0],[5230.0,5242.0],[5252.0,5264.0],[5278.0,5288.0],[5308.0,5312.0],[5344.0,5352.0],[5362.0,5368.0],[5380.0,5446.0],[5458.0,5484.0],[5500.0,5504.0],[5510.0,5530.0],[5536.0,5544.0],[5548.0,5566.0],[5572.0,5578.0],[5582.0,5592.0],[5598.0,5614.0],[5630.0,5652.0],[5666.0,5674.0],[5678.0,5710.0],[5718.0,5734.0],[5738.0,5754.0],[5784.0,5800.0],[5810.0,5848.0],[5870.0,5876.0],[5888.0,5898.0],[5956.0,5970.0],[5980.0,6014.0],[6022.0,6026.0],[6084.0,6092.0],[6100.0,6108.0],[6148.0,6180.0],[6258.0,6310.0],[6322.0,6330.0],[6358.0,6366.0],[6380.0,6388.0],[6432.0,6482.0],[6538.0,6554.0],[6558.0,6574.0],[6616.0,6620.0],[6640.0,6648.0],[6654.0,6658.0],[6664.0,6668.0],[6736.0,6752.0],[6756.0,6770.0],[6774.0,6786.0],[6812.0,6816.0],[6878.0,6884.0],[6904.0,6908.0],[6932.0,6936.0],[6998.0,7004.0],[7054.0,7060.0],[7072.0,7076.0],[7276.0,7296.0],[7356.0,7463.5]]}</script>
+<script src="app.js"></script>
+</body>
+</html>
