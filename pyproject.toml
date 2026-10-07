@@ -8,8 +8,33 @@ version = "0.1.0"
 description = "Local-first VHS and home-video intelligence pipeline."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "PolyForm-Noncommercial-1.0.0"
 authors = [
-  { name = "TapeSplit contributors" }
+  { name = "Phillip Bindeman" }
+]
+keywords = [
+  "vhs",
+  "home-video",
+  "video-understanding",
+  "archive",
+  "digitization",
+  "family-history",
+  "transcription",
+  "face-clustering",
+  "gemini",
+  "local-first",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = []
 
@@ -43,6 +68,12 @@ speaker-ai = [
   "pyannote.audio",
   "speechbrain",
 ]
+
+[project.urls]
+Homepage = "https://bindeman.github.io/tapesplit/"
+Repository = "https://github.com/bindeman/tapesplit"
+Issues = "https://github.com/bindeman/tapesplit/issues"
+Documentation = "https://github.com/bindeman/tapesplit/tree/main/docs"
 
 [project.scripts]
 tapesplit = "tapesplit.cli:main"
