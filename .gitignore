@@ -32,3 +32,11 @@ dist/
 *.mts
 *.vob
 *.wmv
+
+# Local-only scratch space, throwaway virtualenvs, and per-machine agent notes.
+CLAUDE.local.md
+.private/
+.venv-*/
+
+# Left behind by `pip wheel .` / `python -m build`.
+build/
