@@ -38,6 +38,10 @@ function reviewApiPlugin(): Plugin {
           next();
           return;
         }
+        if (!isTrustedLocalRequest(req)) {
+          sendJson(res, { error: "forbidden" }, 403);
+          return;
+        }
         try {
           if (req.method === "GET" && req.url.startsWith("/api/project")) {
             await sendProjectJson(req, res, await loadProject());
@@ -435,6 +439,37 @@ function resolveVideoPath(tape: Record<string, unknown>) {
     return "";
   }
   return resolve(projectDir, relativePath);
+}
+
+// The review API reads the whole archive and can rewrite corrections, so it
+// answers only the local UI. A foreign Host header means DNS rebinding; a
+// cross-site Origin or Sec-Fetch-Site on a write means another website is
+// driving the browser. TAPESPLIT_UI_ALLOWED_HOSTS (comma-separated hostnames)
+// widens the Host check for anyone deliberately serving the UI on a LAN.
+const allowedHostnames = new Set([
+  "127.0.0.1",
+  "localhost",
+  "[::1]",
+  ...(process.env.TAPESPLIT_UI_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean),
+]);
+
+function isTrustedLocalRequest(req: IncomingMessage): boolean {
+  const host = (req.headers.host || "").toLowerCase();
+  const hostname = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.split(":")[0];
+  if (!allowedHostnames.has(hostname)) return false;
+  if (req.method === "GET" || req.method === "HEAD") return true;
+  const fetchSite = req.headers["sec-fetch-site"];
+  if (fetchSite === "cross-site" || fetchSite === "same-site") return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
 }
 
 function sendJson(res: ServerResponse, payload: unknown, status = 200) {
