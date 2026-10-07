@@ -360,7 +360,13 @@ def _run_diarize(context: StageContext) -> dict[str, Any]:
     errors = []
     for source_video_id in pending:
         try:
-            results.append(diarize_project_speakers(project, source_video_id=source_video_id))
+            results.append(
+                diarize_project_speakers(
+                    project,
+                    source_video_id=source_video_id,
+                    allow_cloud=context.options.profile == "auto",
+                )
+            )
         except Exception as exc:
             errors.append({"source_video_id": source_video_id, "error": str(exc)})
     if errors and not results:

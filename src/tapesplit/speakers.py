@@ -64,10 +64,13 @@ def diarize_project_speakers(
     backend: str = DEFAULT_SPEAKER_DIARIZATION_BACKEND,
     model_name: str = DEFAULT_SPEAKER_DIARIZATION_MODEL,
     force: bool = False,
+    allow_cloud: bool = True,
 ) -> dict[str, Any]:
     load_dotenv()
     project = project_dir.expanduser().resolve()
-    if backend == "auto" and _azure_diarize_selected():
+    # allow_cloud=False keeps an "auto" backend on this machine even when the
+    # Azure opt-in is set (`tapesplit auto --profile local` promises no cloud calls).
+    if backend == "auto" and allow_cloud and _azure_diarize_selected():
         backend = AZURE_OPENAI_DIARIZE_BACKEND
     if backend == AZURE_OPENAI_DIARIZE_BACKEND:
         return _diarize_project_speakers_azure_openai(

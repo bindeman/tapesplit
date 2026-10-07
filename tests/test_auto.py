@@ -602,3 +602,40 @@ def test_gemini_does_not_retry_permanent_errors(monkeypatch):
     with pytest.raises(RuntimeError, match="400"):
         auto._call_gemini_with_retry(invalid)
     assert attempts["n"] == 1
+
+
+def test_local_profile_keeps_diarization_off_the_cloud(tmp_path: Path, monkeypatch):
+    import tapesplit.speakers as speakers
+
+    project = tmp_path / "p.tapesplit"
+    project.mkdir()
+    append_jsonl(project / "tapes.jsonl", {"id": "video_000001", "path": str(tmp_path / "tape.mp4")})
+    calls = []
+
+    def fake_diarize(project_dir, *, source_video_id=None, allow_cloud=True, **kwargs):
+        calls.append(allow_cloud)
+        return {"backend": "speechbrain"}
+
+    monkeypatch.setattr(speakers, "diarize_project_speakers", fake_diarize)
+    for profile, expected in (("local", False), ("minimal", False), ("auto", True)):
+        calls.clear()
+        context = auto.StageContext(project=project, options=AutoOptions(profile=profile), capabilities={})
+        auto._run_diarize(context)
+        assert calls == [expected], profile
+
+
+def test_azure_diarization_is_never_selected_when_cloud_is_disallowed(tmp_path: Path, monkeypatch):
+    import tapesplit.speakers as speakers
+
+    monkeypatch.setattr(speakers, "_azure_diarize_selected", lambda: True)
+    reached = []
+    monkeypatch.setattr(
+        speakers,
+        "_diarize_project_speakers_azure_openai",
+        lambda *args, **kwargs: reached.append("azure") or {"backend": "azure-openai"},
+    )
+    try:
+        speakers.diarize_project_speakers(tmp_path, source_video_id="video_000001", allow_cloud=False)
+    except Exception:
+        pass  # this empty project has no audio for a local backend; only the routing matters
+    assert reached == []
