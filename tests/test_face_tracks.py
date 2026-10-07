@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from tapesplit.face_clustering import (
@@ -43,6 +42,8 @@ VEC_B = [0.0, 1.0, 0.0]
 
 
 def _image():
+    # numpy is an optional dependency (vision extra); tests that build a frame skip without it.
+    np = pytest.importorskip("numpy")
     return np.zeros((480, 720, 3), dtype=np.uint8)
 
 
@@ -92,6 +93,7 @@ def test_weighted_mean_normalized():
 
 
 def test_finalize_track_and_co_occurrence(tmp_path: Path):
+    pytest.importorskip("cv2")  # _finalize_track writes the track thumbnails with OpenCV
     open_tracks, closed = [], []
     image = _image()
     for frame in range(3):
@@ -142,6 +144,7 @@ def test_member_join_by_time_and_rescaled_iou():
 
 
 def test_cooccurring_tracks_never_cluster_together():
+    pytest.importorskip("numpy")  # the constrained clustering math runs on numpy
     track_a = {
         "id": "track_aaa",
         "co_occurring_track_ids": ["track_bbb"],
@@ -231,6 +234,7 @@ def test_succession_via_stable_track_ids():
 
 
 def test_build_resumes_completed_scenes_without_decoding(tmp_path: Path):
+    pytest.importorskip("numpy")  # the final consolidate step writes the track-vector file with numpy
     project = tmp_path / "p.tapesplit"
     project.mkdir()
     (project / "tapes.jsonl").write_text(
@@ -314,6 +318,7 @@ def test_dedupe_tracks_keeps_last_by_id():
 
 
 def test_resume_survives_truncated_checkpoint_tail(tmp_path: Path):
+    pytest.importorskip("numpy")  # the final consolidate step writes the track-vector file with numpy
     project = tmp_path / "p.tapesplit"
     project.mkdir()
     (project / "tapes.jsonl").write_text(

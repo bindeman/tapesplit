@@ -57,6 +57,7 @@ def test_quality_weight_is_continuous_and_eye_free():
 
 
 def test_hac_merges_similar_and_blocks_same_frame_pairs():
+    pytest.importorskip("numpy")  # the constrained clustering math runs on numpy
     rows = [
         _row("f1", [1.0, 0.0], frame="kf_1"),
         _row("f2", [0.999, 0.01], frame="kf_1"),  # same keyframe: cannot merge with f1
@@ -73,6 +74,7 @@ def test_hac_merges_similar_and_blocks_same_frame_pairs():
 
 
 def test_low_weight_faces_join_but_never_seed():
+    pytest.importorskip("numpy")  # the constrained clustering math runs on numpy
     rows = [
         _row("seed1", [1.0, 0.0], frame="kf_1"),
         _row("seed2", [0.999, 0.01], frame="kf_2"),
@@ -149,6 +151,7 @@ def test_succession_inherits_ids_and_flags_split_human_clusters():
 
 
 def test_embeddings_persist_and_reuse(tmp_path: Path):
+    pytest.importorskip("numpy")  # the embedding cache is stored as numpy arrays
     project = tmp_path
     crop = project / "thumbnails" / "faces" / "f1.jpg"
     crop.parent.mkdir(parents=True)
@@ -325,6 +328,7 @@ def test_cvlface_backend_is_gated_when_weights_absent(monkeypatch):
 
 
 def test_recluster_preserves_ids_end_to_end(tmp_path: Path, monkeypatch):
+    pytest.importorskip("numpy")  # re-clustering persists and reloads embeddings with numpy
     _write_jsonl(
         tmp_path / "face_observations.jsonl",
         [

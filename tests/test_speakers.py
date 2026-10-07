@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tapesplit.speakers import (
     _canonicalize_cluster_labels,
     _cluster_voice_embeddings,
@@ -55,6 +57,7 @@ def test_import_speaker_segments_writes_jsonl(tmp_path: Path):
 
 
 def test_cluster_voice_embeddings_groups_similar_vectors():
+    pytest.importorskip("sklearn")  # voice clustering uses scikit-learn (pulled in by the local-ai extra)
     labels = _cluster_voice_embeddings(
         [
             [1.0, 0.0, 0.0],

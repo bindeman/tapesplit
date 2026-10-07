@@ -64,6 +64,7 @@ def test_reconcile_azure_parts_single_part_keeps_everything():
 
 
 def test_unify_labels_known_names_pass_through_and_clusters_merge_parts():
+    pytest.importorskip("sklearn")  # voice clustering uses scikit-learn (and numpy)
     rows = [
         {"part_index": 0, "start_s": 1.0, "end_s": 4.0, "raw_speaker": "Ekaterina", "text": ""},
         {"part_index": 0, "start_s": 10.0, "end_s": 14.0, "raw_speaker": "A", "text": ""},
@@ -192,6 +193,7 @@ def test_azure_backend_requires_configuration(tmp_path: Path, monkeypatch):
 
 
 def test_azure_backend_end_to_end_with_fake_service(tmp_path: Path, monkeypatch):
+    pytest.importorskip("sklearn")  # cross-part voice clustering uses scikit-learn (and numpy)
     project = tmp_path
     (project / "audio").mkdir()
     wav = project / "audio" / "video_000001.wav"

@@ -1,8 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tapesplit.face_clustering import cluster_faces_for_project
 from tapesplit.storage import read_jsonl
+
+# Every test here runs the real clustering math, which needs numpy (vision extra).
+pytest.importorskip("numpy")
 
 
 def test_cluster_faces_groups_similar_faces_and_proposes_people_from_event_context(

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tapesplit.faces import detect_face_thumbnails_for_project, _vision_rect_to_pixel_bbox
 from tapesplit.storage import read_jsonl
 from tapesplit.visual_assets import extract_visual_assets_for_project
@@ -74,6 +76,7 @@ def test_extract_visual_assets_writes_scene_and_event_thumbnails(tmp_path: Path,
 
 
 def test_detect_face_thumbnails_writes_observations_from_visual_assets(tmp_path: Path, monkeypatch):
+    pytest.importorskip("cv2")  # face quality scoring of each crop needs OpenCV (vision extra)
     keyframe = tmp_path / "keyframes" / "scenes" / "scene_1.jpg"
     keyframe.parent.mkdir(parents=True)
     keyframe.write_bytes(b"fake image")
