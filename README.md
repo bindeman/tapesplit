@@ -147,7 +147,7 @@ cp .env.example .env                   # every key in it is optional
 .venv/bin/tapesplit ui ~/Tapes.tapesplit   # browse and review
 ```
 
-For transcription, point `WHISPER_CPP_MODEL` in `.env` at a whisper.cpp model such as [`ggml-large-v3-turbo.bin`](https://huggingface.co/ggerganov/whisper.cpp/tree/main). The review app needs Node 18+; `tapesplit ui` installs its packages on first run.
+For transcription, point `WHISPER_CPP_MODEL` in `.env` at a whisper.cpp model such as [`ggml-large-v3-turbo.bin`](https://huggingface.co/ggerganov/whisper.cpp/tree/main). The review app needs Node 20 or newer; `tapesplit ui` installs its packages on first run.
 
 | Extra | Adds |
 | --- | --- |
