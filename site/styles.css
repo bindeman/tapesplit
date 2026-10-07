@@ -2156,12 +2156,12 @@ h3 {
 .minimap .land {
   fill: #3a3f46;
   stroke: #5b6573;
-  stroke-width: 0.35;
+  stroke-width: 0.2;
 }
 
 .minimap .borders {
   stroke: #4f5661;
-  stroke-width: 0.3;
+  stroke-width: 0.18;
 }
 
 .lb-maplinks {

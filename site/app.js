@@ -58,13 +58,13 @@
 
   function miniMap(where) {
     const [x, y] = project(where.lat, where.lng);
-    const w = 150, h = 92;
+    const w = 84, h = 52;
     const vx = Math.min(Math.max(x - w / 2, -40), M.width + 40 - w);
     const vy = Math.min(Math.max(y - h / 2, -40), M.height + 40 - h);
-    const ring = where.approx ? `<circle cx="${x}" cy="${y}" r="9" fill="none" stroke="#ff6b5f" stroke-width="1.1" stroke-dasharray="2.5 2"/>` : "";
+    const ring = where.approx ? `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="#ff6b5f" stroke-width="0.7" stroke-dasharray="1.5 1.2"/>` : "";
     return `<svg class="minimap" viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${w} ${h}" role="img" aria-label="Map of ${esc(where.label)}">
       <use href="#ts-land" class="land"/><use href="#ts-borders" class="borders"/>${ring}
-      <circle cx="${x}" cy="${y}" r="3.4" fill="#ff3b30" stroke="#fff" stroke-width="1"/></svg>`;
+      <circle cx="${x}" cy="${y}" r="2" fill="#ff3b30" stroke="#fff" stroke-width="0.6"/></svg>`;
   }
 
   function coord(lat, lng) {
