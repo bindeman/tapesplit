@@ -13,3 +13,4 @@
 - [ ] Changed behavior has tests, especially anything affecting review decisions, entity resolution, relationship inference, places, or export-visible metadata.
 - [ ] The diff contains no secrets, media, project outputs, or real personal data, including in screenshots.
 - [ ] Docs, `--help` text, and `.env.example` are updated if you changed a command or a setting.
+- [ ] I agree to the terms in [Licensing of contributions](https://github.com/bindeman/tapesplit/blob/main/CONTRIBUTING.md#licensing-of-contributions).

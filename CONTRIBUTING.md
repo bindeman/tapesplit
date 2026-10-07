@@ -4,6 +4,16 @@ Thanks for helping. TapeSplit turns digitized VHS and home-video files into a re
 
 By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
+## Licensing of contributions
+
+TapeSplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal and other noncommercial use, with commercial rights reserved to the author. So that a contribution can ship in every version of TapeSplit, including commercial ones:
+
+- You confirm that you wrote the contribution, or otherwise have the right to submit it.
+- You keep the copyright in your contribution.
+- By submitting it (a pull request, a patch, or code in an issue), you grant Phillip Bindeman a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, copy, modify, distribute, sublicense and relicense it under any terms, including commercial ones.
+
+If you can't agree to these terms, open an issue that describes the change instead of sending code.
+
 ## Set up
 
 You need Python 3.11 or newer (CI runs 3.11 and 3.12), ffmpeg (it provides `ffprobe`), and Node 22 for the review UI.
