@@ -1883,6 +1883,22 @@ kbd {
   color: var(--where-ink);
 }
 
+.ev-quote {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.place-evidence {
+  max-width: 560px;
+}
+
+.place-evidence .mini-map {
+  width: min(100%, 352px);
+}
+
 .ev-places q {
   font-family: var(--font-serif);
   font-size: var(--fs-callout);

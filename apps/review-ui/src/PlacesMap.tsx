@@ -520,6 +520,53 @@ export function PlacesMapView({
   );
 }
 
+const BASIS_LABELS: Record<string, string> = {
+  "direct location mention": "Named in a moment",
+  explicit_location_anchor: "Named in a moment",
+  "visual/model place clue": "Seen on screen",
+  visible_place: "Seen on screen",
+  "visual scene type": "What the scene looks like",
+  generic_scene_type: "What the scene looks like",
+  "administrative context": "The city or region around it",
+  administrative_context: "The city or region around it",
+};
+
+// How a place got onto the map: what named it, how sure the geocoder was,
+// and where that puts it.
+function PlaceEvidence({ place, label }: { place: PlaceRecord; label: string }) {
+  const geo = place.geocode;
+  const reasons = [...new Set((place.evidence_basis?.basis ?? []).map((basis) => BASIS_LABELS[basis]).filter(Boolean))];
+  const clue = (place.evidence_basis?.evidence_texts ?? [])
+    .map((text) => text.trim().replace(/^\d{1,2}:\d{2}\s*-\s*/, ""))
+    .filter((text) => text.length <= 140 && text.split(/\s+/).length >= 3)
+    .sort((a, b) => a.length - b.length)[0];
+  const confident = place.coordinates && (geo?.confidence ?? 0) >= 0.6;
+  if (!reasons.length && !clue && !geo) {
+    return null;
+  }
+  return (
+    <section className="ev-card ev-where place-evidence" aria-label="How this place was found">
+      <p className="ev-source">
+        <MapPin size={13} />
+        Where · how it was placed
+      </p>
+      {reasons.length > 0 && <p className="ev-big">{reasons.join(" · ")}</p>}
+      {clue && <q className="ev-quote">{clue}</q>}
+      {geo && (
+        <p className="ev-basis">
+          {geo.formatted_address ? `Geocoded to ${geo.formatted_address}` : "Geocoded"}
+          {typeof geo.confidence === "number" ? `, ${Math.round(geo.confidence * 100)}% sure` : ""}
+          {geo.approximate ? ", approximately" : ""}.
+          {!confident && " Too uncertain to pin on the map yet."}
+        </p>
+      )}
+      {confident && place.coordinates && (
+        <MiniMap pins={[{ lat: place.coordinates.lat, lng: place.coordinates.lng, label, approximate: Boolean(geo?.approximate) }]} label={`Map of ${label}`} />
+      )}
+    </section>
+  );
+}
+
 function PlaceSheet({
   place,
   eventsById,
@@ -576,6 +623,7 @@ function PlaceSheet({
               </div>
             )}
           </header>
+          <PlaceEvidence place={place} label={helpers.placeDisplayLabel(place.display_label)} />
           <div className="place-sheet-events">
             {placeEvents.map((event) => (
               <button key={event.id} className="place-event" onClick={() => onPlay(event)}>
