@@ -291,7 +291,7 @@ export function WherePane({
             return (
               <li key={row.ref.id}>
                 <strong>{row.label}</strong>
-                <span className="ev-role">{ROLE_LABELS[row.role?.role ?? ""] ?? "From the moments around it"}</span>
+                <span className="ev-role">{ROLE_LABELS[row.role?.role ?? ""] ?? "Linked to this moment"}</span>
                 {clue && <q>{clue}</q>}
               </li>
             );
