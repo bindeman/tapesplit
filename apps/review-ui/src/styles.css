@@ -134,6 +134,16 @@
   --tag-bg: #232326;
   --tag-ink: #ffffff;
 
+  /* Memories as snapshots: the print's border and the tape holding it up */
+  --polaroid: #fdfcf8;
+  --polaroid-ink: #2b2a30;
+  --polaroid-ink-2: #77736a;
+  --shadow-polaroid: 0 0 0 0.5px rgba(60, 40, 10, 0.08), 0 2px 3px rgba(60, 40, 10, 0.08), 0 12px 26px -10px rgba(60, 40, 10, 0.35);
+  --washi-1: rgba(242, 201, 76, 0.85);
+  --washi-2: rgba(130, 208, 182, 0.85);
+  --washi-3: rgba(242, 154, 176, 0.85);
+  --washi-4: rgba(140, 182, 238, 0.88);
+
   /* Tape strip kinds */
   --kind-travel: #0a84ff;
   --kind-home: #ff9f0a;
@@ -252,6 +262,14 @@
     --voice-4: #98989d;
     --tag-bg: #3a3a3e;
     --tag-ink: #f5f5f7;
+    --polaroid: #e9e6de;
+    --polaroid-ink: #232226;
+    --polaroid-ink-2: #6a665e;
+    --shadow-polaroid: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 14px 30px -10px rgba(0, 0, 0, 0.75);
+    --washi-1: rgba(214, 176, 66, 0.8);
+    --washi-2: rgba(98, 170, 148, 0.8);
+    --washi-3: rgba(206, 120, 142, 0.8);
+    --washi-4: rgba(108, 146, 204, 0.82);
     --lang-ru: #e5534b;
     --lang-en: #4c8dff;
 
@@ -865,21 +883,90 @@ kbd {
   display: none;
 }
 
-.memory-card {
-  position: relative;
-  flex: 0 0 min(360px, 64vw);
-  aspect-ratio: 16 / 9;
-  border-radius: var(--r-l);
-  overflow: hidden;
-  background: var(--bg-elev);
-  box-shadow: var(--shadow-1);
-  scroll-snap-align: start;
-  transition: transform var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out);
+/* Memories are the one place the library goes scrapbook: snapshots in a
+   white border, a strip of washi tape, a label-maker date. */
+.memories-row {
+  padding-top: var(--sp-4);
+  padding-bottom: var(--sp-4);
 }
 
-.memory-card:hover {
-  transform: translateY(-2px);
+.memory-card {
+  position: relative;
+  flex: 0 0 min(300px, 58vw);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 0;
+  border-radius: 2px;
+  background: var(--polaroid);
+  box-shadow: var(--shadow-polaroid);
+  scroll-snap-align: start;
+  text-align: left;
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform var(--dur-slow) var(--ease-spring), box-shadow var(--dur-med) var(--ease-out);
+}
+
+.memory-card:hover,
+.memory-card:focus-visible {
+  transform: rotate(0deg) translateY(-3px);
   box-shadow: var(--shadow-2);
+}
+
+.memory-washi {
+  position: absolute;
+  z-index: 1;
+  top: -9px;
+  left: 50%;
+  width: 78px;
+  height: 20px;
+  transform: translateX(-50%) rotate(-3deg);
+  background: var(--washi, var(--washi-1));
+  clip-path: polygon(2% 6%, 98% 0, 100% 48%, 97% 100%, 3% 95%, 0 52%);
+  opacity: 0.9;
+}
+
+.memory-photo {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--bg-elev-2);
+}
+
+.memory-photo .card-fallback {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-tertiary);
+}
+
+.memory-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+}
+
+.memory-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--sp-2x) 4px var(--sp-3);
+  color: var(--polaroid-ink);
+}
+
+.memory-caption strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-title3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-caption small {
+  font-size: var(--fs-footnote);
+  color: var(--polaroid-ink-2);
 }
 
 .memory-card img {
@@ -902,33 +989,6 @@ kbd {
   .memory-card img {
     animation: none;
   }
-}
-
-.memory-shade {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  padding: var(--sp-7) var(--sp-4) var(--sp-3);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
-  color: #fff;
-  text-align: left;
-}
-
-.memory-shade strong {
-  font-family: var(--font-display);
-  font-size: var(--fs-title2);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
-}
-
-.memory-shade small {
-  font-size: var(--fs-footnote);
-  font-weight: 500;
-  opacity: 0.88;
 }
 
 .library-group {
@@ -4105,44 +4165,61 @@ kbd {
   overflow: hidden;
 }
 
+/* Spoken matches read like the website's search demo: the line itself,
+   in the language it was said, and where on which tape to hear it. */
 .spoken-hits {
   display: flex;
   flex-direction: column;
-  border-radius: var(--r-l);
-  background: var(--bg-elev);
-  overflow: hidden;
+  gap: var(--sp-2);
 }
 
 .spoken-hit {
   display: flex;
-  align-items: baseline;
-  gap: 9px;
+  align-items: center;
+  gap: var(--sp-3);
   text-align: left;
-  padding: var(--sp-2) var(--sp-3);
-  color: var(--voice);
-}
-
-.spoken-hit + .spoken-hit {
-  box-shadow: inset 0 1px 0 var(--hairline);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-m);
+  background: var(--card);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 
 .spoken-hit:hover {
-  background: var(--fill-hover);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+.spoken-hit:active {
+  transform: translateY(0);
 }
 
 .spoken-hit .spoken-quote {
   flex: 1;
   min-width: 0;
-  font-size: var(--fs-body);
+  font-size: var(--fs-title3);
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--text-primary);
 }
 
 .spoken-hit small {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px var(--sp-2);
+  border-radius: var(--r-s);
+  background: var(--fill-secondary);
   font-family: var(--font-mono);
   font-size: var(--fs-footnote);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+.spoken-hit:hover small {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
 }
 
 .seen-grid {

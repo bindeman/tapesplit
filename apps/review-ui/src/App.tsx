@@ -34,9 +34,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
-import { momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
+import { lineLanguage, momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
 import { MONTHS, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
@@ -754,17 +754,26 @@ function LibraryView({
             <div className="memories-row">
               {(() => {
                 const usedCovers = new Set<string>();
-                return memories.map((album) => {
+                return memories.map((album, index) => {
                   const cover = albumCoverPath(album, eventsById, usedCovers);
                   if (cover) {
                     usedCovers.add(cover);
                   }
                   return (
-                    <button key={album.id} className="memory-card" onClick={() => onOpenAlbum(album)}>
-                      {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="card-fallback"><CalendarDays size={26} /></div>}
-                      <span className="memory-shade">
+                    <button
+                      key={album.id}
+                      className="memory-card"
+                      style={{ "--tilt": MEMORY_TILTS[index % MEMORY_TILTS.length], "--washi": MEMORY_WASHI[index % MEMORY_WASHI.length] } as CSSProperties}
+                      onClick={() => onOpenAlbum(album)}
+                    >
+                      <span className="memory-washi" aria-hidden="true" />
+                      <span className="memory-photo">
+                        {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <span className="card-fallback"><CalendarDays size={26} /></span>}
+                        <span className="label-tag memory-tag">{memoryTagLabel(album)}</span>
+                      </span>
+                      <span className="memory-caption">
                         <strong>{album.title}</strong>
-                        <small>{memoryDateLabel(album)}</small>
+                        <small>{momentCount(album.events?.length ?? 0)}</small>
                       </span>
                     </button>
                   );
@@ -3829,12 +3838,17 @@ function SemanticSearchPanel({
 
 function SpokenHitRow({ hit, media, onPlay }: { hit: SemanticHit; media: MediaRecord[]; onPlay: (moment: PlayerMoment) => void }) {
   const moment = momentFromHit(hit, media);
+  const text = hit.snippet || hit.title;
+  const language = lineLanguage(text);
   return (
     <button className="spoken-hit" onClick={() => moment && onPlay(moment)} disabled={!moment}>
-      <Play size={13} />
-      <span className="spoken-quote">{hit.snippet || hit.title}</span>
+      <span className="spoken-quote" lang={language || undefined}>
+        {language && <span className={`lang-pill ${language}`}>{language.toUpperCase()}</span>}
+        {text}
+      </span>
       {moment ? (
         <small>
+          <Play size={9} fill="currentColor" />
           {moment.videoLabel} · {formatTime(moment.startS)}
         </small>
       ) : null}
@@ -3998,6 +4012,36 @@ function albumCoverPath(album: AlbumRecord, eventsById: Map<string, EventRecord>
 // a Memory reads as a span. Dates themselves may contain commas ("March 22,
 // 2006"), so split only at commas that start a new month token.
 const MONTH_BOUNDARY = /,\s*(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
+
+// Memories hang like snapshots on a board: a little tilt, a strip of tape.
+const MEMORY_TILTS = ["-1.4deg", "1deg", "-0.7deg", "1.3deg", "-1.1deg", "0.8deg"];
+const MEMORY_WASHI = ["var(--washi-1)", "var(--washi-2)", "var(--washi-3)", "var(--washi-4)"];
+
+// The memory's span the way a camcorder stamp prints it: "MAR 22–25 2006".
+function memoryTagLabel(album: AlbumRecord): string {
+  const parts = (album.date_label ?? "").split(MONTH_BOUNDARY).map((part) => part.trim()).filter(Boolean);
+  const parse = (text: string) => {
+    const match = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i.exec(text);
+    if (!match) return null;
+    const month = MONTHS.findIndex((name) => name.toLowerCase() === match[1].toLowerCase());
+    return { year: Number(match[3]), month, day: Number(match[2]) };
+  };
+  const dates = parts.map(parse).filter((date): date is { year: number; month: number; day: number } => Boolean(date));
+  if (!dates.length) {
+    return memoryDateLabel(album).toUpperCase();
+  }
+  dates.sort((a, b) => a.year - b.year || a.month - b.month || a.day - b.day);
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const mon = (date: { month: number }) => MONTHS[date.month].toUpperCase();
+  if (first.year === last.year && first.month === last.month) {
+    return first.day === last.day ? `${mon(first)} ${first.day} ${first.year}` : `${mon(first)} ${first.day}–${last.day} ${first.year}`;
+  }
+  if (first.year === last.year) {
+    return `${mon(first)} ${first.day} – ${mon(last)} ${last.day} ${first.year}`;
+  }
+  return `${mon(first)} ${first.year} – ${mon(last)} ${last.year}`;
+}
 
 function memoryDateLabel(album: AlbumRecord): string {
   const label = album.date_label ?? "";

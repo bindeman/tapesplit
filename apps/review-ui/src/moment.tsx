@@ -318,7 +318,9 @@ export function WherePane({
 const CYRILLIC = /[А-Яа-яЁё]/g;
 const LATIN = /[A-Za-z]/g;
 
-function lineLanguage(text: string): "ru" | "en" | "" {
+// A transcript line's language, by script: these tapes mix Russian and
+// English, often mid-sentence.
+export function lineLanguage(text: string): "ru" | "en" | "" {
   const cyrillic = (text.match(CYRILLIC) ?? []).length;
   const latin = (text.match(LATIN) ?? []).length;
   if (!cyrillic && !latin) return "";
