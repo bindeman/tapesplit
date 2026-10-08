@@ -359,6 +359,7 @@ export interface ContinuityContextAsset {
 export interface StampFrame {
   image: string;
   time_s: number;
+  date?: string;
   boxes: Array<{ text: string; x: number; y: number; width: number; height: number }>;
 }
 

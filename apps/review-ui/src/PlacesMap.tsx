@@ -83,6 +83,61 @@ function buildPaths(topo: unknown, objectName: string): string[] {
     .filter(Boolean);
 }
 
+// Countries and states are built once per page; the Places view and every
+// moment sheet's mini map draw from the same paths.
+let sharedPaths: { world: string[]; states: string[] } | null = null;
+function mapPaths() {
+  if (!sharedPaths) {
+    sharedPaths = { world: buildPaths(worldTopo, "countries"), states: buildPaths(usTopo, "states") };
+  }
+  return sharedPaths;
+}
+
+export interface MiniMapPin {
+  lat: number;
+  lng: number;
+  label: string;
+  approximate?: boolean;
+}
+
+// A small locator map for the moment sheet: the pins, framed with enough of
+// the coastline around them to tell where on earth this was.
+export function MiniMap({ pins, label }: { pins: MiniMapPin[]; label: string }) {
+  const { world, states } = mapPaths();
+  const points = pins.map((pin) => ({ pin, ...project(pin.lat, pin.lng) }));
+  if (!points.length) {
+    return null;
+  }
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const width = Math.max(48, (Math.max(...xs) - Math.min(...xs)) * 1.8, (Math.max(...ys) - Math.min(...ys)) * 1.8 * 1.6);
+  const height = width / 1.6;
+  const x0 = Math.min(Math.max(cx - width / 2, 0), VIEW_W - width);
+  const y0 = Math.min(Math.max(cy - height / 2, 0), VIEW_H - height);
+  const r = width * 0.028;
+  return (
+    <svg className="mini-map" viewBox={`${x0.toFixed(2)} ${y0.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)}`} role="img" aria-label={label}>
+      <rect x={x0} y={y0} width={width} height={height} className="mini-ocean" />
+      {world.map((d, index) => (
+        <path key={`w${index}`} d={d} className="mini-land" />
+      ))}
+      {width < 160 &&
+        states.map((d, index) => (
+          <path key={`s${index}`} d={d} className="mini-border" />
+        ))}
+      {points.map(({ pin, x, y }) => (
+        <g key={`${pin.label}-${x.toFixed(1)}`} transform={`translate(${x.toFixed(2)} ${y.toFixed(2)})`}>
+          {pin.approximate && <circle r={r * 2.6} className="mini-halo" />}
+          <circle r={r} className={pin.approximate ? "mini-pin approx" : "mini-pin"} />
+          <title>{pin.label}</title>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 interface MappedPlace {
   place: PlaceRecord;
   point: XY;
@@ -125,8 +180,7 @@ export function PlacesMapView({
   const [mode, setMode] = useState<"map" | "list">("map");
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
 
-  const worldPaths = useMemo(() => buildPaths(worldTopo, "countries"), []);
-  const statePaths = useMemo(() => buildPaths(usTopo, "states"), []);
+  const { world: worldPaths, states: statePaths } = mapPaths();
 
   const mapped = useMemo<MappedPlace[]>(() => {
     return places

@@ -83,8 +83,11 @@ export function loadJournalPosts(): Promise<JournalPost[]> {
 }
 
 // Camcorder date stamps read in a stretch of tape, with their boxes.
-export async function loadStamps(videoId: string, startS: number, endS: number): Promise<StampFrame[]> {
+export async function loadStamps(videoId: string, startS: number, endS: number, date?: string): Promise<StampFrame[]> {
   const params = new URLSearchParams({ video: videoId, start: String(Math.max(0, startS)), end: String(Math.max(startS, endS)) });
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    params.set("date", date);
+  }
   const response = await fetch(`/api/stamps?${params.toString()}`);
   const payload = await readResponse<{ frames: StampFrame[] }>(response);
   return payload.frames ?? [];

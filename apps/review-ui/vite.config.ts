@@ -122,10 +122,36 @@ async function loadJournalPosts() {
 
 type StampRow = { video: string; time: number; text: string; image: string; bbox: { x: number; y: number; width: number; height: number } };
 
+// Camcorder OSD text only: a month with digits, a bare date or year, or a
+// clock. OCR noise around a stamp ("FEB 192006*") is tolerated at the end.
 const STAMP_TEXT =
-  /^(?:(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\.?(?:\s+\d{1,2})?(?:[\s,]+\d{4,5})?|\d{1,2}[\s,]+\d{4}|\d{4,5}|\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?)$/i;
+  /^(?:(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\.?(?:\s*\d{1,2})?(?:[\s,]*\d{4,5})?|\d{1,2}[\s,]+\d{4}|\d{4,5}|\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?)\W?$/i;
+const STAMP_DATE = /(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\.?\s*(\d{1,2})[\s,]*((?:19|20)\d{2})/i;
+const MONTH_INDEX = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const VIDEO_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const ISO_DAY = /^(?:19|20)\d{2}-\d{2}-\d{2}$/;
 let stampCache: { mtimeMs: number; rows: StampRow[] } | null = null;
+
+type StampFrame = { image: string; time_s: number; date?: string; boxes: Array<{ text: string } & StampRow["bbox"]> };
+
+// "SEP" + "7 2005" on one frame → 2005-09-07. Boxes are read left to right
+// within a line, the way the camcorder printed them.
+function frameDate(frame: StampFrame): string | undefined {
+  const text = [...frame.boxes]
+    .sort((a, b) => (Math.abs(a.y - b.y) > 12 ? a.y - b.y : a.x - b.x))
+    .map((box) => box.text)
+    .join(" ");
+  const match = STAMP_DATE.exec(text);
+  if (!match) {
+    return undefined;
+  }
+  const month = MONTH_INDEX.indexOf(match[1].toUpperCase()) + 1;
+  const day = Number(match[2]);
+  if (day < 1 || day > 31) {
+    return undefined;
+  }
+  return `${match[3]}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 function loadStampRows(): StampRow[] {
   const path = join(projectDir, "visual_text_observations.jsonl");
@@ -157,18 +183,31 @@ function loadStampRows(): StampRow[] {
   return rows;
 }
 
+// GET /api/stamps?video=&start=&end=[&date=YYYY-MM-DD]
+// Stamp frames inside a stretch of tape. With `date`, the frames anywhere on
+// that tape whose stamp reads that day come first: a moment dated by a stamp
+// is often confirmed by one printed a few seconds before it starts.
 function sendStamps(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "", "http://localhost");
   const video = url.searchParams.get("video") || "";
   const start = Number(url.searchParams.get("start"));
   const end = Number(url.searchParams.get("end"));
-  if (!VIDEO_ID.test(video) || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end - start > 6 * 3600) {
+  const date = url.searchParams.get("date") || "";
+  if (
+    !VIDEO_ID.test(video) ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < start ||
+    end - start > 6 * 3600 ||
+    (date && !ISO_DAY.test(date))
+  ) {
     sendJson(res, { error: "bad_request" }, 400);
     return;
   }
-  const byImage = new Map<string, { image: string; time_s: number; boxes: Array<{ text: string } & StampRow["bbox"]> }>();
+  const byImage = new Map<string, StampFrame>();
   for (const row of loadStampRows()) {
-    if (row.video !== video || row.time < start - 1 || row.time > end + 1) {
+    if (row.video !== video) {
       continue;
     }
     const frame = byImage.get(row.image) ?? { image: row.image, time_s: row.time, boxes: [] };
@@ -179,12 +218,15 @@ function sendStamps(req: IncomingMessage, res: ServerResponse) {
   }
   // A frame counts as a stamp only if it shows a month or a clock time; bare
   // numbers on their own are altimeters, scoreboards and house numbers.
-  const anchored = /^(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b|\d:\d{2}(?::\d{2}|\s?(?:AM|PM))/i;
-  const frames = [...byImage.values()]
+  const anchored = /^(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)|\d:\d{2}(?::\d{2}|\s?(?:AM|PM))/i;
+  const stamped = [...byImage.values()]
     .filter((frame) => frame.boxes.some((box) => anchored.test(box.text)))
-    .sort((a, b) => a.time_s - b.time_s)
-    .slice(0, 4);
-  sendJson(res, { video, frames });
+    .map((frame) => ({ ...frame, date: frameDate(frame) }));
+  const inRange = (frame: StampFrame) => frame.time_s >= start - 1 && frame.time_s <= end + 1;
+  const distance = (frame: StampFrame) => (inRange(frame) ? 0 : Math.min(Math.abs(frame.time_s - start), Math.abs(frame.time_s - end)));
+  const matching = date ? stamped.filter((frame) => frame.date === date).sort((a, b) => distance(a) - distance(b)) : [];
+  const nearby = stamped.filter((frame) => inRange(frame) && !matching.includes(frame)).sort((a, b) => a.time_s - b.time_s);
+  sendJson(res, { video, frames: [...matching, ...nearby].slice(0, 4) });
 }
 
 async function loadProject() {

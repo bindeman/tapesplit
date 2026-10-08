@@ -36,6 +36,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
+import { momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
 import { MONTHS, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
@@ -53,6 +54,7 @@ import {
 import { semanticSearchProject } from "./api";
 import type {
   AlbumRecord,
+  ContinuityContextAsset,
   DateRef,
   EventEntry,
   EventRecord,
@@ -63,6 +65,7 @@ import type {
   MediaRecord,
   PersonRecord,
   PlaceContext,
+  PlaceRoleAsset,
   PlaceLocationOption,
   PlaceRecord,
   ProjectBundle,
@@ -75,6 +78,7 @@ import type {
   SemanticSectionId,
   SourceRange,
   SpeakerIdentityCandidate,
+  SpeakerSegment,
   SuggestedReviewAction,
   TaskType,
   VisualAsset,
@@ -533,12 +537,19 @@ export function App() {
 
       {openEvent && (
         <EventSheet
+          key={openEvent.id}
           event={openEvent}
+          events={bundle.data.timeline.events}
           scenes={bundle.data.timeline.scenes}
           media={bundle.data.media}
           people={bundle.data.people}
+          places={bundle.data.places}
+          speakerSegments={bundle.data.assets.speaker_segments ?? []}
+          placeRoles={bundle.data.assets.place_roles ?? []}
+          continuity={bundle.data.assets.event_continuity_contexts ?? []}
           reviewItems={[...primaryReviewItems, ...reviewBacklog]}
           onClose={() => setOpenEvent(null)}
+          onOpenEvent={setOpenEvent}
           onPlay={setActiveMoment}
           onOpenReview={(itemId) => {
             setSelectedId(itemId);
@@ -843,11 +854,13 @@ function TapeStrip({
   events,
   footage,
   onOpen,
+  currentId,
 }: {
   tape: MediaRecord;
   events: EventRecord[];
   footage: Array<[number, number]>;
   onOpen: (event: EventRecord) => void;
+  currentId?: string;
 }) {
   const duration = tape.duration_s ?? 0;
   if (duration <= 0) {
@@ -855,8 +868,15 @@ function TapeStrip({
   }
   const offset = tape.offset_s ?? 0;
   const pct = (seconds: number) => `${Math.min(100, Math.max(0, (seconds / duration) * 100)).toFixed(3)}%`;
+  const current = currentId ? events.find((event) => event.id === currentId) : undefined;
+  const currentStart = current ? (current.start_s ?? offset) - offset : 0;
+  const currentEnd = current && typeof current.end_s === "number" ? current.end_s - offset : currentStart;
   return (
-    <div className="tape-strip" role="group" aria-label={`${events.length} moments along ${formatTime(duration)} of tape`}>
+    <div
+      className={current ? "tape-strip has-current" : "tape-strip"}
+      role="group"
+      aria-label={`${events.length} moments along ${formatTime(duration)} of tape`}
+    >
       {footage.map(([start, end]) => (
         <span key={`f${start}`} className="tape-footage" style={{ left: pct(start), width: pct(end - start) }} />
       ))}
@@ -866,14 +886,22 @@ function TapeStrip({
         return (
           <button
             key={event.id}
-            className={`tape-moment kind-${eventKind(event)}`}
+            className={`tape-moment kind-${eventKind(event)}${event.id === currentId ? " is-current" : ""}`}
             style={{ left: pct(start), width: `max(3px, ${pct(end - start)})` }}
             title={`${event.title} · ${formatTime(start)}`}
             aria-label={`${event.title}, at ${formatTime(start)}`}
+            aria-current={event.id === currentId ? "true" : undefined}
             onClick={() => onOpen(event)}
           />
         );
       })}
+      {current && (
+        <span
+          className="tape-bracket"
+          aria-hidden="true"
+          style={{ left: `calc(${pct(currentStart)} - 3px)`, width: `calc(max(3px, ${pct(currentEnd - currentStart)}) + 6px)` }}
+        />
+      )}
     </div>
   );
 }
@@ -1002,25 +1030,38 @@ function EventCard({
 
 function EventSheet({
   event,
+  events,
   scenes,
   media,
   people,
+  places,
+  speakerSegments,
+  placeRoles,
+  continuity,
   reviewItems,
   onClose,
+  onOpenEvent,
   onPlay,
   onOpenReview,
 }: {
   event: EventRecord;
+  events: EventRecord[];
   scenes: SceneRecord[];
   media: MediaRecord[];
   people: PersonRecord[];
+  places: PlaceRecord[];
+  speakerSegments: SpeakerSegment[];
+  placeRoles: PlaceRoleAsset[];
+  continuity: ContinuityContextAsset[];
   reviewItems: ReviewItem[];
   onClose: () => void;
+  onOpenEvent: (event: EventRecord) => void;
   onPlay: (moment: PlayerMoment) => void;
   onOpenReview: (itemId: string) => void;
 }) {
   const hero = event.keyframe_path || event.thumbnail_path;
   const strip = useMemo(() => eventFilmstrip(event, scenes, media), [event, scenes, media]);
+  const range = useMemo(() => momentRange(event, media), [event, media]);
   const relatedItems = useMemo(
     () =>
       reviewItems.filter(
@@ -1029,11 +1070,24 @@ function EventSheet({
     [event.id, reviewItems],
   );
   const summaryText = event.reconciliation?.reconciled_summary || event.summary;
+  const filedDate = momentDate(event);
   const recordedDate = event.dates.find((date) => date.date_value && plausibleEventDate(date))?.date_value;
-  const mentionedDates = event.dates.filter((date) => !plausibleEventDate(date));
   const when = recordedDate ? formatDateValue(recordedDate) : eventYear(event);
   const tapeMoment = momentFromEvent(event, media);
   const placeLabels = uniqueStrings(event.places.slice(0, 4).map((ref) => placeDisplayLabel(ref.label)));
+  const tape = media.find((row) => row.id === event.source_video_ids[0]);
+  const tapeEvents = useMemo(
+    () => events.filter((entry) => entry.source_video_ids[0] === tape?.id),
+    [events, tape?.id],
+  );
+  const footage = useMemo(() => (tape ? footageRanges(scenes.filter((scene) => scene.source_video_id === tape.id)).get(tape.id) ?? [] : []), [scenes, tape]);
+  // People in the moment get bubbles; "Grandma" said to the camera is a mention, not a person in frame.
+  const resolvedPeople = event.people.slice(0, 10).map((ref) => ({ ref, person: findPerson(people, ref.id, ref.label) }));
+  const present = resolvedPeople.filter(({ person }) => person?.kind !== "role_candidate");
+  const mentioned = resolvedPeople.filter(({ person }) => person?.kind === "role_candidate");
+  const stamp = stampLabel(filedDate?.precision === "day" ? filedDate.date_value : undefined);
+  const playFrom = (videoId: string, startS: number, endS?: number) =>
+    onPlay({ videoId, videoLabel: tapeDisplayLabel(videoId, media), startS, endS, title: event.title });
 
   return (
     <div className="sheet-scrim" onClick={onClose}>
@@ -1046,6 +1100,11 @@ function EventSheet({
           <button className="hero-play" onClick={() => playEvent(event, media, onPlay)} aria-label="Play">
             <Play size={22} fill="currentColor" />
           </button>
+          {stamp && (
+            <span className="label-tag hero-tag" title="The date this moment is filed under">
+              {stamp}
+            </span>
+          )}
         </div>
         <div className="sheet-body">
           <header>
@@ -1072,21 +1131,11 @@ function EventSheet({
                 </span>
               )}
             </div>
-            {mentionedDates.length > 0 && (
-              <p className="historical-row">
-                {mentionedDates.slice(0, 3).map((date) => (
-                  <span key={date.id} className="historical-chip" title="Mentioned in narration — not the recording date">
-                    mentioned: {date.label || date.date_value} · historical
-                  </span>
-                ))}
-              </p>
-            )}
           </header>
 
-          {event.people.length > 0 && (
+          {(present.length > 0 || mentioned.length > 0) && (
             <div className="sheet-chips" aria-label="Who">
-              {event.people.slice(0, 8).map((ref, index) => {
-                const person = findPerson(people, ref.id, ref.label);
+              {present.map(({ ref, person }, index) => {
                 const thumb = primaryPersonThumb(person);
                 return (
                   <span key={`${ref.id}-${index}`} className="person-bubble">
@@ -1095,10 +1144,38 @@ function EventSheet({
                   </span>
                 );
               })}
+              {mentioned.map(({ ref }, index) => (
+                <span key={`m-${ref.id}-${index}`} className="mention-chip" title="Spoken to or about, not seen in this moment">
+                  {personDisplayName(ref.label).replace(/\s*\(.*\)\s*$/, "")}
+                  <small>mentioned</small>
+                </span>
+              ))}
             </div>
           )}
 
           {summaryText && <p className="sheet-summary">{summaryText}</p>}
+
+          {tape && (tape.duration_s ?? 0) > 0 && (
+            <section className="sheet-tape" aria-label="Where this moment sits on its tape">
+              <div className="sheet-tape-head">
+                <span className="label-tag">{tapeDisplayLabel(tape.id, media)}</span>
+                <span>
+                  {tape.filename} · {tapeMoment ? `${formatTime(tapeMoment.startS)} – ${formatTime(tapeMoment.endS)}` : ""} of{" "}
+                  {formatTime(tape.duration_s)}
+                </span>
+              </div>
+              <TapeStrip tape={tape} events={tapeEvents} footage={footage} onOpen={onOpenEvent} currentId={event.id} />
+            </section>
+          )}
+
+          <section className="evidence" aria-label="How TapeSplit knows">
+            <h2 className="evidence-title">How TapeSplit knows</h2>
+            <div className="evidence-grid">
+              <WhenPane event={event} range={range} />
+              <WherePane event={event} places={places} roles={placeRoles} continuity={continuity} />
+            </div>
+            <VoicesPane range={range} segments={speakerSegments} media={media} onPlayFrom={playFrom} />
+          </section>
 
           {strip.length >= 3 && (
             <section className="sheet-section">
