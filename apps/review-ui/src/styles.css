@@ -1074,15 +1074,22 @@ kbd {
   object-fit: cover;
 }
 
+/* Camcorders burn their date stamp into the same corner, so the length
+   rides on a small dark glass capsule that stays legible over it. */
 .thumb-length {
   position: absolute;
-  right: 7px;
+  right: 6px;
   bottom: 6px;
-  font-size: var(--fs-footnote);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: 15px;
   font-variant-numeric: tabular-nums;
   color: #fff;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
 
@@ -1191,12 +1198,16 @@ kbd {
 
 /* ----------------------------------------------------------------- sheets */
 
+/* The library behind a sheet goes soft: focus stays on the sheet, and no
+   bystander in a background tile is ever identifiable. */
 .sheet-scrim,
 .drawer-scrim {
   position: fixed;
   inset: 0;
   z-index: 60;
   background: var(--scrim);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1492,13 +1503,18 @@ kbd {
 .frame span {
   position: absolute;
   bottom: 4px;
-  right: 5px;
+  right: 4px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: #fff;
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: 15px;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .quiet-review {
@@ -3632,13 +3648,16 @@ kbd {
 
 .seen-tile small {
   position: absolute;
-  right: 5px;
+  right: 4px;
   bottom: 4px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.52);
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: 15px;
   color: #fff;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
 }
 
 .search-overlay {
