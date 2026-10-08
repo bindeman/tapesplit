@@ -106,7 +106,7 @@
     for (let y = y0; y <= y1; y += 1) html += `<span class="yr" style="left:${x(y)}%">${y}</span>`;
     html += `<span class="pt" style="left:${x(2005 + 249 / 365)}%" data-label="Sep 7, 2005"></span>`;
     winBar.innerHTML = html;
-    $("#window-text").textContent = `Tape 18's own date stamps and spoken dates put it between ${H.window.from} and ${H.window.to}. A date outside a tape's window is flagged instead of trusted.`;
+    $("#window-text").textContent = `Tape 18's own date stamps and spoken dates put it between ${H.window.from} and ${H.window.to}. A date outside a tape's window is treated as history, not as the day it was filmed.`;
   }
   const ignored = $("#ignored");
   if (ignored) {
@@ -115,7 +115,7 @@
   const st = H.stats;
   const whenStat = $("#when-stat");
   if (whenStat) {
-    whenStat.innerHTML = `Across the archive, <b>${st.dated_day} of ${st.moments}</b> moments got an exact day: <b>${st.dated_by_stamp}</b> from a date stamp and <b>${st.dated_by_speech}</b> from a date someone said or wrote (${st.dated_by_both} had both). The rest borrow a month or year from the moments around them.`;
+    whenStat.innerHTML = `Across the archive, <b>${st.dated_day} of ${st.moments}</b> moments got an exact day: <b>${st.dated_by_stamp}</b> confirmed by a date stamp Apple Vision read, and <b>${st.dated_by_speech}</b> from what the video model saw or heard in the moment (${st.dated_by_both} had both). The rest borrow a month or year from the moments around them.`;
   }
 
   // ------------------------------------------------------------ where
@@ -408,7 +408,7 @@
       for (const [iso, kind] of t.dates) {
         const [y, m, d] = iso.split("-").map(Number);
         const frac = (new Date(Date.UTC(y, m - 1, d)) - Date.UTC(y, 0, 1)) / (365.25 * 864e5);
-        html += `<circle class="d ${kind}" tabindex="0" style="--i:${k}" cx="${X(y + frac).toFixed(1)}" cy="${cy}" r="${kind === "stamp" ? 4.6 : 4}" data-tip="Tape ${t.tape} · ${nice(iso)}|${kind === "stamp" ? "Camcorder date stamp" : "Said or written on tape"}"><title>Tape ${t.tape}, ${nice(iso)}: ${kind === "stamp" ? "camcorder date stamp" : "said or written on tape"}</title></circle>`;
+        html += `<circle class="d ${kind}" tabindex="0" style="--i:${k}" cx="${X(y + frac).toFixed(1)}" cy="${cy}" r="${kind === "stamp" ? 4.6 : 4}" data-tip="Tape ${t.tape} · ${nice(iso)}|${kind === "stamp" ? "Confirmed by an on-screen date stamp" : "Seen or heard in the moment"}"><title>Tape ${t.tape}, ${nice(iso)}: ${kind === "stamp" ? "confirmed by an on-screen date stamp" : "seen or heard in the moment"}</title></circle>`;
         k += 1;
       }
       html += `</g>`;
@@ -440,8 +440,8 @@
     watch(box);
     const facts = [
       [`${st.dated_day}`, `of ${st.moments} moments dated to the exact day`],
-      [`${st.dated_by_stamp}`, "dated by the camcorder's own date stamp"],
-      [`${st.dated_by_speech}`, "dated by something said or written on screen"],
+      [`${st.dated_by_stamp}`, "confirmed by a date stamp that Apple Vision read"],
+      [`${st.dated_by_speech}`, "dated from what the video model saw or heard"],
       ["2026", "the date every file claims. Ignored: that's when they were digitized"],
     ];
     $("#chrono-facts").innerHTML = facts.map(([b, s]) => `<div class="fact reveal"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join("");

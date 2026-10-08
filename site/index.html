@@ -252,7 +252,7 @@
         <header class="ch-head">
           <span class="dymo dymo-red">When</span>
           <h3 id="when-title">It reads the clock in the corner.</h3>
-          <p>For a few seconds after you press record, a camcorder burns the date into the picture. TapeSplit reads those stamps with Apple Vision. It also listens for dates said out loud and reads dates written in the frame. A date only counts if it fits the rest of the tape.</p>
+          <p>For a few seconds after you press record, a camcorder burns the date into the picture. TapeSplit reads those stamps twice: Apple Vision reads the text in the frame, and the video model reads it while it watches. It also catches dates said out loud or written on screen, and a date only counts if it fits the tape's other dates.</p>
         </header>
         <div class="when-grid">
           <figure class="polaroid reveal" style="--r:-2.2deg;--tc:var(--washi-yellow)">
@@ -265,9 +265,10 @@
           </figure>
           <div class="when-read reveal">
             <div class="glass read-card">
-              <span class="src">Date stamp · Apple Vision</span>
-              <span class="ocr-text" id="when-stamp-text">SEP · 7 2005</span>
+              <span class="src">Date stamp · read by the video model</span>
+              <span class="ocr-text" id="when-stamp-text">SEP 7 2005</span>
               <strong>September 7, 2005</strong>
+              <span class="gloss">Apple Vision found it too, in two pieces: “SEP” and “7 2005”.</span>
             </div>
             <div class="glass read-card">
               <span class="src">Whiteboard · cited by the video model</span>
@@ -353,7 +354,7 @@
           <div class="glass names-card reveal">
             <span class="src">One person, eight spellings</span>
             <div class="names" id="names"></div>
-            <p>Mom calls him Филя; his teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they stay mentions, not people in the scene.</p>
+            <p>Mom calls him Филя; his teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
           </div>
         </div>
       </article>
@@ -387,12 +388,12 @@
         <p>Tapes get reused, rewound and recorded over. Tape 3 jumps from 2003 to 2006, and Tape 6 covers four years. TapeSplit dates each moment on its own, then lays the whole archive out in order.</p>
       </div>
       <div class="chrono-chart reveal" id="chrono-chart">
-        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid for a camcorder date stamp, hollow for a date said or written on screen.</desc></svg>
+        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid where an on-screen date stamp read by Apple Vision confirms the date, hollow where the date came from what was seen or heard in the moment.</desc></svg>
         <div class="chrono-tip" id="chrono-tip" hidden></div>
       </div>
       <div class="chrono-legend">
-        <span><i class="lg-stamp"></i>Dated by the camcorder stamp</span>
-        <span><i class="lg-said"></i>Dated by something said or written</span>
+        <span><i class="lg-stamp"></i>Confirmed by an on-screen date stamp</span>
+        <span><i class="lg-said"></i>Seen or heard in the moment</span>
         <span><i class="lg-window"></i>Years the tape could cover</span>
         <span><i class="lg-none"></i>No direct evidence yet</span>
       </div>
@@ -437,7 +438,7 @@
         <div class="tile reveal">
           <div class="journal-art" id="journal-art" lang="ru" aria-hidden="true"></div>
           <h3>The Journal writes the day down.</h3>
-          <p>TapeSplit drafted this entry for September 7, 2005 in Russian, the language on the tape. Every sentence links to the clip it came from.</p>
+          <p>TapeSplit drafted this entry for September 7, 2005 in Russian, the language on the tape. Every paragraph cites the clips it came from.</p>
         </div>
         <div class="tile tile-wide reveal">
           <div class="tile-text">

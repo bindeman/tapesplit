@@ -48,7 +48,7 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
   <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above three polaroids from it: a Moscow courtyard stamped SEP 1 2005, a lawn in Eugene stamped SEP 7 2005, and an empty room stamped FEB 17 2006" width="100%">
 </p>
 
-**When.** For a few seconds after you press record, a camcorder burns the date into the picture. Apple Vision reads it, and the teacher's whiteboard says the same day. Dates that don't describe the moment are left out: a file's own date (the day it was digitized) and years mentioned in passing.
+**When.** For a few seconds after you press record, a camcorder burns the date into the picture. The video model read this one as SEP 7 2005 (Apple Vision found it too, in two pieces), and the teacher's whiteboard says the same day. Dates that don't describe the moment are left out: a file's own date (the day it was digitized) and years mentioned in passing.
 
 <p align="center">
   <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates TapeSplit took from them" width="100%">
@@ -76,10 +76,10 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/media/readme/timeline-dark.webp">
-  <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid for date stamps and hollow for dates said or written; Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
+  <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid where an on-screen date stamp confirms the date and hollow where it came from what was seen or heard; Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
 </picture>
 
-Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. TapeSplit dates each moment on its own. 99 of the 279 got an exact day, 29 from a camcorder stamp and 75 from a date someone said or wrote; the rest borrow a month or year from the moments around them.
+Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. TapeSplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
 
 <sub>School, street and teacher names are changed. The English under the Russian lines was added for this page, except the Journal's, which is TapeSplit's own.</sub>
 
