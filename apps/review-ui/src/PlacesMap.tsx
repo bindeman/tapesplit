@@ -83,6 +83,61 @@ function buildPaths(topo: unknown, objectName: string): string[] {
     .filter(Boolean);
 }
 
+// Countries and states are built once per page; the Places view and every
+// moment sheet's mini map draw from the same paths.
+let sharedPaths: { world: string[]; states: string[] } | null = null;
+function mapPaths() {
+  if (!sharedPaths) {
+    sharedPaths = { world: buildPaths(worldTopo, "countries"), states: buildPaths(usTopo, "states") };
+  }
+  return sharedPaths;
+}
+
+export interface MiniMapPin {
+  lat: number;
+  lng: number;
+  label: string;
+  approximate?: boolean;
+}
+
+// A small locator map for the moment sheet: the pins, framed with enough of
+// the coastline around them to tell where on earth this was.
+export function MiniMap({ pins, label }: { pins: MiniMapPin[]; label: string }) {
+  const { world, states } = mapPaths();
+  const points = pins.map((pin) => ({ pin, ...project(pin.lat, pin.lng) }));
+  if (!points.length) {
+    return null;
+  }
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const width = Math.max(48, (Math.max(...xs) - Math.min(...xs)) * 1.8, (Math.max(...ys) - Math.min(...ys)) * 1.8 * 1.6);
+  const height = width / 1.6;
+  const x0 = Math.min(Math.max(cx - width / 2, 0), VIEW_W - width);
+  const y0 = Math.min(Math.max(cy - height / 2, 0), VIEW_H - height);
+  const r = width * 0.028;
+  return (
+    <svg className="mini-map" viewBox={`${x0.toFixed(2)} ${y0.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)}`} role="img" aria-label={label}>
+      <rect x={x0} y={y0} width={width} height={height} className="mini-ocean" />
+      {world.map((d, index) => (
+        <path key={`w${index}`} d={d} className="mini-land" />
+      ))}
+      {width < 160 &&
+        states.map((d, index) => (
+          <path key={`s${index}`} d={d} className="mini-border" />
+        ))}
+      {points.map(({ pin, x, y }) => (
+        <g key={`${pin.label}-${x.toFixed(1)}`} transform={`translate(${x.toFixed(2)} ${y.toFixed(2)})`}>
+          {pin.approximate && <circle r={r * 2.6} className="mini-halo" />}
+          <circle r={r} className={pin.approximate ? "mini-pin approx" : "mini-pin"} />
+          <title>{pin.label}</title>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 interface MappedPlace {
   place: PlaceRecord;
   point: XY;
@@ -125,8 +180,7 @@ export function PlacesMapView({
   const [mode, setMode] = useState<"map" | "list">("map");
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
 
-  const worldPaths = useMemo(() => buildPaths(worldTopo, "countries"), []);
-  const statePaths = useMemo(() => buildPaths(usTopo, "states"), []);
+  const { world: worldPaths, states: statePaths } = mapPaths();
 
   const mapped = useMemo<MappedPlace[]>(() => {
     return places
@@ -391,7 +445,7 @@ export function PlacesMapView({
                 return (
                   <button
                     key={cluster.key}
-                    className={`map-pin${single && primary.approximate ? " approximate" : ""}${single ? "" : " cluster"}`}
+                    className={`map-pin${single && primary.approximate ? " approximate" : ""}${single ? "" : " cluster"}${primary.cover ? "" : " no-cover"}`}
                     style={{ transform: `translate(${screen.x}px, ${screen.y}px)` }}
                     title={
                       single
@@ -408,7 +462,7 @@ export function PlacesMapView({
                     }}
                   >
                     <span className="pin-frame">
-                      {primary.cover ? <img src={assetUrl(primary.cover)} alt="" loading="lazy" /> : <MapPin size={14} />}
+                      {primary.cover ? <img src={assetUrl(primary.cover)} alt="" loading="lazy" /> : null}
                     </span>
                     {(cluster.count > 1 || !single) && <em>{single ? cluster.count : cluster.places.length}</em>}
                   </button>
@@ -461,6 +515,53 @@ export function PlacesMapView({
           onClose={() => onOpenPlace(null)}
           onPlay={onPlay}
         />
+      )}
+    </section>
+  );
+}
+
+const BASIS_LABELS: Record<string, string> = {
+  "direct location mention": "Named in a moment",
+  explicit_location_anchor: "Named in a moment",
+  "visual/model place clue": "Seen on screen",
+  visible_place: "Seen on screen",
+  "visual scene type": "What the scene looks like",
+  generic_scene_type: "What the scene looks like",
+  "administrative context": "The city or region around it",
+  administrative_context: "The city or region around it",
+};
+
+// How a place got onto the map: what named it, how sure the geocoder was,
+// and where that puts it.
+function PlaceEvidence({ place, label }: { place: PlaceRecord; label: string }) {
+  const geo = place.geocode;
+  const reasons = [...new Set((place.evidence_basis?.basis ?? []).map((basis) => BASIS_LABELS[basis]).filter(Boolean))];
+  const clue = (place.evidence_basis?.evidence_texts ?? [])
+    .map((text) => text.trim().replace(/^\d{1,2}:\d{2}\s*-\s*/, ""))
+    .filter((text) => text.length <= 140 && text.split(/\s+/).length >= 3)
+    .sort((a, b) => a.length - b.length)[0];
+  const confident = place.coordinates && (geo?.confidence ?? 0) >= 0.6;
+  if (!reasons.length && !clue && !geo) {
+    return null;
+  }
+  return (
+    <section className="ev-card ev-where place-evidence" aria-label="How this place was found">
+      <p className="ev-source">
+        <MapPin size={13} />
+        Where · how it was placed
+      </p>
+      {reasons.length > 0 && <p className="ev-big">{reasons.join(" · ")}</p>}
+      {clue && <q className="ev-quote">{clue}</q>}
+      {geo && (
+        <p className="ev-basis">
+          {geo.formatted_address ? `Geocoded to ${geo.formatted_address}` : "Geocoded"}
+          {typeof geo.confidence === "number" ? `, ${Math.round(geo.confidence * 100)}% sure` : ""}
+          {geo.approximate ? ", approximately" : ""}.
+          {!confident && " Too uncertain to pin on the map yet."}
+        </p>
+      )}
+      {confident && place.coordinates && (
+        <MiniMap pins={[{ lat: place.coordinates.lat, lng: place.coordinates.lng, label, approximate: Boolean(geo?.approximate) }]} label={`Map of ${label}`} />
       )}
     </section>
   );
@@ -522,6 +623,7 @@ function PlaceSheet({
               </div>
             )}
           </header>
+          <PlaceEvidence place={place} label={helpers.placeDisplayLabel(place.display_label)} />
           <div className="place-sheet-events">
             {placeEvents.map((event) => (
               <button key={event.id} className="place-event" onClick={() => onPlay(event)}>

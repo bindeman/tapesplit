@@ -1,0 +1,190 @@
+// Pure formatting helpers shared by the views and the moment sheet.
+import type { MediaRecord } from "./types";
+
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "2002-08-22" → "Aug 22, 2002"; partial dates keep their precision.
+export function formatDateValue(value: string): string {
+  const match = /^((?:19|20)\d{2})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(value.trim());
+  if (!match) {
+    return value;
+  }
+  const [, year, month, day] = match;
+  if (month && day) {
+    return `${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`;
+  }
+  if (month) {
+    return `${MONTHS[Number(month) - 1]} ${year}`;
+  }
+  return year;
+}
+
+// Day labels carry every constituent date ("MAY 10 2002, MAY 11 2002, ...").
+// Dates themselves may contain commas ("March 22, 2006"), so split only at
+// commas that start a new month token.
+export const MONTH_BOUNDARY = /,\s*(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
+
+// A date label read as one span the way a camcorder stamp prints it:
+// "MAR 22–25 2006". Null when no part of the label is a full date.
+export function stampSpanLabel(label: string): string | null {
+  const parse = (text: string) => {
+    const match = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i.exec(text);
+    if (!match) return null;
+    const month = MONTHS.findIndex((name) => name.toLowerCase() === match[1].toLowerCase());
+    return { year: Number(match[3]), month, day: Number(match[2]) };
+  };
+  const dates = label
+    .split(MONTH_BOUNDARY)
+    .map((part) => parse(part.trim()))
+    .filter((date): date is { year: number; month: number; day: number } => Boolean(date));
+  if (!dates.length) {
+    return null;
+  }
+  dates.sort((a, b) => a.year - b.year || a.month - b.month || a.day - b.day);
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const mon = (date: { month: number }) => MONTHS[date.month].toUpperCase();
+  if (first.year === last.year && first.month === last.month) {
+    return first.day === last.day ? `${mon(first)} ${first.day} ${first.year}` : `${mon(first)} ${first.day}–${last.day} ${first.year}`;
+  }
+  if (first.year === last.year) {
+    return `${mon(first)} ${first.day} – ${mon(last)} ${last.day} ${first.year}`;
+  }
+  return `${mon(first)} ${first.year} – ${mon(last)} ${last.year}`;
+}
+
+// One vocabulary for naming tapes everywhere: the library's roll numbers,
+// never raw video ids.
+export function tapeDisplayLabel(videoId: string, media: MediaRecord[]): string {
+  const index = media.findIndex((row) => row.id === videoId);
+  return index >= 0 ? `Tape ${index + 1}` : "Loose footage";
+}
+
+export function humanizeToken(value: string): string {
+  const text = value.replace(/_/g, " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+// Pipeline labels hold every alias at once ("Filia / Filip / Филя"); a person
+// deserves one confident name, with the rest demoted to a byline.
+export function personDisplayName(label: string): string {
+  const parts = label
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    return label.trim() || label;
+  }
+  const latin = parts.filter((part) => /^[\u0000-\u024f]+$/.test(part));
+  const pool = latin.length ? latin : parts;
+  return pool.reduce((best, part) => (part.length < best.length ? part : best));
+}
+
+// Diarizer ids ("AZ_SPEAKER_01@video_000012", "AZ_P04_C") name a voice the
+// archive hasn't met yet; on screen they read as unnamed voices, and the raw
+// id stays a hover away.
+export function humanVoiceLabel(raw: string | undefined, media: MediaRecord[]): string | null {
+  const label = (raw ?? "").trim();
+  const tapeVoice = /^AZ_SPEAKER_(\d+)@(video_\d+)$/.exec(label);
+  if (tapeVoice) {
+    const letter = String.fromCharCode(65 + (Number(tapeVoice[1]) % 26));
+    return `Unnamed voice ${letter} · ${tapeDisplayLabel(tapeVoice[2], media)}`;
+  }
+  const partVoice = /^AZ_P\d+_([A-Z])$/.exec(label);
+  if (partVoice) {
+    return `Unnamed voice ${partVoice[1]}`;
+  }
+  return null;
+}
+
+// Regions that must never share one scope: two of these in a parenthetical
+// means the pipeline is asserting a contradiction, so we suppress it.
+export const DISJOINT_REGIONS = [
+  "oregon",
+  "wisconsin",
+  "idaho",
+  "hawaii",
+  "alaska",
+  "california",
+  "florida",
+  "washington",
+  "switzerland",
+  "russia",
+];
+
+// Context groups named after tapes are honest about being unplaced; named
+// contexts drop the trailing machinery word.
+export function contextDisplayLabel(raw: string): string {
+  const label = raw.trim();
+  if (/^video_\d+/i.test(label)) {
+    const year = /(19|20)\d{2}(?:\s*[–-]\s*(?:19|20)\d{2})?/.exec(label)?.[0];
+    return year ? `${year} · unplaced` : "Unplaced";
+  }
+  return label.replace(/\s*context$/i, "");
+}
+
+// Machine scopes ("video_000003 context") and contradictory compound scopes
+// ("Hawaii, Moscow context") assert things the archive has not earned; only a
+// scope that reads as one coherent place survives to the screen.
+// Generic labels arrive lowercase from the pipeline ("home", "zoo"); on
+// screen they read as proper nouns.
+export function titleCasePlace(label: string): string {
+  if (!label || label !== label.toLowerCase()) {
+    return label;
+  }
+  return label.replace(/(^|[\s-])(\p{Ll})/gu, (full, sep, ch) => sep + ch.toUpperCase());
+}
+
+export function placeDisplayLabel(raw?: string): string {
+  if (!raw) {
+    return "";
+  }
+  const trimmed = raw.trim();
+  const match = /^(.*?)\s*\(([^()]*)\)$/.exec(trimmed);
+  if (!match) {
+    return titleCasePlace(trimmed);
+  }
+  const label = titleCasePlace(match[1].trim() || trimmed);
+  let scope = match[2].trim();
+  if (!scope || /video_\d+/i.test(scope)) {
+    return label;
+  }
+  if (/^near\s/i.test(scope)) {
+    return `${label} · ${scope}`;
+  }
+  scope = scope.replace(/\s*context$/i, "").trim();
+  const parts = scope
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    // Years and placeholder words are provenance, not geography — never
+    // part of a place name on screen ("home (2006, unplaced)" → "Home").
+    .filter((part) => !/^(19|20)\d{2}$/.test(part) && !/^(unplaced|unknown|unresolved)$/i.test(part));
+  if (!parts.length) {
+    return label;
+  }
+  const regionHits = new Set(
+    parts.map((part) => part.toLowerCase()).filter((part) => DISJOINT_REGIONS.includes(part)),
+  );
+  const leadsWithRegion = DISJOINT_REGIONS.includes(parts[0]?.toLowerCase() ?? "");
+  if (regionHits.size > 1 || parts.length > 2 || (leadsWithRegion && parts.length > 1)) {
+    return label;
+  }
+  return `${label} · ${parts.join(", ")}`;
+}
+
+export function uniqueStrings(values: string[]) {
+  return values.filter((value, index) => value && values.indexOf(value) === index);
+}
+
+export function formatTime(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0:00";
+  const total = Math.max(0, Math.floor(value));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}

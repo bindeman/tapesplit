@@ -1,4 +1,4 @@
-import type { JournalPost, ProjectBundle, ReviewAction, SearchResponse, SemanticResponse } from "./types";
+import type { JournalPost, ProjectBundle, ReviewAction, SearchResponse, SemanticResponse, StampFrame } from "./types";
 
 export async function loadProject(): Promise<ProjectBundle> {
   const response = await fetch("/api/project");
@@ -65,8 +65,30 @@ async function readResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-export async function loadJournalPosts(): Promise<JournalPost[]> {
-  const response = await fetch("/api/journal");
-  const payload = await readResponse<{ posts: JournalPost[] }>(response);
-  return payload.posts ?? [];
+// One fetch of the Journal per page load: the Journal view and the moment
+// sheet's translated quotes share it.
+let journalRequest: Promise<JournalPost[]> | null = null;
+
+export function loadJournalPosts(): Promise<JournalPost[]> {
+  if (!journalRequest) {
+    journalRequest = fetch("/api/journal")
+      .then((response) => readResponse<{ posts: JournalPost[] }>(response))
+      .then((payload) => payload.posts ?? [])
+      .catch((error) => {
+        journalRequest = null;
+        throw error;
+      });
+  }
+  return journalRequest;
+}
+
+// Camcorder date stamps read in a stretch of tape, with their boxes.
+export async function loadStamps(videoId: string, startS: number, endS: number, date?: string): Promise<StampFrame[]> {
+  const params = new URLSearchParams({ video: videoId, start: String(Math.max(0, startS)), end: String(Math.max(startS, endS)) });
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    params.set("date", date);
+  }
+  const response = await fetch(`/api/stamps?${params.toString()}`);
+  const payload = await readResponse<{ frames: StampFrame[] }>(response);
+  return payload.frames ?? [];
 }

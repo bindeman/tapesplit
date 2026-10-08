@@ -34,8 +34,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
+import { LanguagePills, lineLanguage, momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
+import { MONTHS, MONTH_BOUNDARY, stampSpanLabel, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
   applyReviewActions,
@@ -52,6 +54,7 @@ import {
 import { semanticSearchProject } from "./api";
 import type {
   AlbumRecord,
+  ContinuityContextAsset,
   DateRef,
   EventEntry,
   EventRecord,
@@ -62,6 +65,7 @@ import type {
   MediaRecord,
   PersonRecord,
   PlaceContext,
+  PlaceRoleAsset,
   PlaceLocationOption,
   PlaceRecord,
   ProjectBundle,
@@ -74,6 +78,7 @@ import type {
   SemanticSectionId,
   SourceRange,
   SpeakerIdentityCandidate,
+  SpeakerSegment,
   SuggestedReviewAction,
   TaskType,
   VisualAsset,
@@ -532,12 +537,19 @@ export function App() {
 
       {openEvent && (
         <EventSheet
+          key={openEvent.id}
           event={openEvent}
+          events={bundle.data.timeline.events}
           scenes={bundle.data.timeline.scenes}
           media={bundle.data.media}
           people={bundle.data.people}
+          places={bundle.data.places}
+          speakerSegments={bundle.data.assets.speaker_segments ?? []}
+          placeRoles={bundle.data.assets.place_roles ?? []}
+          continuity={bundle.data.assets.event_continuity_contexts ?? []}
           reviewItems={[...primaryReviewItems, ...reviewBacklog]}
           onClose={() => setOpenEvent(null)}
+          onOpenEvent={setOpenEvent}
           onPlay={setActiveMoment}
           onOpenReview={(itemId) => {
             setSelectedId(itemId);
@@ -742,17 +754,26 @@ function LibraryView({
             <div className="memories-row">
               {(() => {
                 const usedCovers = new Set<string>();
-                return memories.map((album) => {
+                return memories.map((album, index) => {
                   const cover = albumCoverPath(album, eventsById, usedCovers);
                   if (cover) {
                     usedCovers.add(cover);
                   }
                   return (
-                    <button key={album.id} className="memory-card" onClick={() => onOpenAlbum(album)}>
-                      {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="card-fallback"><CalendarDays size={26} /></div>}
-                      <span className="memory-shade">
+                    <button
+                      key={album.id}
+                      className="memory-card"
+                      style={{ "--tilt": MEMORY_TILTS[index % MEMORY_TILTS.length], "--washi": MEMORY_WASHI[index % MEMORY_WASHI.length] } as CSSProperties}
+                      onClick={() => onOpenAlbum(album)}
+                    >
+                      <span className="memory-washi" aria-hidden="true" />
+                      <span className="memory-photo">
+                        {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <span className="card-fallback"><CalendarDays size={26} /></span>}
+                        <span className="label-tag memory-tag">{memoryTagLabel(album)}</span>
+                      </span>
+                      <span className="memory-caption">
                         <strong>{album.title}</strong>
-                        <small>{memoryDateLabel(album)}</small>
+                        <small>{momentCount(album.events?.length ?? 0)}</small>
                       </span>
                     </button>
                   );
@@ -842,11 +863,13 @@ function TapeStrip({
   events,
   footage,
   onOpen,
+  currentId,
 }: {
   tape: MediaRecord;
   events: EventRecord[];
   footage: Array<[number, number]>;
   onOpen: (event: EventRecord) => void;
+  currentId?: string;
 }) {
   const duration = tape.duration_s ?? 0;
   if (duration <= 0) {
@@ -854,8 +877,15 @@ function TapeStrip({
   }
   const offset = tape.offset_s ?? 0;
   const pct = (seconds: number) => `${Math.min(100, Math.max(0, (seconds / duration) * 100)).toFixed(3)}%`;
+  const current = currentId ? events.find((event) => event.id === currentId) : undefined;
+  const currentStart = current ? (current.start_s ?? offset) - offset : 0;
+  const currentEnd = current && typeof current.end_s === "number" ? current.end_s - offset : currentStart;
   return (
-    <div className="tape-strip" role="group" aria-label={`${events.length} moments along ${formatTime(duration)} of tape`}>
+    <div
+      className={current ? "tape-strip has-current" : "tape-strip"}
+      role="group"
+      aria-label={`${events.length} moments along ${formatTime(duration)} of tape`}
+    >
       {footage.map(([start, end]) => (
         <span key={`f${start}`} className="tape-footage" style={{ left: pct(start), width: pct(end - start) }} />
       ))}
@@ -865,14 +895,22 @@ function TapeStrip({
         return (
           <button
             key={event.id}
-            className={`tape-moment kind-${eventKind(event)}`}
+            className={`tape-moment kind-${eventKind(event)}${event.id === currentId ? " is-current" : ""}`}
             style={{ left: pct(start), width: `max(3px, ${pct(end - start)})` }}
             title={`${event.title} · ${formatTime(start)}`}
             aria-label={`${event.title}, at ${formatTime(start)}`}
+            aria-current={event.id === currentId ? "true" : undefined}
             onClick={() => onOpen(event)}
           />
         );
       })}
+      {current && (
+        <span
+          className="tape-bracket"
+          aria-hidden="true"
+          style={{ left: `calc(${pct(currentStart)} - 3px)`, width: `calc(max(3px, ${pct(currentEnd - currentStart)}) + 6px)` }}
+        />
+      )}
     </div>
   );
 }
@@ -895,8 +933,6 @@ function eventKind(event: EventRecord): string {
   if (["holiday", "birthday", "religious", "cultural", "social"].includes(type)) return "celebration";
   return "other";
 }
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // "Mar – May 2006", "1998 – 2001": the span a tape's datable moments cover.
 function tapeDateSpan(events: EventRecord[]): string {
@@ -924,22 +960,6 @@ function tapeDateSpan(events: EventRecord[]): string {
     return `${MONTHS[first.month - 1]} – ${MONTHS[last.month - 1]} ${first.year}`;
   }
   return first.month ? `${MONTHS[first.month - 1]} ${first.year}` : String(first.year);
-}
-
-// "2002-08-22" → "Aug 22, 2002"; partial dates keep their precision.
-function formatDateValue(value: string): string {
-  const match = /^((?:19|20)\d{2})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(value.trim());
-  if (!match) {
-    return value;
-  }
-  const [, year, month, day] = match;
-  if (month && day) {
-    return `${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`;
-  }
-  if (month) {
-    return `${MONTHS[Number(month) - 1]} ${year}`;
-  }
-  return year;
 }
 
 function EventCard({
@@ -1019,25 +1039,38 @@ function EventCard({
 
 function EventSheet({
   event,
+  events,
   scenes,
   media,
   people,
+  places,
+  speakerSegments,
+  placeRoles,
+  continuity,
   reviewItems,
   onClose,
+  onOpenEvent,
   onPlay,
   onOpenReview,
 }: {
   event: EventRecord;
+  events: EventRecord[];
   scenes: SceneRecord[];
   media: MediaRecord[];
   people: PersonRecord[];
+  places: PlaceRecord[];
+  speakerSegments: SpeakerSegment[];
+  placeRoles: PlaceRoleAsset[];
+  continuity: ContinuityContextAsset[];
   reviewItems: ReviewItem[];
   onClose: () => void;
+  onOpenEvent: (event: EventRecord) => void;
   onPlay: (moment: PlayerMoment) => void;
   onOpenReview: (itemId: string) => void;
 }) {
   const hero = event.keyframe_path || event.thumbnail_path;
   const strip = useMemo(() => eventFilmstrip(event, scenes, media), [event, scenes, media]);
+  const range = useMemo(() => momentRange(event, media), [event, media]);
   const relatedItems = useMemo(
     () =>
       reviewItems.filter(
@@ -1046,11 +1079,24 @@ function EventSheet({
     [event.id, reviewItems],
   );
   const summaryText = event.reconciliation?.reconciled_summary || event.summary;
+  const filedDate = momentDate(event);
   const recordedDate = event.dates.find((date) => date.date_value && plausibleEventDate(date))?.date_value;
-  const mentionedDates = event.dates.filter((date) => !plausibleEventDate(date));
   const when = recordedDate ? formatDateValue(recordedDate) : eventYear(event);
   const tapeMoment = momentFromEvent(event, media);
   const placeLabels = uniqueStrings(event.places.slice(0, 4).map((ref) => placeDisplayLabel(ref.label)));
+  const tape = media.find((row) => row.id === event.source_video_ids[0]);
+  const tapeEvents = useMemo(
+    () => events.filter((entry) => entry.source_video_ids[0] === tape?.id),
+    [events, tape?.id],
+  );
+  const footage = useMemo(() => (tape ? footageRanges(scenes.filter((scene) => scene.source_video_id === tape.id)).get(tape.id) ?? [] : []), [scenes, tape]);
+  // People in the moment get bubbles; "Grandma" said to the camera is a mention, not a person in frame.
+  const resolvedPeople = event.people.slice(0, 10).map((ref) => ({ ref, person: findPerson(people, ref.id, ref.label) }));
+  const present = resolvedPeople.filter(({ person }) => person?.kind !== "role_candidate");
+  const mentioned = resolvedPeople.filter(({ person }) => person?.kind === "role_candidate");
+  const stamp = stampLabel(filedDate?.precision === "day" ? filedDate.date_value : undefined);
+  const playFrom = (videoId: string, startS: number, endS?: number) =>
+    onPlay({ videoId, videoLabel: tapeDisplayLabel(videoId, media), startS, endS, title: event.title });
 
   return (
     <div className="sheet-scrim" onClick={onClose}>
@@ -1063,6 +1109,11 @@ function EventSheet({
           <button className="hero-play" onClick={() => playEvent(event, media, onPlay)} aria-label="Play">
             <Play size={22} fill="currentColor" />
           </button>
+          {stamp && (
+            <span className="label-tag hero-tag" title="The date this moment is filed under">
+              {stamp}
+            </span>
+          )}
         </div>
         <div className="sheet-body">
           <header>
@@ -1089,21 +1140,11 @@ function EventSheet({
                 </span>
               )}
             </div>
-            {mentionedDates.length > 0 && (
-              <p className="historical-row">
-                {mentionedDates.slice(0, 3).map((date) => (
-                  <span key={date.id} className="historical-chip" title="Mentioned in narration — not the recording date">
-                    mentioned: {date.label || date.date_value} · historical
-                  </span>
-                ))}
-              </p>
-            )}
           </header>
 
-          {event.people.length > 0 && (
+          {(present.length > 0 || mentioned.length > 0) && (
             <div className="sheet-chips" aria-label="Who">
-              {event.people.slice(0, 8).map((ref, index) => {
-                const person = findPerson(people, ref.id, ref.label);
+              {present.map(({ ref, person }, index) => {
                 const thumb = primaryPersonThumb(person);
                 return (
                   <span key={`${ref.id}-${index}`} className="person-bubble">
@@ -1112,10 +1153,38 @@ function EventSheet({
                   </span>
                 );
               })}
+              {mentioned.map(({ ref }, index) => (
+                <span key={`m-${ref.id}-${index}`} className="mention-chip" title="Spoken to or about, not seen in this moment">
+                  {personDisplayName(ref.label).replace(/\s*\(.*\)\s*$/, "")}
+                  <small>mentioned</small>
+                </span>
+              ))}
             </div>
           )}
 
           {summaryText && <p className="sheet-summary">{summaryText}</p>}
+
+          {tape && (tape.duration_s ?? 0) > 0 && (
+            <section className="sheet-tape" aria-label="Where this moment sits on its tape">
+              <div className="sheet-tape-head">
+                <span className="label-tag">{tapeDisplayLabel(tape.id, media)}</span>
+                <span>
+                  {tape.filename} · {tapeMoment ? `${formatTime(tapeMoment.startS)} – ${formatTime(tapeMoment.endS)}` : ""} of{" "}
+                  {formatTime(tape.duration_s)}
+                </span>
+              </div>
+              <TapeStrip tape={tape} events={tapeEvents} footage={footage} onOpen={onOpenEvent} currentId={event.id} />
+            </section>
+          )}
+
+          <section className="knows" aria-label="How TapeSplit knows">
+            <h2 className="knows-title">How TapeSplit knows</h2>
+            <div className="knows-grid">
+              <WhenPane event={event} range={range} />
+              <WherePane event={event} places={places} roles={placeRoles} continuity={continuity} />
+            </div>
+            <VoicesPane range={range} segments={speakerSegments} media={media} onPlayFrom={playFrom} />
+          </section>
 
           {strip.length >= 3 && (
             <section className="sheet-section">
@@ -1566,13 +1635,6 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
   });
 }
 
-// One vocabulary for naming tapes everywhere: the library's roll numbers,
-// never raw video ids.
-function tapeDisplayLabel(videoId: string, media: MediaRecord[]): string {
-  const index = media.findIndex((row) => row.id === videoId);
-  return index >= 0 ? `Tape ${index + 1}` : "Loose footage";
-}
-
 // Camcorders don't predate ~1970; narrated years older than that (volcano
 // eruptions, building cornerstones) are historical context, not event dates.
 const EARLIEST_PLAUSIBLE_YEAR = 1970;
@@ -1647,26 +1709,6 @@ function personInitials(label: string): string {
     .slice(0, 2)
     .map((word) => word[0]?.toUpperCase() ?? "")
     .join("");
-}
-
-function humanizeToken(value: string): string {
-  const text = value.replace(/_/g, " ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-// Pipeline labels hold every alias at once ("Filia / Filip / Филя"); a person
-// deserves one confident name, with the rest demoted to a byline.
-function personDisplayName(label: string): string {
-  const parts = label
-    .split("/")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length <= 1) {
-    return label.trim() || label;
-  }
-  const latin = parts.filter((part) => /^[ -ɏ]+$/.test(part));
-  const pool = latin.length ? latin : parts;
-  return pool.reduce((best, part) => (part.length < best.length ? part : best));
 }
 
 function personAliasList(label: string, extra: string[] = []): string[] {
@@ -1813,23 +1855,6 @@ function pairKey(a: PersonRecord, b: PersonRecord): string {
 
 const PERSONISH_TASKS = new Set(["resolve_face_cluster", "resolve_speaker", "resolve_person"]);
 
-// Diarizer ids ("AZ_SPEAKER_01@video_000012", "AZ_P04_C") name a voice the
-// archive hasn't met yet; on screen they read as unnamed voices, and the raw
-// id stays a hover away.
-function humanVoiceLabel(raw: string | undefined, media: MediaRecord[]): string | null {
-  const label = (raw ?? "").trim();
-  const tapeVoice = /^AZ_SPEAKER_(\d+)@(video_\d+)$/.exec(label);
-  if (tapeVoice) {
-    const letter = String.fromCharCode(65 + (Number(tapeVoice[1]) % 26));
-    return `Unnamed voice ${letter} · ${tapeDisplayLabel(tapeVoice[2], media)}`;
-  }
-  const partVoice = /^AZ_P\d+_([A-Z])$/.exec(label);
-  if (partVoice) {
-    return `Unnamed voice ${partVoice[1]}`;
-  }
-  return null;
-}
-
 // The same voices inside free text: rationales and evidence notes.
 function humanizeVoiceIds(text: string | undefined, media: MediaRecord[]): string {
   return (text ?? "").replace(/AZ_SPEAKER_\d+@video_\d+|AZ_P\d+_[A-Z]\b/g, (raw) => humanVoiceLabel(raw, media) ?? raw);
@@ -1924,82 +1949,6 @@ function AliasAwareLabel({ text }: { text: string }) {
       {cut >= 0 ? rest.slice(cut) : ""}
     </>
   );
-}
-
-// Regions that must never share one scope: two of these in a parenthetical
-// means the pipeline is asserting a contradiction, so we suppress it.
-const DISJOINT_REGIONS = [
-  "oregon",
-  "wisconsin",
-  "idaho",
-  "hawaii",
-  "alaska",
-  "california",
-  "florida",
-  "washington",
-  "switzerland",
-  "russia",
-];
-
-// Context groups named after tapes are honest about being unplaced; named
-// contexts drop the trailing machinery word.
-function contextDisplayLabel(raw: string): string {
-  const label = raw.trim();
-  if (/^video_\d+/i.test(label)) {
-    const year = /(19|20)\d{2}(?:\s*[–-]\s*(?:19|20)\d{2})?/.exec(label)?.[0];
-    return year ? `${year} · unplaced` : "Unplaced";
-  }
-  return label.replace(/\s*context$/i, "");
-}
-
-// Machine scopes ("video_000003 context") and contradictory compound scopes
-// ("Hawaii, Moscow context") assert things the archive has not earned; only a
-// scope that reads as one coherent place survives to the screen.
-// Generic labels arrive lowercase from the pipeline ("home", "zoo"); on
-// screen they read as proper nouns.
-function titleCasePlace(label: string): string {
-  if (!label || label !== label.toLowerCase()) {
-    return label;
-  }
-  return label.replace(/(^|[\s-])(\p{Ll})/gu, (full, sep, ch) => sep + ch.toUpperCase());
-}
-
-function placeDisplayLabel(raw?: string): string {
-  if (!raw) {
-    return "";
-  }
-  const trimmed = raw.trim();
-  const match = /^(.*?)\s*\(([^()]*)\)$/.exec(trimmed);
-  if (!match) {
-    return titleCasePlace(trimmed);
-  }
-  const label = titleCasePlace(match[1].trim() || trimmed);
-  let scope = match[2].trim();
-  if (!scope || /video_\d+/i.test(scope)) {
-    return label;
-  }
-  if (/^near\s/i.test(scope)) {
-    return `${label} · ${scope}`;
-  }
-  scope = scope.replace(/\s*context$/i, "").trim();
-  const parts = scope
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    // Years and placeholder words are provenance, not geography — never
-    // part of a place name on screen ("home (2006, unplaced)" → "Home").
-    .filter((part) => !/^(19|20)\d{2}$/.test(part) && !/^(unplaced|unknown|unresolved)$/i.test(part));
-  if (!parts.length) {
-    return label;
-  }
-  const regionHits = new Set(
-    parts.map((part) => part.toLowerCase()).filter((part) => DISJOINT_REGIONS.includes(part)),
-  );
-  const leadsWithRegion = DISJOINT_REGIONS.includes(parts[0]?.toLowerCase() ?? "");
-  if (regionHits.size > 1 || parts.length > 2 || (leadsWithRegion && parts.length > 1)) {
-    return label;
-  }
-  return `${label} · ${parts.join(", ")}`;
 }
 
 function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
@@ -3889,12 +3838,17 @@ function SemanticSearchPanel({
 
 function SpokenHitRow({ hit, media, onPlay }: { hit: SemanticHit; media: MediaRecord[]; onPlay: (moment: PlayerMoment) => void }) {
   const moment = momentFromHit(hit, media);
+  const text = hit.snippet || hit.title;
+  const language = lineLanguage(text);
   return (
     <button className="spoken-hit" onClick={() => moment && onPlay(moment)} disabled={!moment}>
-      <Play size={13} />
-      <span className="spoken-quote">{hit.snippet || hit.title}</span>
+      <span className="spoken-quote" lang={language === "ru" || language === "en" ? language : undefined}>
+        <LanguagePills language={language} />
+        {text}
+      </span>
       {moment ? (
         <small>
+          <Play size={9} fill="currentColor" />
           {moment.videoLabel} · {formatTime(moment.startS)}
         </small>
       ) : null}
@@ -4011,7 +3965,7 @@ function AlbumsView({
                     const fullEvent = eventsById.get(event.event_id);
                     return (
                       <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
-                        {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                        {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" loading="lazy" /> : <span className="tile-placeholder"><ImageIcon size={18} /></span>}
                         <span>{event.title}</span>
                       </button>
                     );
@@ -4054,10 +4008,20 @@ function albumCoverPath(album: AlbumRecord, eventsById: Map<string, EventRecord>
   return candidates.find((path) => !avoid?.has(path)) ?? candidates[0] ?? "";
 }
 
-// Day-albums carry every constituent date ("MAY 10 2002, MAY 11 2002, ...");
-// a Memory reads as a span. Dates themselves may contain commas ("March 22,
-// 2006"), so split only at commas that start a new month token.
-const MONTH_BOUNDARY = /,\s*(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
+// Memories hang like snapshots on a board: a little tilt, a strip of tape.
+const MEMORY_TILTS = ["-1.4deg", "1deg", "-0.7deg", "1.3deg", "-1.1deg", "0.8deg"];
+const MEMORY_WASHI = ["var(--washi-1)", "var(--washi-2)", "var(--washi-3)", "var(--washi-4)"];
+
+// A day-album reads as one span on its label-maker tag: "MAR 22–25 2006".
+function memoryTagLabel(album: AlbumRecord): string {
+  return stampSpanLabel(album.date_label ?? "") ?? memoryDateLabel(album).toUpperCase();
+}
+
+// Journal entries carry whatever date label drafting produced ("September 1,
+// 2005", "JAN 1 2004, JAN 4 2004"); every byline prints in one stamp style.
+function journalDateLabel(post: JournalPost): string {
+  return stampSpanLabel(post.date_label) ?? post.date_label;
+}
 
 function memoryDateLabel(album: AlbumRecord): string {
   const label = album.date_label ?? "";
@@ -4126,7 +4090,7 @@ function PlacesView({
                 const fullEvent = eventsById.get(event.event_id);
                 return (
                   <button key={event.event_id} className="moment-tile" onClick={() => playEvent(event, media, onPlay)}>
-                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" loading="lazy" /> : <span className="tile-placeholder"><ImageIcon size={18} /></span>}
                     <span>{event.title}</span>
                   </button>
                 );
@@ -4468,10 +4432,6 @@ function firstPlaceThumbnail(place: PlaceRecord | undefined, eventsById: Map<str
   return "";
 }
 
-function uniqueStrings(values: string[]) {
-  return values.filter((value, index) => value && values.indexOf(value) === index);
-}
-
 function normalizeLabel(value?: string) {
   return String(value || "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
@@ -4513,18 +4473,6 @@ function formatConfidence(value?: number) {
 
 function formatScore(value?: number) {
   return typeof value === "number" ? `score ${value.toFixed(2)}` : "score n/a";
-}
-
-function formatTime(value?: number) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "0:00";
-  const total = Math.max(0, Math.floor(value));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatSignedSeconds(value: number) {
@@ -4659,7 +4607,7 @@ function JournalView({
                   <h2 className="journal-display">{post.title}</h2>
                   <p className="journal-card-dek">{post.dek}</p>
                   <span className="journal-byline">
-                    {post.date_label}
+                    {journalDateLabel(post)}
                     {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
                   </span>
                 </div>
@@ -4738,7 +4686,7 @@ function JournalPostArticle({
 
   return (
     <section className="journal-page reading">
-      <Toolbar title={post.title} subtitle={post.date_label} onBack={onBack} backLabel="Journal" />
+      <Toolbar title={post.title} subtitle={journalDateLabel(post)} onBack={onBack} backLabel="Journal" />
       <div className="stage-body">
         <article className="journal-article">
           <header>
@@ -4746,7 +4694,7 @@ function JournalPostArticle({
             <h1 className="journal-display journal-title">{post.title}</h1>
             {post.dek ? <p className="journal-dek">{post.dek}</p> : null}
             <p className="journal-byline">
-              {post.date_label}
+              {journalDateLabel(post)}
               {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
               {post.generated ? " · drafted from the tapes" : ""}
             </p>

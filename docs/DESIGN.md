@@ -108,6 +108,19 @@ Token families:
 - **Paper** — `--paper`, `--paper-canvas`, `--paper-edge`, `--ink`,
   `--ink-2`, `--ink-accent`. The Journal only.
 - **Map** — `--map-ocean`, `--map-land`, `--map-border`.
+- **Voice lanes** — `--voice-1` (orange-red), `--voice-2` (blue), `--voice-3`
+  (purple), `--voice-4` (gray, "Others"). The moment sheet's voice lanes and
+  the dot beside each transcript line; ranked by talk time, so the most
+  talkative voice is always `--voice-1`.
+- **Languages** — `--lang-ru` (red), `--lang-en` (blue) behind the white
+  mono RU/EN pills on transcript lines and spoken search hits. A line that
+  switches languages carries both pills.
+- **Evidence on frames** — `--ocr` and `--ocr-glow`: the boxes Apple Vision
+  drew around a camcorder date stamp, drawn over the frame they came from.
+- **Label-maker tag** — `--tag-bg`, `--tag-ink`: dark embossed tape for tape
+  names and filed dates.
+- **Snapshots** — `--polaroid`, `--polaroid-ink`, `--polaroid-ink-2`,
+  `--shadow-polaroid`, `--washi-1` … `--washi-4`. Memories only.
 
 Contrast floor: WCAG AA (4.5:1 body text, 3:1 large text) in both themes —
 primary and secondary labels on every surface, each `-ink` on its own wash,
@@ -119,10 +132,12 @@ back status chips; the solid status colors are reserved for dots and icons.
 
 Documented exceptions to the no-raw-color rule (theme-invariant by design):
 content overlays on photographs (white text, black gradient scrims, the dark
-glass capsules for lengths and timecodes, the glass play button), white
-glyphs on identity-colored tiles, map pins (a white photo-print border and
-its drop shadow, the badge's white ring), the Contacts monogram gradient,
-and the app icon's own palette. White labels
+glass capsules for lengths and timecodes, the glass play button, the dark
+outline and glow around OCR boxes), white glyphs on identity-colored tiles,
+map pins (a white photo-print border and its drop shadow, the badge's white
+ring, the white ring and gloss of a photo-less red pin), the label-maker
+tag's emboss, the Contacts monogram gradient, and the app icon's own
+palette. White labels
 on `--accent` fills follow the macOS system blue at about 4:1, set semibold.
 
 ## Materials
@@ -159,11 +174,14 @@ Squarer than Tahoe, one value per job:
 | `--r-xs` | 4px  | The tape strip, keycaps, photos set into the Journal page |
 | `--r-s`  | 6px  | Sidebar and queue rows, inputs, kind tiles, filmstrip frames, the Journal page |
 | `--r-m`  | 9px  | Library tiles, thumbnails, map pins, menus |
-| `--r-l`  | 12px | Sheets, the Review drawer, panels, grouped lists, Memories cards, the map surface |
+| `--r-l`  | 12px | Sheets, the Review drawer, panels, grouped lists, evidence cards, the map surface |
 | `--r-xl` | 16px | The ⌘K panel |
 | `--r-pill` | 999px | Buttons, capsule fields, chips, the segmented control, badges, avatars |
 
 Nested radii: inner = outer − inset (a 12px card with 4px inset media uses 8px).
+
+Documented exceptions: a Memories snapshot is a print (2px corners, square
+photo), and the label-maker tag uses 3px, like real embossed tape.
 
 ## Elevation
 
@@ -174,11 +192,12 @@ Nested radii: inner = outer − inset (a 12px card with 4px inset media uses 8px
 | `--shadow-3` | Modal: sheets, the Review drawer, ⌘K, the miniplayer |
 | `--shadow-control` | Controls: secondary and pop-up buttons, inputs, the segmented thumb |
 | `--shadow-paper` | The Journal page |
+| `--shadow-polaroid` | A Memories snapshot |
 | `--sheen` + `--sheen-edge` | The candy sheen on primary buttons — the Aqua nod, kept faint |
 
 Shadows imply interactivity or modality — decorative shadows are defects.
-The Journal is the one exception: its page and the photos set into it cast
-the soft shadow of paper.
+Two exceptions cast the soft shadow of paper: the Journal (its page and the
+photos set into it) and the Memories snapshots pinned above the Library.
 
 ## Motion
 
@@ -193,7 +212,10 @@ the soft shadow of paper.
 Rules: animate `transform`/`opacity`, never layout. Everything honors
 `prefers-reduced-motion: reduce` (transitions collapse to 1ms; Ken Burns and
 map fly-to become static). Documented exceptions: spinner (1.1s linear),
-Ken Burns (14s ease-in-out alternate).
+Ken Burns (14s ease-in-out alternate), the loading shimmer on a stamp frame
+(1.2s linear), and OCR boxes, which pop in with `--ease-spring` staggered
+120ms apart. A Memories snapshot straightens from its tilt on hover with
+`--dur-slow --ease-spring`.
 
 ## Components (inventory + composition)
 
@@ -229,17 +251,53 @@ Ken Burns (14s ease-in-out alternate).
   `--strip-footage` marks footage outside any moment, and each moment is a
   `--kind-*` segment that opens it. Chronological groups use Display year
   headers; By Place groups use Large Title with a `--where` pin glyph.
-- **Memories**: a row that bleeds to the edges of the content column; 16:9 cards at
-  `--r-l`, `--shadow-1`, Ken Burns, title Title 2 700 with a Footnote date
-  over a black gradient.
+- **Memories**: the one place the Library goes scrapbook. A row that bleeds
+  to the edges of the content column; each memory is a snapshot: a 4:3
+  photo in an 8px `--polaroid` border (deeper at the bottom for the
+  caption), `--shadow-polaroid`, a strip of `--washi-*` tape across the top,
+  and a slight tilt (±0.7–1.4°) that straightens on hover. The span rides a
+  label-maker tag over the photo's corner, printed the way a camcorder
+  stamps a date ("MAR 22–26 2006"); the caption is a Title 3 700 title over
+  a Footnote count. Ken Burns on the photo.
+- **Label-maker tag**: Caption 700 mono, uppercase, 0.16em tracking, white on
+  `--tag-bg`, 3px corners, a 1.5° tilt and an embossed edge. Used for a tape's
+  name in the moment sheet, a moment's filed date over its hero, and a
+  memory's span. Nowhere else.
 - **Sheets** (event/person/album/place): `--card`, `--r-l`, `--shadow-3`,
   over a `--scrim` with a 10px blur that keeps background tiles
   unidentifiable; entry `--dur-slow --ease-out`. The close button is a
   sticky glass circle (`--glass-on-photo` over a hero). The header is a
   Footnote 600 uppercase kicker and a Title 1 title, then fact chips: When
   (calendar glyph, `--when`), Where (pin, `--where`), and the tape position
-  (film glyph, mono timecode); Who as person bubbles in `--who`. Scenes are a
+  (film glyph, mono timecode); Who as person bubbles in `--who`, and people
+  only spoken to ("Grandma") as dashed mention chips. Scenes are a
   filmstrip of 4:3 frames with mono timecode capsules.
+- **Moment sheet** (940px): everything above, plus a label-maker tag with
+  the filed date over the hero, then where the moment sits on its tape (the
+  Library's tape strip at 16px with this moment bracketed in
+  `--text-primary` and the rest dimmed; clicking another segment opens it),
+  then "How TapeSplit knows" (Title 2 700) with three evidence cards on
+  `--bg-elev` at `--r-l`, each headed by a Footnote 700 uppercase source line
+  in its fact `-ink`:
+  - **When** — the filed date in Title 2 with its weekday, one sentence on its
+    basis (a camcorder stamp, something seen or heard in the moment, or the
+    moments around it), and the frame the stamp was read from with
+    Apple Vision's `--ocr` boxes and a caption ("read “MAR 20 2006” at 0:25,
+    just before this moment"). Dates mentioned in passing are struck through.
+  - **Where** — each place with its role in Footnote 600 `--where-ink` (named
+    in the moment, seen on screen, the city or region), its shortest telling
+    clue as a serif italic quote, continuity notes, and a mini map: the
+    Places map's land and borders framed around the pins, a red pin with a
+    white ring, amber with a dashed halo when approximate. Geocodes under 0.6
+    stay off the map.
+  - **Voices** — one 14px lane per voice (top three by talk time, then
+    Others) with each line as a `--voice-*` bar across the moment; below,
+    every line as a row: a play capsule with its mono timecode, the voice in
+    Caption 700 uppercase, the line with RU/EN pills, and the Journal's
+    translation as a serif italic gloss when one exists.
+- **Place sheet**: the hero and header, then one Where card (what put the
+  place on the map, its clue, the geocode and how sure it was, a mini map at
+  most 352px wide), then the place's moments.
 - **Review drawer**: a panel inset 8px from the window's right edge,
   `--r-l`, `--shadow-3`. A Chrome header and tools row (filter capsule,
   pop-up buttons, the primary Accept Best Guesses) over a 320px list on
@@ -261,8 +319,9 @@ Ken Burns (14s ease-in-out alternate).
   `--fill-secondary`; status chips use status colors only for status.
 - **⌘K search**: an Overlay panel at `--r-xl` with a 44px field, sectioned
   results under Footnote 600 uppercase headers; moment hits are cards, spoken
-  hits a grouped list with `--voice` play glyphs. The Search view uses the
-  same panel with a capsule field.
+  hits are cards too: the line in Title 3 600 with its RU/EN pills, and a
+  mono tape-and-time chip on `--fill-secondary` that turns `--accent-soft`
+  on hover. The Search view uses the same panel with a capsule field.
 - **Journal**: paper cards (3:2 photo; `--ink-accent` kicker; serif Title 1
   title; `--ink-2` dek). An entry is a page: `--paper` on `--paper-canvas`,
   `--shadow-paper`, `--r-s`, at most 740px wide. Serif Display title, serif
@@ -271,7 +330,13 @@ Ken Burns (14s ease-in-out alternate).
   grounding dots that wake to `--ink-accent` on hover.
 - **Map pins** (Places): a photo in a white 2.5px print border at `--r-m`
   (clusters `--r-l`) with an `--accent` count badge; approximate geocode =
-  dashed border; hover pop `--dur-fast --ease-spring`.
+  dashed border; hover pop `--dur-fast --ease-spring`. A place with no
+  picture yet is an 18px red pin in a white ring (amber when approximate),
+  never an empty frame.
+- **Albums**: rows on `--card` at `--r-l`; a 144px 4:3 cover, then the title,
+  tokens, and moment tiles at a fixed 112px so long titles truncate instead
+  of widening their column. A moment without a picture gets a quiet
+  `--fill-secondary` tile.
 - **People**: 84px avatars (104px on the wall and person sheet); monograms
   use the Contacts gray gradient with white initials. "Same person?" cards
   sit on `--bg-elev` at `--r-l` with small Merge / Not the Same buttons.
