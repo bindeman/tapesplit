@@ -10,6 +10,7 @@ import { ImageIcon, List, Map as MapIcon, MapPin, X } from "lucide-react";
 import worldTopo from "world-atlas/countries-110m.json";
 import usTopo from "us-atlas/states-10m.json";
 import { assetUrl } from "./api";
+import { Segmented, Toolbar } from "./shell";
 import type { EventRecord, MediaRecord, PlaceRecord } from "./types";
 
 const VIEW_W = 1000;
@@ -302,21 +303,24 @@ export function PlacesMapView({
   const height = surfaceSize?.height ?? 560;
 
   return (
-    <section className="places-map-view">
-      <header className="places-map-head">
-        <h1>Places</h1>
-        <div className="segmented" role="tablist" aria-label="Places display mode">
-          <button role="tab" aria-selected={mode === "map"} className={mode === "map" ? "active" : ""} onClick={() => setMode("map")}>
-            <MapIcon size={13} /> Map
-          </button>
-          <button role="tab" aria-selected={mode === "list"} className={mode === "list" ? "active" : ""} onClick={() => setMode("list")}>
-            <List size={13} /> List
-          </button>
-        </div>
-      </header>
+    <section className={`places-map-view mode-${mode}`}>
+      <Toolbar
+        title="Places"
+        subtitle={`${mapped.length === 1 ? "1 place" : `${mapped.length} places`} on the map${unplaced.length ? ` · ${unplaced.length} not yet placed` : ""}`}
+      >
+        <Segmented
+          label="Places display mode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: "map", label: <><MapIcon size={13} /> Map</> },
+            { id: "list", label: <><List size={13} /> List</> },
+          ]}
+        />
+      </Toolbar>
 
       {mode === "list" ? (
-        renderList()
+        <div className="stage-body">{renderList()}</div>
       ) : (
         <div className="places-map-body">
           <div
@@ -468,9 +472,14 @@ function PlaceSheet({
     .join(" · ");
   return (
     <div className="sheet-scrim" onClick={onClose}>
-      <article className="sheet place-sheet" onClick={(click) => click.stopPropagation()}>
+      <article
+        className="event-sheet place-sheet"
+        role="dialog"
+        aria-label={helpers.placeDisplayLabel(place.display_label)}
+        onClick={(click) => click.stopPropagation()}
+      >
         <button className="sheet-close" onClick={onClose} aria-label="Close">
-          <X size={16} />
+          <X size={15} />
         </button>
         {hero && (
           <div className="sheet-hero">
@@ -479,9 +488,16 @@ function PlaceSheet({
         )}
         <div className="sheet-body">
           <header>
+            {place.place_type && <p className="sheet-kicker">{helpers.humanizeToken(place.place_type)}</p>}
             <h1>{helpers.placeDisplayLabel(place.display_label)}</h1>
-            {subtitle && <p className="place-subtitle">{subtitle}</p>}
-            {place.place_type && <p className="place-kind">{helpers.humanizeToken(place.place_type)}</p>}
+            {subtitle && (
+              <div className="fact-row">
+                <span className="fact where">
+                  <MapPin size={13} />
+                  {subtitle}
+                </span>
+              </div>
+            )}
           </header>
           <div className="place-sheet-events">
             {placeEvents.map((event) => (

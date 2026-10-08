@@ -1,37 +1,42 @@
 import {
   AlertTriangle,
-  Album,
+  AudioLines,
+  BookImage,
   BookOpen,
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
-  Clock3,
   Film,
   GitMerge,
   HelpCircle,
   ImageIcon,
+  Images,
   Info,
   Inbox,
   MoreHorizontal,
-  LayoutGrid,
   ListFilter,
   MapPin,
   MapPinned,
   Pencil,
   Play,
   RefreshCw,
+  ScanFace,
   Search,
   Send,
   Trash2,
   UserCheck,
+  UserRound,
   Users,
+  UsersRound,
   X,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
+import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
   applyReviewActions,
   applySuggestedReviewActions,
@@ -87,22 +92,37 @@ type PlayerMoment = {
 
 const taskLabels: Record<string, string> = {
   resolve_face_cluster: "Faces",
-  resolve_speaker: "Speakers",
+  resolve_speaker: "Voices",
   confirm_place_context: "Place Links",
   confirm_relationship: "Relationships",
   resolve_place: "Places",
   resolve_person: "People",
-  review_event: "Events",
+  resolve_duplicate_person: "Same Person",
+  review_event: "Moments",
   resolve_date: "Dates",
 };
 
-const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox }> = [
-  { id: "library", label: "Library", icon: LayoutGrid },
-  { id: "people", label: "People", icon: Users },
-  { id: "places", label: "Places", icon: MapPinned },
-  { id: "albums", label: "Albums", icon: Album },
-  { id: "journal", label: "Journal", icon: BookOpen },
-  { id: "search", label: "Search", icon: Search },
+// Each review type keeps one glyph and one color everywhere it appears.
+const taskIcons: Record<string, typeof Inbox> = {
+  resolve_face_cluster: ScanFace,
+  resolve_speaker: AudioLines,
+  confirm_place_context: MapPinned,
+  confirm_relationship: UsersRound,
+  resolve_place: MapPin,
+  resolve_person: UserRound,
+  resolve_duplicate_person: GitMerge,
+  review_event: Film,
+  resolve_date: CalendarDays,
+};
+
+// The source list: colored glyphs, grouped the way Photos groups its sidebar.
+const viewLabels: Array<{ id: ViewMode; label: string; icon: typeof Inbox; section: string }> = [
+  { id: "library", label: "Library", icon: Images, section: "Archive" },
+  { id: "people", label: "People", icon: UsersRound, section: "Archive" },
+  { id: "places", label: "Places", icon: MapPinned, section: "Archive" },
+  { id: "albums", label: "Albums", icon: BookImage, section: "Collections" },
+  { id: "journal", label: "Journal", icon: BookOpen, section: "Collections" },
+  { id: "search", label: "Search", icon: Search, section: "Collections" },
 ];
 
 const initialView = ((): ViewMode => {
@@ -353,53 +373,86 @@ export function App() {
   if (!bundle) {
     return (
       <div className="boot">
-        <RefreshCw className="spin" size={20} />
-        <span>{error || "Loading project"}</span>
+        <AppIcon size={56} />
+        <span>
+          {!error && <RefreshCw className="spin" size={14} />}
+          {error || "Opening the archive…"}
+        </span>
       </div>
     );
   }
 
   const reviewBadge = primaryReviewItems.length;
+  const sections = [...new Set(viewLabels.map((item) => item.section))];
 
   return (
+    <ShellContext.Provider
+      value={{ openSearch: () => setSearchOpen(true), openReview: () => setReviewOpen(true), reviewCount: reviewBadge }}
+    >
     <div className="photos-shell">
       <aside className="sidebar">
-        <header className="sidebar-brand">
-          <div className="brand-mark">
-            <Film size={17} />
-          </div>
-          <div className="brand-copy" title={bundle.projectDir}>
-            <strong>Tapes</strong>
+        <header className="sidebar-brand" title={bundle.projectDir}>
+          <AppIcon size={30} />
+          <div className="brand-copy">
+            <strong>TapeSplit</strong>
             <span>{archiveByline(bundle)}</span>
           </div>
         </header>
 
         <nav className="sidebar-nav" aria-label="Views">
-          {viewLabels.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
-                <Icon size={17} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+          {sections.map((section) => (
+            <div key={section} className="sidebar-section">
+              <h2>{section}</h2>
+              {viewLabels
+                .filter((item) => item.section === section)
+                .map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      className={`nav-${item.id} ${view === item.id ? "active" : ""}`}
+                      aria-current={view === item.id ? "page" : undefined}
+                      onClick={() => setView(item.id)}
+                    >
+                      <Icon size={17} strokeWidth={2} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
           <button className={`review-entry ${reviewOpen ? "active" : ""}`} onClick={() => setReviewOpen(true)}>
-            <Inbox size={16} />
+            <Inbox size={17} strokeWidth={2} />
             <span>Review</span>
             {reviewBadge > 0 && <em>{reviewBadge}</em>}
           </button>
-          <button className="sidebar-refresh" onClick={() => void refresh("Reloaded")} disabled={busy}>
-            <RefreshCw size={14} className={busy ? "spin" : ""} />
-            <span>Refresh</span>
-          </button>
+          <div className="sidebar-status">
+            <button className="sidebar-refresh" onClick={() => void refresh("Reloaded")} disabled={busy} title="Reload the archive">
+              <RefreshCw size={13} className={busy ? "spin" : ""} />
+            </button>
+            <span>
+              {busy
+                ? "Working…"
+                : pendingActions.length
+                  ? `${pendingActions.length} ${pendingActions.length === 1 ? "correction" : "corrections"} queued`
+                  : "Up to date"}
+            </span>
+          </div>
         </div>
       </aside>
 
-      <main className="stage">
+      <main
+        className="stage"
+        onScroll={(scrollEvent) => {
+          const scrolled = scrollEvent.currentTarget.scrollTop > 2;
+          if ((scrollEvent.currentTarget.dataset.scrolled === "true") !== scrolled) {
+            scrollEvent.currentTarget.dataset.scrolled = String(scrolled);
+          }
+        }}
+      >
         {(status || error) && (
           <div className={`toast ${error ? "error" : ""}`}>
             {error ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
@@ -413,6 +466,7 @@ export function App() {
         {view === "library" && (
           <LibraryView
             events={bundle.data.timeline.events}
+            scenes={bundle.data.timeline.scenes}
             media={bundle.data.media}
             albums={bundle.data.tracks.albums}
             summary={bundle.data.summary}
@@ -424,7 +478,13 @@ export function App() {
           <PeopleWall people={bundle.data.people} onSelect={setOpenPerson} onQueue={queueAction} />
         )}
         {view === "albums" && (
-          <AlbumsView albums={bundle.data.tracks.albums} events={bundle.data.timeline.events} media={bundle.data.media} onPlay={setActiveMoment} />
+          <AlbumsView
+            albums={bundle.data.tracks.albums}
+            events={bundle.data.timeline.events}
+            media={bundle.data.media}
+            onPlay={setActiveMoment}
+            onOpenAlbum={setOpenAlbum}
+          />
         )}
         {view === "journal" && (
           <JournalView
@@ -455,15 +515,18 @@ export function App() {
           />
         )}
         {view === "search" && (
-          <section className="search-view">
-            <SemanticSearchPanel
-              bundle={bundle}
-              autoFocus
-              onOpenEvent={setOpenEvent}
-              onOpenPerson={setOpenPerson}
-              onPlay={setActiveMoment}
-            />
-          </section>
+          <>
+            <Toolbar title="Search" subtitle="People, places, words and what’s on screen" />
+            <section className="search-view">
+              <SemanticSearchPanel
+                bundle={bundle}
+                autoFocus
+                onOpenEvent={setOpenEvent}
+                onOpenPerson={setOpenPerson}
+                onPlay={setActiveMoment}
+              />
+            </section>
+          </>
         )}
       </main>
 
@@ -514,43 +577,47 @@ export function App() {
 
       {reviewOpen && (
         <div className="drawer-scrim" onClick={() => setReviewOpen(false)}>
-          <aside className="review-drawer" onClick={(event) => event.stopPropagation()}>
+          <aside className="review-drawer" role="dialog" aria-label="Review" onClick={(event) => event.stopPropagation()}>
             <header className="drawer-head">
               <div>
                 <h2>Review</h2>
-                <p>Confirm or correct the archive’s remaining guesses</p>
+                <p>
+                  {filteredReviewItems.length === 1 ? "1 guess" : `${filteredReviewItems.length} guesses`} to confirm or correct
+                </p>
               </div>
-              <button className="icon-button" onClick={() => setReviewOpen(false)} aria-label="Close review">
-                <X size={16} />
+              <button className="sheet-close inline" onClick={() => setReviewOpen(false)} aria-label="Close review">
+                <X size={15} />
               </button>
             </header>
 
             <div className="queue-tools">
               <label className="search-box">
-                <Search size={15} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter review items" />
+                <Search size={14} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter" />
               </label>
-              <div className="task-filter">
-                <Inbox size={15} />
+              <label className="popup-button" title="Which queue">
+                <Inbox size={14} />
                 <select value={reviewScope} onChange={(event) => setReviewScope(event.target.value as ReviewScope)}>
                   <option value="primary">Primary ({primaryReviewItems.length})</option>
                   <option value="backlog">Backlog ({reviewBacklog.length})</option>
                   <option value="all">All ({primaryReviewItems.length + reviewBacklog.length})</option>
                 </select>
-              </div>
-              <div className="task-filter">
-                <ListFilter size={15} />
+                <ChevronDown size={13} className="popup-chevron" />
+              </label>
+              <label className="popup-button" title="Kind of guess">
+                <ListFilter size={14} />
                 <select value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)}>
-                  <option value="all">All types</option>
+                  <option value="all">All kinds</option>
                   {Object.entries(taskCounts).map(([task, count]) => (
                     <option key={task} value={task}>
                       {taskLabel(task)} ({count})
                     </option>
                   ))}
                 </select>
-              </div>
+                <ChevronDown size={13} className="popup-chevron" />
+              </label>
               <button className="command-button queue-command" disabled={busy || !suggestedActionCount} onClick={() => void applyBestGuesses()}>
-                <CheckCircle2 size={16} />
+                <CheckCircle2 size={15} />
                 <span>Accept Best Guesses</span>
               </button>
             </div>
@@ -560,6 +627,7 @@ export function App() {
                 items={filteredReviewItems}
                 selectedId={selectedItem?.id ?? ""}
                 pendingActions={pendingActions}
+                media={bundle.data.media}
                 onSelect={(item) => setSelectedId(item.id)}
               />
               <div className="drawer-detail">
@@ -617,11 +685,13 @@ export function App() {
         </div>
       )}
     </div>
+    </ShellContext.Provider>
   );
 }
 
 function LibraryView({
   events,
+  scenes,
   media,
   albums,
   summary,
@@ -629,6 +699,7 @@ function LibraryView({
   onOpenAlbum,
 }: {
   events: EventRecord[];
+  scenes: SceneRecord[];
   media: MediaRecord[];
   albums: AlbumRecord[];
   summary: Record<string, number>;
@@ -643,89 +714,232 @@ function LibraryView({
   const groups = useMemo(() => libraryGroups(related, media, sort), [related, media, sort]);
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const memories = useMemo(() => memoriesRowAlbums(albums), [albums]);
+  const footageByTape = useMemo(() => footageRanges(scenes), [scenes]);
   const totalHours = Math.round(media.reduce((acc, tape) => acc + (tape.duration_s ?? 0), 0) / 3600);
 
   return (
     <section className="library">
-      <header className="stage-hero">
-        <div className="hero-row">
-          <div>
-            <h1>Library</h1>
-            <p>
-              {media.length} tapes · {totalHours} hours · {events.length} events · {summary.people ?? 0} people
-            </p>
-          </div>
-          <div className="segmented" role="tablist" aria-label="Sort library">
-            {(
-              [
-                ["tape", "By Tape"],
-                ["chrono", "Chronological"],
-                ["place", "By Place"],
-              ] as Array<[LibrarySort, string]>
-            ).map(([id, label]) => (
-              <button key={id} className={sort === id ? "active" : ""} onClick={() => setSort(id)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
+      <Toolbar
+        title="Library"
+        subtitle={`${media.length} tapes · ${totalHours} hours · ${events.length} moments · ${summary.people ?? 0} people`}
+      >
+        <Segmented
+          label="Sort library"
+          value={sort}
+          onChange={setSort}
+          options={[
+            { id: "tape", label: "By Tape" },
+            { id: "chrono", label: "Chronological" },
+            { id: "place", label: "By Place" },
+          ]}
+        />
+      </Toolbar>
 
-      {memories.length > 0 && (
-        <div className="memories-row" aria-label="Memories">
-          {(() => {
-            const usedCovers = new Set<string>();
-            return memories.map((album) => {
-              const cover = albumCoverPath(album, eventsById, usedCovers);
-              if (cover) {
-                usedCovers.add(cover);
-              }
-              return (
-                <button key={album.id} className="memory-card" onClick={() => onOpenAlbum(album)}>
-                  {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="card-fallback"><CalendarDays size={26} /></div>}
-                  <span className="memory-shade">
-                    <strong>{album.title}</strong>
-                    <small>{memoryDateLabel(album)}</small>
-                  </span>
-                </button>
-              );
-            });
-          })()}
-        </div>
-      )}
+      <div className="stage-body">
+        {memories.length > 0 && (
+          <section className="memories" aria-label="Memories">
+            <h2 className="section-title">Memories</h2>
+            <div className="memories-row">
+              {(() => {
+                const usedCovers = new Set<string>();
+                return memories.map((album) => {
+                  const cover = albumCoverPath(album, eventsById, usedCovers);
+                  if (cover) {
+                    usedCovers.add(cover);
+                  }
+                  return (
+                    <button key={album.id} className="memory-card" onClick={() => onOpenAlbum(album)}>
+                      {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="card-fallback"><CalendarDays size={26} /></div>}
+                      <span className="memory-shade">
+                        <strong>{album.title}</strong>
+                        <small>{memoryDateLabel(album)}</small>
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </section>
+        )}
 
-      {groups.map((group) => (
-        <section key={group.key} className="library-group">
-          <div className="group-head">
-            <h2>{group.label}</h2>
-            <span>
-              {group.sublabel ? `${group.sublabel} · ` : ""}
-              {group.events.length === 1 ? "1 event" : `${group.events.length} events`}
-            </span>
-          </div>
-          <div className="event-grid">
-            {group.events.map((event) => (
-              <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ))}
+        {groups.map((group) => {
+          const tape = sort === "tape" ? media.find((row) => row.id === group.key) : undefined;
+          const span = tapeDateSpan(group.events);
+          const count = group.events.length === 1 ? "1 moment" : `${group.events.length} moments`;
+          return (
+            <section key={group.key} className={`library-group sort-${sort}`}>
+              <header className="group-head">
+                {sort === "place" && <MapPin size={18} className="group-glyph" />}
+                <h2>{group.label}</h2>
+                <p>
+                  {sort === "tape"
+                    ? [span, count, group.sublabel].filter(Boolean).join(" · ")
+                    : count}
+                </p>
+                {tape && (
+                  <ul className="tape-legend" aria-label="Colors on the tape strip">
+                    {KIND_LABELS.filter(([kind]) => group.events.some((event) => eventKind(event) === kind)).map(([kind, label]) => (
+                      <li key={kind} className={`kind-${kind}`}>
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </header>
+              {tape && (
+                <TapeStrip tape={tape} events={group.events} footage={footageByTape.get(tape.id) ?? []} onOpen={onOpen} />
+              )}
+              <div className="event-grid">
+                {group.events.map((event) => (
+                  <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
 
-      {unrelated.length > 0 && (
-        <details className="offcuts">
-          <summary>
-            <ChevronRight size={15} className="chevron" />
-            Also on these tapes — TV broadcasts and other footage ({unrelated.length})
-          </summary>
-          <div className="event-grid dimmed">
-            {unrelated.map((event) => (
-              <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
-            ))}
-          </div>
-        </details>
-      )}
+        {unrelated.length > 0 && (
+          <details className="offcuts">
+            <summary>
+              <ChevronRight size={15} className="chevron" />
+              Also on these tapes — TV broadcasts and other footage ({unrelated.length})
+            </summary>
+            <div className="event-grid dimmed">
+              {unrelated.map((event) => (
+                <EventCard key={event.id} event={event} media={media} onOpen={onOpen} />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
     </section>
   );
+}
+
+// Content scenes merged into continuous stretches of footage per tape; the
+// gaps between them are blank tape, static and blue screen.
+function footageRanges(scenes: SceneRecord[]): Map<string, Array<[number, number]>> {
+  const byTape = new Map<string, Array<[number, number]>>();
+  const sorted = scenes
+    .filter((scene) => scene.scene_type === "content" && typeof scene.start_s === "number" && typeof scene.end_s === "number")
+    .sort((a, b) => a.source_video_id.localeCompare(b.source_video_id) || (a.start_s ?? 0) - (b.start_s ?? 0));
+  for (const scene of sorted) {
+    const ranges = byTape.get(scene.source_video_id) ?? byTape.set(scene.source_video_id, []).get(scene.source_video_id)!;
+    const last = ranges[ranges.length - 1];
+    if (last && (scene.start_s ?? 0) - last[1] < 2) {
+      last[1] = Math.max(last[1], scene.end_s ?? 0);
+    } else {
+      ranges.push([scene.start_s ?? 0, scene.end_s ?? 0]);
+    }
+  }
+  return byTape;
+}
+
+// The tape at a glance, iMovie-style: every moment as a colored segment,
+// footage outside any moment in gray, blank stretches hatched.
+function TapeStrip({
+  tape,
+  events,
+  footage,
+  onOpen,
+}: {
+  tape: MediaRecord;
+  events: EventRecord[];
+  footage: Array<[number, number]>;
+  onOpen: (event: EventRecord) => void;
+}) {
+  const duration = tape.duration_s ?? 0;
+  if (duration <= 0) {
+    return null;
+  }
+  const offset = tape.offset_s ?? 0;
+  const pct = (seconds: number) => `${Math.min(100, Math.max(0, (seconds / duration) * 100)).toFixed(3)}%`;
+  return (
+    <div className="tape-strip" role="group" aria-label={`${events.length} moments along ${formatTime(duration)} of tape`}>
+      {footage.map(([start, end]) => (
+        <span key={`f${start}`} className="tape-footage" style={{ left: pct(start), width: pct(end - start) }} />
+      ))}
+      {events.map((event) => {
+        const start = (event.start_s ?? offset) - offset;
+        const end = typeof event.end_s === "number" ? event.end_s - offset : start;
+        return (
+          <button
+            key={event.id}
+            className={`tape-moment kind-${eventKind(event)}`}
+            style={{ left: pct(start), width: `max(3px, ${pct(end - start)})` }}
+            title={`${event.title} · ${formatTime(start)}`}
+            aria-label={`${event.title}, at ${formatTime(start)}`}
+            onClick={() => onOpen(event)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const KIND_LABELS: Array<[string, string]> = [
+  ["travel", "Trips"],
+  ["home", "Home"],
+  ["school", "School"],
+  ["celebration", "Celebrations"],
+  ["other", "Other"],
+];
+
+// Event types collapse into a handful of colors that mean the same thing on
+// every tape.
+function eventKind(event: EventRecord): string {
+  const type = (event.event_type ?? "").toLowerCase();
+  if (type === "travel") return "travel";
+  if (type === "home" || type === "conversation") return "home";
+  if (type === "school") return "school";
+  if (["holiday", "birthday", "religious", "cultural", "social"].includes(type)) return "celebration";
+  return "other";
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "Mar – May 2006", "1998 – 2001": the span a tape's datable moments cover.
+function tapeDateSpan(events: EventRecord[]): string {
+  const stamps: Array<{ year: number; month: number | null }> = [];
+  for (const event of events) {
+    for (const date of event.dates ?? []) {
+      if (!plausibleEventDate(date)) continue;
+      const match = /((?:19|20)\d{2})(?:-(\d{2}))?/.exec(date.date_value ?? "");
+      if (match) {
+        stamps.push({ year: Number(match[1]), month: match[2] ? Number(match[2]) : null });
+      }
+    }
+  }
+  if (!stamps.length) {
+    return "";
+  }
+  const key = (stamp: { year: number; month: number | null }) => stamp.year * 12 + (stamp.month ?? 1) - 1;
+  stamps.sort((a, b) => key(a) - key(b));
+  const first = stamps[0];
+  const last = stamps[stamps.length - 1];
+  if (first.year !== last.year) {
+    return `${first.year} – ${last.year}`;
+  }
+  if (first.month && last.month && first.month !== last.month) {
+    return `${MONTHS[first.month - 1]} – ${MONTHS[last.month - 1]} ${first.year}`;
+  }
+  return first.month ? `${MONTHS[first.month - 1]} ${first.year}` : String(first.year);
+}
+
+// "2002-08-22" → "Aug 22, 2002"; partial dates keep their precision.
+function formatDateValue(value: string): string {
+  const match = /^((?:19|20)\d{2})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(value.trim());
+  if (!match) {
+    return value;
+  }
+  const [, year, month, day] = match;
+  if (month && day) {
+    return `${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`;
+  }
+  if (month) {
+    return `${MONTHS[Number(month) - 1]} ${year}`;
+  }
+  return year;
 }
 
 function EventCard({
@@ -742,7 +956,9 @@ function EventCard({
   const place = placeDisplayLabel(event.places[0]?.label);
   // The year earns one appearance; a place that repeats it forfeits its copy.
   const placeSansYear = year && place.includes(year) ? place.replace(year, "").replace(/\s*·\s*$/, "").trim() : place;
-  const subtitle = [year, placeSansYear, formatEventDuration(event)].filter(Boolean).join(" · ");
+  const subtitle = [year, placeSansYear].filter(Boolean).join(" · ");
+  const length =
+    typeof event.start_s === "number" && typeof event.end_s === "number" ? formatTime(event.end_s - event.start_s) : "";
   const [previewing, setPreviewing] = useState(false);
   const hoverTimer = useRef<number | null>(null);
   const moment = useMemo(() => momentFromEvent(event, media), [event, media]);
@@ -766,33 +982,37 @@ function EventCard({
       onClick={() => onOpen(event)}
       role="button"
       tabIndex={0}
+      aria-label={[event.title, subtitle].filter(Boolean).join(", ")}
       onKeyDown={(keyEvent) => keyEvent.key === "Enter" && onOpen(event)}
       onMouseEnter={armPreview}
       onMouseLeave={disarmPreview}
     >
-      {image ? (
-        <img src={assetUrl(image)} alt="" loading="lazy" />
-      ) : (
-        <div className="card-fallback">
-          <Film size={26} />
-        </div>
-      )}
-      {previewing && moment && (
-        <video
-          className="card-preview"
-          src={`${videoUrl(moment.videoId)}#t=${Math.max(0, moment.startS).toFixed(1)}`}
-          muted
-          autoPlay
-          playsInline
-          preload="none"
-          onError={() => setPreviewing(false)}
-        />
-      )}
-      <figcaption className="card-shade">
+      <div className="event-thumb">
+        {image ? (
+          <img src={assetUrl(image)} alt="" loading="lazy" />
+        ) : (
+          <div className="card-fallback">
+            <Film size={26} />
+          </div>
+        )}
+        {previewing && moment && (
+          <video
+            className="card-preview"
+            src={`${videoUrl(moment.videoId)}#t=${Math.max(0, moment.startS).toFixed(1)}`}
+            muted
+            autoPlay
+            playsInline
+            preload="none"
+            onError={() => setPreviewing(false)}
+          />
+        )}
+        {length && <span className="thumb-length">{length}</span>}
+        {event.review_status === "needs_review" && <span className="review-dot" title="Has an unconfirmed guess" />}
+      </div>
+      <figcaption>
         <strong>{event.title}</strong>
         {subtitle && <span>{subtitle}</span>}
       </figcaption>
-      {event.review_status === "needs_review" && <span className="review-dot" title="Has an unconfirmed guess" />}
     </figure>
   );
 }
@@ -828,26 +1048,15 @@ function EventSheet({
   const summaryText = event.reconciliation?.reconciled_summary || event.summary;
   const recordedDate = event.dates.find((date) => date.date_value && plausibleEventDate(date))?.date_value;
   const mentionedDates = event.dates.filter((date) => !plausibleEventDate(date));
-  const sheetPlace = placeDisplayLabel(event.places[0]?.label);
+  const when = recordedDate ? formatDateValue(recordedDate) : eventYear(event);
   const tapeMoment = momentFromEvent(event, media);
-  const tapeToken = tapeMoment
-    ? `${tapeDisplayLabel(tapeMoment.videoId, media)} · ${formatTime(tapeMoment.startS)}`
-    : null;
-  const byline = [
-    event.event_type ? humanizeToken(event.event_type) : null,
-    recordedDate || eventYear(event),
-    sheetPlace,
-    tapeToken,
-  ]
-    .filter(Boolean)
-    .slice(0, 4)
-    .join(" · ");
+  const placeLabels = uniqueStrings(event.places.slice(0, 4).map((ref) => placeDisplayLabel(ref.label)));
 
   return (
     <div className="sheet-scrim" onClick={onClose}>
-      <article className="event-sheet" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+      <article className="event-sheet" role="dialog" aria-label={event.title} onClick={(clickEvent) => clickEvent.stopPropagation()}>
         <button className="sheet-close" onClick={onClose} aria-label="Close">
-          <X size={16} />
+          <X size={15} />
         </button>
         <div className="sheet-hero">
           {hero ? <img src={assetUrl(hero)} alt="" /> : <div className="card-fallback tall"><Film size={40} /></div>}
@@ -857,8 +1066,29 @@ function EventSheet({
         </div>
         <div className="sheet-body">
           <header>
+            {event.event_type && <p className="sheet-kicker">{humanizeToken(event.event_type)}</p>}
             <h1>{event.title}</h1>
-            {byline && <p className="byline">{byline}</p>}
+            <div className="fact-row">
+              {when && (
+                <span className="fact when" title="When it was filmed">
+                  <CalendarDays size={13} />
+                  {when}
+                </span>
+              )}
+              {placeLabels.map((label) => (
+                <span key={label} className="fact where" title="Where it was filmed">
+                  <MapPin size={13} />
+                  {label}
+                </span>
+              ))}
+              {tapeMoment && (
+                <span className="fact tape" title="Where it sits on the tape">
+                  <Film size={13} />
+                  {tapeMoment.videoLabel}
+                  <code>{formatTime(tapeMoment.startS)}</code>
+                </span>
+              )}
+            </div>
             {mentionedDates.length > 0 && (
               <p className="historical-row">
                 {mentionedDates.slice(0, 3).map((date) => (
@@ -870,50 +1100,47 @@ function EventSheet({
             )}
           </header>
 
-          {(event.people.length > 0 || event.places.length > 0) && (
-            <div className="sheet-chips">
-              {event.people.slice(0, 8).map((ref) => {
+          {event.people.length > 0 && (
+            <div className="sheet-chips" aria-label="Who">
+              {event.people.slice(0, 8).map((ref, index) => {
                 const person = findPerson(people, ref.id, ref.label);
                 const thumb = primaryPersonThumb(person);
                 return (
-                  <span key={ref.id} className="person-bubble">
+                  <span key={`${ref.id}-${index}`} className="person-bubble">
                     {thumb ? <img src={assetUrl(thumb)} alt="" /> : <i>{personInitials(ref.label)}</i>}
                     {personDisplayName(ref.label)}
                   </span>
                 );
               })}
-              {event.places.slice(0, 4).map((ref) => (
-                <span key={ref.id} className="place-pill">
-                  <MapPin size={12} />
-                  {placeDisplayLabel(ref.label)}
-                </span>
-              ))}
             </div>
           )}
 
           {summaryText && <p className="sheet-summary">{summaryText}</p>}
 
           {strip.length >= 3 && (
-            <div className="filmstrip" aria-label="Moments">
-              {strip.map((frame) => (
-                <button
-                  key={frame.scene.id}
-                  className="frame"
-                  onClick={() =>
-                    onPlay({
-                      videoId: frame.scene.source_video_id,
-                      videoLabel: frame.videoLabel,
-                      startS: frame.scene.start_s ?? 0,
-                      endS: frame.scene.end_s,
-                      title: event.title,
-                    })
-                  }
-                >
-                  <img src={assetUrl(frame.scene.thumbnail_path ?? "")} alt="" loading="lazy" />
-                  <span>{formatTime(frame.scene.start_s)}</span>
-                </button>
-              ))}
-            </div>
+            <section className="sheet-section">
+              <h3>Scenes</h3>
+              <div className="filmstrip" aria-label="Scenes">
+                {strip.map((frame) => (
+                  <button
+                    key={frame.scene.id}
+                    className="frame"
+                    onClick={() =>
+                      onPlay({
+                        videoId: frame.scene.source_video_id,
+                        videoLabel: frame.videoLabel,
+                        startS: frame.scene.start_s ?? 0,
+                        endS: frame.scene.end_s,
+                        title: event.title,
+                      })
+                    }
+                  >
+                    <img src={assetUrl(frame.scene.thumbnail_path ?? "")} alt="" loading="lazy" />
+                    <span>{formatTime(frame.scene.start_s)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
 
           {relatedItems.length > 0 && (
@@ -1003,80 +1230,82 @@ function PeopleWall({
 
   return (
     <section className="people-wall">
-      <header className="stage-hero">
-        <h1>People</h1>
-        <p>{faces.length + faceless.length === 1 ? "1 person" : `${faces.length + faceless.length} people`} across the tapes</p>
-      </header>
-      {duplicatePairs.length > 0 && (
-        <div className="same-person-row">
-          {duplicatePairs.map(({ a, b }) => (
-            <div key={pairKey(a, b)} className="same-person-card">
-              <div className="same-person-faces">
-                <PersonAvatar person={a} />
-                <PersonAvatar person={b} />
+      <Toolbar
+        title="People"
+        subtitle={`${faces.length + faceless.length === 1 ? "1 person" : `${faces.length + faceless.length} people`} across the tapes`}
+      />
+      <div className="stage-body">
+        {duplicatePairs.length > 0 && (
+          <div className="same-person-row">
+            {duplicatePairs.map(({ a, b }) => (
+              <div key={pairKey(a, b)} className="same-person-card">
+                <div className="same-person-faces">
+                  <PersonAvatar person={a} />
+                  <PersonAvatar person={b} />
+                </div>
+                <div className="same-person-text">
+                  <strong>Same person?</strong>
+                  <small>
+                    {personDisplayName(a.label)} · {personDisplayName(b.label)}
+                  </small>
+                </div>
+                <div className="same-person-actions">
+                  <button className="command-button small" onClick={() => mergePair(a, b)}>
+                    <GitMerge size={13} />
+                    <span>Merge</span>
+                  </button>
+                  <button className="command-button secondary small" onClick={() => dismissPair(pairKey(a, b))}>
+                    <span>Not the Same</span>
+                  </button>
+                </div>
               </div>
-              <div className="same-person-text">
-                <strong>Same person?</strong>
-                <small>
-                  {personDisplayName(a.label)} · {personDisplayName(b.label)}
-                </small>
-              </div>
-              <div className="same-person-actions">
-                <button className="command-button" onClick={() => mergePair(a, b)}>
-                  <GitMerge size={14} />
-                  <span>Merge</span>
-                </button>
-                <button className="command-button secondary" onClick={() => dismissPair(pairKey(a, b))}>
-                  <span>Not the same</span>
-                </button>
-              </div>
-            </div>
+            ))}
+          </div>
+        )}
+        <div className="avatar-grid">
+          {faces.map((person) => (
+            <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+              <PersonAvatar person={person} size="large" />
+              <strong>{personDisplayName(person.label)}</strong>
+              <span>{momentCount(appearanceCount(person))}</span>
+            </button>
           ))}
         </div>
-      )}
-      <div className="avatar-grid">
-        {faces.map((person) => (
-          <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
-            <PersonAvatar person={person} size="large" />
-            <strong>{personDisplayName(person.label)}</strong>
-            <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
-          </button>
-        ))}
+        {faceless.length > 0 && (
+          <details className="offcuts">
+            <summary>
+              <ChevronRight size={15} className="chevron" />
+              More people ({faceless.length})
+            </summary>
+            <div className="avatar-grid compact">
+              {faceless.map((person) => (
+                <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+                  <PersonAvatar person={person} />
+                  <strong>{personDisplayName(person.label)}</strong>
+                  <span>{momentCount(appearanceCount(person))}</span>
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
+        {roles.length > 0 && (
+          <details className="offcuts">
+            <summary>
+              <ChevronRight size={15} className="chevron" />
+              Roles heard on tape, not yet matched to a person ({roles.length})
+            </summary>
+            <div className="avatar-grid compact">
+              {roles.map((person) => (
+                <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
+                  <PersonAvatar person={person} />
+                  <strong>{personDisplayName(person.label)}</strong>
+                  <span>{momentCount(appearanceCount(person))}</span>
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
-      {faceless.length > 0 && (
-        <details className="offcuts">
-          <summary>
-            <ChevronRight size={15} className="chevron" />
-            More people ({faceless.length})
-          </summary>
-          <div className="avatar-grid compact">
-            {faceless.map((person) => (
-              <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
-                <PersonAvatar person={person} />
-                <strong>{personDisplayName(person.label)}</strong>
-                <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
-              </button>
-            ))}
-          </div>
-        </details>
-      )}
-      {roles.length > 0 && (
-        <details className="offcuts">
-          <summary>
-            <ChevronRight size={15} className="chevron" />
-            Roles heard on tape, not yet matched to a person ({roles.length})
-          </summary>
-          <div className="avatar-grid compact">
-            {roles.map((person) => (
-              <button key={person.id} className="avatar-cell" onClick={() => onSelect(person)}>
-                <PersonAvatar person={person} />
-                <strong>{personDisplayName(person.label)}</strong>
-                <span>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</span>
-              </button>
-            ))}
-          </div>
-        </details>
-      )}
     </section>
   );
 }
@@ -1152,7 +1381,7 @@ function PersonSheet({
               <h1>{personDisplayName(person.label)}</h1>
               <p className="byline">
                 {personAliasByline(person) && `also known as ${personAliasByline(person)} · `}
-                {appearances.length} {appearances.length === 1 ? "event" : "events"}
+                {momentCount(appearances.length)}
               </p>
               <div className="merge-affordance">
                 {merging ? (
@@ -1222,7 +1451,7 @@ function AlbumSheet({
   const byline = [
     album.date_label,
     placeDisplayLabel(album.place_label),
-    (album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`,
+    momentCount(album.events?.length ?? 0),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1391,7 +1620,7 @@ function eventFilmstrip(event: EventRecord, scenes: SceneRecord[], media: MediaR
         (scene.end_s ?? 0) >= localStart &&
         (scene.start_s ?? 0) <= localEnd
       ) {
-        frames.push({ scene, videoLabel: tape?.filename || videoId });
+        frames.push({ scene, videoLabel: tapeDisplayLabel(videoId, media) });
       }
     }
   }
@@ -1403,19 +1632,8 @@ function eventFilmstrip(event: EventRecord, scenes: SceneRecord[], media: MediaR
   return frames;
 }
 
-function formatEventDuration(event: EventRecord): string {
-  if (typeof event.start_s !== "number" || typeof event.end_s !== "number") {
-    return "";
-  }
-  const seconds = Math.max(0, event.end_s - event.start_s);
-  if (seconds < 90) {
-    return `${Math.round(seconds)}s`;
-  }
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+function momentCount(count: number): string {
+  return count === 1 ? "1 moment" : `${count} moments`;
 }
 
 function appearanceCount(person: PersonRecord): number {
@@ -1520,7 +1738,7 @@ function PersonPicker({
             <button key={person.id} type="button" onClick={() => onPick(person)}>
               <PersonAvatar person={person} />
               <span>{personDisplayName(person.label)}</span>
-              <small>{appearanceCount(person)} {appearanceCount(person) === 1 ? "event" : "events"}</small>
+              <small>{momentCount(appearanceCount(person))}</small>
             </button>
           ))}
         </div>
@@ -1595,10 +1813,60 @@ function pairKey(a: PersonRecord, b: PersonRecord): string {
 
 const PERSONISH_TASKS = new Set(["resolve_face_cluster", "resolve_speaker", "resolve_person"]);
 
+// Diarizer ids ("AZ_SPEAKER_01@video_000012", "AZ_P04_C") name a voice the
+// archive hasn't met yet; on screen they read as unnamed voices, and the raw
+// id stays a hover away.
+function humanVoiceLabel(raw: string | undefined, media: MediaRecord[]): string | null {
+  const label = (raw ?? "").trim();
+  const tapeVoice = /^AZ_SPEAKER_(\d+)@(video_\d+)$/.exec(label);
+  if (tapeVoice) {
+    const letter = String.fromCharCode(65 + (Number(tapeVoice[1]) % 26));
+    return `Unnamed voice ${letter} · ${tapeDisplayLabel(tapeVoice[2], media)}`;
+  }
+  const partVoice = /^AZ_P\d+_([A-Z])$/.exec(label);
+  if (partVoice) {
+    return `Unnamed voice ${partVoice[1]}`;
+  }
+  return null;
+}
+
+// The same voices inside free text: rationales and evidence notes.
+function humanizeVoiceIds(text: string | undefined, media: MediaRecord[]): string {
+  return (text ?? "").replace(/AZ_SPEAKER_\d+@video_\d+|AZ_P\d+_[A-Z]\b/g, (raw) => humanVoiceLabel(raw, media) ?? raw);
+}
+
 // Review titles arrive as "Resolve face cluster: Filia / Filip / Филя"; keep
 // the prefix, badge the alias soup.
-function ReviewItemTitle({ item }: { item: ReviewItem }) {
+function ReviewItemTitle({ item, media, compact }: { item: ReviewItem; media: MediaRecord[]; compact?: boolean }) {
   const title = item.title ?? "";
+  const colonAt = title.indexOf(":");
+  if (item.task_type === "resolve_speaker" && colonAt >= 0) {
+    const raw = title.slice(colonAt + 1).trim();
+    const voice = humanVoiceLabel(raw, media);
+    if (voice) {
+      return <span title={raw}>{`${title.slice(0, colonAt + 1)} ${voice}`}</span>;
+    }
+  }
+  if (String(item.task_type) === "resolve_duplicate_person" && title.includes(" + ")) {
+    const [prefix, rest] = title.includes("?") ? [title.slice(0, title.indexOf("?") + 1), title.slice(title.indexOf("?") + 1)] : ["", title];
+    const sides = rest.split(" + ").map((side) => side.trim()).filter(Boolean);
+    if (sides.length === 2) {
+      if (compact) {
+        return <span title={title}>{`${prefix} ${personDisplayName(sides[0])} & ${personDisplayName(sides[1])}`.trim()}</span>;
+      }
+      return (
+        <>
+          {prefix ? `${prefix} ` : null}
+          <PersonNameBadge label={sides[0]} />
+          {" & "}
+          <PersonNameBadge label={sides[1]} />
+        </>
+      );
+    }
+  }
+  if (item.task_type === "confirm_relationship" && title.includes(" / ")) {
+    return <AliasAwareLabel text={title.replace(/\s->\s/g, " → ")} />;
+  }
   if (!PERSONISH_TASKS.has(item.task_type) || !title.includes("/")) {
     return <>{title}</>;
   }
@@ -1625,7 +1893,7 @@ function AliasAwareLabel({ text }: { text: string }) {
   }
   const head = text.slice(0, firstSlash);
   let start = 0;
-  for (const delimiter of [": ", " be ", " is ", " as ", "· ", "( "]) {
+  for (const delimiter of [": ", " be ", " is ", " as ", "· ", "( ", "→ "]) {
     const at = head.lastIndexOf(delimiter);
     if (at >= 0) {
       start = Math.max(start, at + delimiter.length);
@@ -1743,15 +2011,26 @@ function ProjectStats({ summary, backlogCount }: { summary: Record<string, numbe
   );
 }
 
+function TaskGlyph({ task }: { task: string }) {
+  const Icon = taskIcons[task] ?? HelpCircle;
+  return (
+    <span className={`task-glyph ${task}`} aria-hidden="true">
+      <Icon size={13} strokeWidth={2.2} />
+    </span>
+  );
+}
+
 function ReviewQueue({
   items,
   selectedId,
   pendingActions,
+  media,
   onSelect,
 }: {
   items: ReviewItem[];
   selectedId: string;
   pendingActions: ReviewAction[];
+  media: MediaRecord[];
   onSelect: (item: ReviewItem) => void;
 }) {
   return (
@@ -1762,12 +2041,13 @@ function ReviewQueue({
           <button
             key={item.id}
             className={`queue-row ${selectedId === item.id ? "selected" : ""}`}
+            aria-current={selectedId === item.id ? "true" : undefined}
             onClick={() => onSelect(item)}
           >
-            <span className={`task-dot ${item.task_type}`} />
+            <TaskGlyph task={item.task_type} />
             <span className="queue-text">
               <strong>
-                <ReviewItemTitle item={item} />
+                <ReviewItemTitle item={item} media={media} compact />
               </strong>
               <small title={typeof item.confidence === "number" ? `${Math.round(item.confidence * 100)}% confidence` : undefined}>
                 {taskLabel(item.task_type)} · {formatConfidence(item.confidence)}
@@ -1850,18 +2130,26 @@ function ReviewDetail({
       )}
       <div className="review-body">
         <div className="review-heading">
-          <span className={`task-badge ${item.task_type}`}>{taskLabel(item.task_type)}</span>
-          <span className="review-confidence">{formatConfidence(item.confidence)}</span>
+          <span className={`task-badge ${item.task_type}`}>
+            <TaskGlyph task={item.task_type} />
+            {taskLabel(item.task_type)}
+          </span>
+          <span
+            className="review-confidence"
+            title={typeof item.confidence === "number" ? `${Math.round(item.confidence * 100)}% confidence` : undefined}
+          >
+            {formatConfidence(item.confidence)}
+          </span>
           {pending && <span className="pending-pill">Queued</span>}
         </div>
         <h2>
-          <ReviewItemTitle item={item} />
+          <ReviewItemTitle item={item} media={media} />
         </h2>
         <p>{item.prompt}</p>
-        <SuggestedResolution item={item} onQueue={onQueue} />
-        <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} />
+        <SuggestedResolution item={item} media={media} onQueue={onQueue} />
+        <ReviewSubjectPreview item={item} eventsById={eventsById} people={people} places={places} media={media} />
         <EvidenceList item={item} media={media} onPlay={onPlay} />
-        <ReviewActionControls item={item} people={people} onQueue={onQueue} excludedFaceIds={[...excludedFaces]} />
+        <ReviewActionControls item={item} people={people} media={media} onQueue={onQueue} excludedFaceIds={[...excludedFaces]} />
       </div>
     </section>
   );
@@ -2022,7 +2310,15 @@ function FaceContextGallery({
   );
 }
 
-function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+function SuggestedResolution({
+  item,
+  media,
+  onQueue,
+}: {
+  item: ReviewItem;
+  media: MediaRecord[];
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
   const suggestion = item.suggested_action;
   if (!suggestion) {
     return null;
@@ -2032,10 +2328,10 @@ function SuggestedResolution({ item, onQueue }: { item: ReviewItem; onQueue: (ac
     <div className="suggested-resolution">
       <div>
         <small>Best Guess</small>
-        <strong>
-          <AliasAwareLabel text={suggestion.label} />
+        <strong title={suggestion.label}>
+          <AliasAwareLabel text={humanizeVoiceIds(suggestion.label, media)} />
         </strong>
-        {suggestion.rationale ? <span>{suggestion.rationale}</span> : null}
+        {suggestion.rationale ? <span>{humanizeVoiceIds(suggestion.rationale, media)}</span> : null}
       </div>
       <CommandButton icon={CheckCircle2} label="Accept Guess" onClick={() => onQueue(actions.length === 1 ? actions[0] : actions)} />
     </div>
@@ -2047,11 +2343,13 @@ function ReviewSubjectPreview({
   eventsById,
   people,
   places,
+  media,
 }: {
   item: ReviewItem;
   eventsById: Map<string, EventRecord>;
   people: PersonRecord[];
   places: PlaceRecord[];
+  media: MediaRecord[];
 }) {
   if (item.task_type === "confirm_relationship") {
     const candidate = item.candidate as {
@@ -2082,15 +2380,16 @@ function ReviewSubjectPreview({
       identity_candidates?: SpeakerIdentityCandidate[];
     };
     const top = candidate.identity_candidates?.[0];
+    const voice = humanVoiceLabel(candidate.speaker_label, media);
     return (
       <div className="relation-preview">
-        <div className="subject-chip">
+        <div className="subject-chip voice" title={candidate.speaker_label}>
           <div className="face-stack">
-            <Users size={18} />
+            <AudioLines size={18} />
           </div>
           <div>
-            <strong>{candidate.speaker_label || "Local speaker"}</strong>
-            <small>speaker track</small>
+            <strong>{voice || candidate.speaker_label || "Local speaker"}</strong>
+            <small>voice heard on tape</small>
           </div>
         </div>
         <span className="relation-predicate">appears to be</span>
@@ -2168,11 +2467,13 @@ function PlaceChip({
 function ReviewActionControls({
   item,
   people = [],
+  media,
   onQueue,
   excludedFaceIds = [],
 }: {
   item: ReviewItem;
   people?: PersonRecord[];
+  media: MediaRecord[];
   onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
   excludedFaceIds?: string[];
 }) {
@@ -2180,7 +2481,7 @@ function ReviewActionControls({
     return <FaceClusterActions item={item} people={people} onQueue={onQueue} excludedFaceIds={excludedFaceIds} />;
   }
   if (item.task_type === "resolve_speaker") {
-    return <SpeakerIdentityActions item={item} onQueue={onQueue} />;
+    return <SpeakerIdentityActions item={item} media={media} onQueue={onQueue} />;
   }
   if (item.task_type === "resolve_place") {
     return <PlaceActions item={item} onQueue={onQueue} />;
@@ -2371,7 +2672,15 @@ function FaceClusterActions({
   );
 }
 
-function SpeakerIdentityActions({ item, onQueue }: { item: ReviewItem; onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void> }) {
+function SpeakerIdentityActions({
+  item,
+  media,
+  onQueue,
+}: {
+  item: ReviewItem;
+  media: MediaRecord[];
+  onQueue: (action: ReviewAction | ReviewAction[]) => Promise<void>;
+}) {
   const candidates = speakerIdentityCandidates(item);
   const [selectedId, setSelectedId] = useState(candidates[0]?.speaker_identity_candidate_id ?? candidates[0]?.id ?? "");
   const selected = candidates.find((candidate) => (candidate.speaker_identity_candidate_id ?? candidate.id) === selectedId);
@@ -2398,7 +2707,7 @@ function SpeakerIdentityActions({ item, onQueue }: { item: ReviewItem; onQueue: 
                   {candidate.signal_sources?.role_identity_bridge ? " · role bridge" : ""}
                   {candidate.signal_sources?.self_identification_phrase ? " · self ID" : ""}
                 </small>
-                {candidate.basis?.length ? <small>{candidate.basis.slice(0, 2).join(" ")}</small> : null}
+                {candidate.basis?.length ? <small>{humanizeVoiceIds(candidate.basis.slice(0, 2).join(" "), media)}</small> : null}
               </span>
             </label>
           );
@@ -2780,11 +3089,12 @@ function EvidenceList({
 }) {
   return (
     <div className="evidence-list">
-      {item.events.map((event) => (
-        <div key={event.event_id} className="evidence-row">
-          <Clock3 size={14} />
-          <span>{event.title}</span>
-          <small>{event.source_video_ids.join(", ")} · {formatTime(event.start_s)}</small>
+      {item.events.length > 0 && <h3 className="evidence-heading">Seen in</h3>}
+      {item.events.map((event, index) => (
+        <div key={`${event.event_id}-${index}`} className="evidence-row">
+          <Film size={14} className="evidence-glyph" />
+          <span className="evidence-title">{event.title}</span>
+          <small>{uniqueStrings(event.source_video_ids.map((id) => tapeDisplayLabel(id, media))).join(", ")}</small>
           <MomentButton event={event} media={media} onPlay={onPlay} />
         </div>
       ))}
@@ -2807,7 +3117,7 @@ function MomentButton({
   }
   return (
     <button className="moment-button" onClick={() => onPlay(moment)} title={`Play ${moment.videoLabel} at ${formatTime(moment.startS)}`}>
-      <Clock3 size={13} />
+      <Play size={10} fill="currentColor" />
       <span>{formatTime(moment.startS)}</span>
     </button>
   );
@@ -3324,7 +3634,7 @@ function RangeMomentButton({
     .join(" · ");
   return (
     <button className="moment-button range-button" onClick={() => onPlay(moment)} title={source}>
-      <Clock3 size={13} />
+      <Play size={10} fill="currentColor" />
       <span>{rangeLabel}</span>
     </button>
   );
@@ -3489,7 +3799,7 @@ function SemanticSearchPanel({
 
       <div className="semantic-sections">
         {(Object.keys(semanticSectionLabels) as SemanticSectionId[]).map((sectionId) => {
-          const hits = sections[sectionId] ?? [];
+          const hits = (sections[sectionId] ?? []).filter((hit) => sectionId !== "seen" || hit.thumbnail_path);
           if (!hits.length) return null;
           return (
             <div key={sectionId} className="section-block">
@@ -3601,10 +3911,9 @@ function momentFromHit(hit: SemanticHit, media: MediaRecord[]): PlayerMoment | n
   if (anchor === null) {
     return null;
   }
-  const tape = media.find((row) => row.id === hit.source_video_id);
   return {
     videoId: hit.source_video_id,
-    videoLabel: tape?.filename || hit.source_video_id,
+    videoLabel: tapeDisplayLabel(hit.source_video_id, media),
     startS: Math.max(0, anchor - 2),
     endS: typeof hit.end_s === "number" ? hit.end_s : undefined,
     title: hit.title || hit.snippet || "Search match",
@@ -3637,16 +3946,20 @@ function AlbumsView({
   events,
   media,
   onPlay,
+  onOpenAlbum,
 }: {
   albums: AlbumRecord[];
   events: EventRecord[];
   media: MediaRecord[];
   onPlay: (moment: PlayerMoment) => void;
+  onOpenAlbum: (album: AlbumRecord) => void;
 }) {
   const eventsById = useMemo(() => new Map(events.map((event) => [event.id, event])), [events]);
   const visibleAlbums = dedupeAlbumsForDisplay(albums.filter((album) => album.events?.length || album.thumbnail_path));
   return (
-    <section className="albums-view">
+    <section className="albums-page">
+      <Toolbar title="Albums" subtitle={visibleAlbums.length === 1 ? "1 album" : `${visibleAlbums.length} albums, gathered from the tapes`} />
+    <div className="stage-body albums-view">
       {visibleAlbums.map((album) => {
         const cover = albumCoverPath(album, eventsById) || album.thumbnail_path;
         // A bare-date title with the same date underneath says it twice.
@@ -3656,23 +3969,28 @@ function AlbumsView({
           (subtitleParts.length ? "" : humanizeToken(album.album_type ?? "album"));
         const tiles = (album.events ?? []).slice(0, 8);
         const showTiles = tiles.length > 1;
+        const names = uniqueStrings((album.people_labels ?? []).map((label) => personDisplayName(label))).slice(0, 5);
         return (
           <article key={album.id} className="album-row">
-            <div className="album-cover">
+            <button className="album-cover" onClick={() => onOpenAlbum(album)} aria-label={`Open ${album.title}`}>
               {cover ? <img src={assetUrl(cover)} alt="" /> : <AlbumCoverFallback album={album} eventsById={eventsById} />}
-            </div>
+            </button>
             <div className="album-body">
               <div className="row-heading">
                 <div className="event-title-stack">
-                  <h2>{album.title}</h2>
+                  <h2>
+                    <button className="album-title" onClick={() => onOpenAlbum(album)}>
+                      {album.title}
+                    </button>
+                  </h2>
                   {subtitle && <small>{subtitle}</small>}
                 </div>
-                <span>{(album.events?.length ?? 0) === 1 ? "1 event" : `${album.events?.length ?? 0} events`}</span>
+                <span>{momentCount(album.events?.length ?? 0)}</span>
               </div>
               <div className="token-row">
                 <Token>{humanizeToken(album.album_type ?? "album")}</Token>
-                {(album.people_labels ?? []).slice(0, 5).map((label) => (
-                  <Token key={label}>{personDisplayName(label)}</Token>
+                {names.map((name) => (
+                  <Token key={name}>{name}</Token>
                 ))}
               </div>
               {showTiles && (
@@ -3693,6 +4011,7 @@ function AlbumsView({
         );
       })}
       {!visibleAlbums.length ? <EmptyState icon={CalendarDays} title="No albums" /> : null}
+    </div>
     </section>
   );
 }
@@ -4266,19 +4585,23 @@ function JournalView({
     return map;
   }, [bundle]);
 
-  if (error) {
-    return <section className="journal-view"><p className="empty-note">{error}</p></section>;
-  }
-  if (posts === null) {
-    return <section className="journal-view"><p className="empty-note">Opening the journal…</p></section>;
-  }
-  if (!posts.length) {
+  if (error || posts === null || !posts.length) {
     return (
-      <section className="journal-view">
-        <header className="view-header"><h1 className="t-large-title">Journal</h1></header>
-        <p className="empty-note">
-          No entries yet — run <code>tapesplit journal generate</code> to draft the first posts from the tapes.
-        </p>
+      <section className="journal-page">
+        <Toolbar title="Journal" subtitle="Days from the tapes, written down" />
+        <div className="stage-body journal-view">
+          <p className="empty-note">
+            {error ? (
+              error
+            ) : posts === null ? (
+              "Opening the journal…"
+            ) : (
+              <>
+                No entries yet — run <code>tapesplit journal generate</code> to draft the first posts from the tapes.
+              </>
+            )}
+          </p>
+        </div>
       </section>
     );
   }
@@ -4299,30 +4622,39 @@ function JournalView({
   }
 
   return (
-    <section className="journal-view">
-      <header className="view-header">
-        <h1 className="t-large-title journal-display">Journal</h1>
-        <p className="view-subtitle">Days from the tapes, written down — every line traceable to a moment.</p>
-      </header>
-      <div className="journal-feed">
-        {posts.map((post) => {
-          const hero = post.hero_event_id ? eventsById.get(post.hero_event_id) : undefined;
-          const cover = hero?.thumbnail_path || hero?.keyframe_path;
-          return (
-            <article key={post.id} className="journal-card" onClick={() => setOpenPostId(post.id)}>
-              {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="journal-card-blank" />}
-              <div className="journal-card-body">
-                <span className="journal-kicker">{post.kicker}</span>
-                <h2 className="journal-display">{post.title}</h2>
-                <p className="journal-card-dek">{post.dek}</p>
-                <span className="journal-byline">
-                  {post.date_label}
-                  {post.read_minutes ? ` · ${post.read_minutes} min` : ""}
-                </span>
-              </div>
-            </article>
-          );
-        })}
+    <section className="journal-page">
+      <Toolbar
+        title="Journal"
+        subtitle={`${posts.length === 1 ? "1 entry" : `${posts.length} entries`} · every line traceable to a moment`}
+      />
+      <div className="stage-body journal-view">
+        <div className="journal-feed">
+          {posts.map((post) => {
+            const hero = post.hero_event_id ? eventsById.get(post.hero_event_id) : undefined;
+            const cover = hero?.thumbnail_path || hero?.keyframe_path;
+            return (
+              <article
+                key={post.id}
+                className="journal-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpenPostId(post.id)}
+                onKeyDown={(keyEvent) => keyEvent.key === "Enter" && setOpenPostId(post.id)}
+              >
+                {cover ? <img src={assetUrl(cover)} alt="" loading="lazy" /> : <div className="journal-card-blank" />}
+                <div className="journal-card-body">
+                  <span className="journal-kicker">{post.kicker}</span>
+                  <h2 className="journal-display">{post.title}</h2>
+                  <p className="journal-card-dek">{post.dek}</p>
+                  <span className="journal-byline">
+                    {post.date_label}
+                    {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -4393,31 +4725,33 @@ function JournalPostArticle({
   }
 
   return (
-    <article className="journal-article">
-      <button className="journal-back" onClick={onBack}>
-        ← Journal
-      </button>
-      <header>
-        <span className="journal-kicker">{post.kicker}</span>
-        <h1 className="journal-display journal-title">{post.title}</h1>
-        {post.dek ? <p className="journal-dek">{post.dek}</p> : null}
-        <p className="journal-byline">
-          {post.date_label}
-          {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
-          {post.generated ? " · drafted from the tapes" : ""}
-        </p>
-      </header>
-      {heroCover ? (
-        <figure className="journal-hero">
-          <img src={assetUrl(heroCover)} alt="" />
-        </figure>
-      ) : null}
-      <div className="journal-body">
-        {post.blocks.map((block, index) => (
-          <JournalBlockView key={index} block={block} />
-        ))}
+    <section className="journal-page reading">
+      <Toolbar title={post.title} subtitle={post.date_label} onBack={onBack} backLabel="Journal" />
+      <div className="stage-body">
+        <article className="journal-article">
+          <header>
+            <span className="journal-kicker">{post.kicker}</span>
+            <h1 className="journal-display journal-title">{post.title}</h1>
+            {post.dek ? <p className="journal-dek">{post.dek}</p> : null}
+            <p className="journal-byline">
+              {post.date_label}
+              {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
+              {post.generated ? " · drafted from the tapes" : ""}
+            </p>
+          </header>
+          {heroCover ? (
+            <figure className="journal-hero">
+              <img src={assetUrl(heroCover)} alt="" />
+            </figure>
+          ) : null}
+          <div className="journal-body">
+            {post.blocks.map((block, index) => (
+              <JournalBlockView key={index} block={block} />
+            ))}
+          </div>
+        </article>
       </div>
-    </article>
+    </section>
   );
 
   function JournalBlockView({ block }: { block: JournalBlock }) {
