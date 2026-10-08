@@ -1221,17 +1221,22 @@ kbd {
   }
 }
 
+/* Floats over the sheet's top-right corner and stays there while it scrolls. */
 .sheet-close {
-  position: absolute;
+  position: sticky;
   top: var(--sp-3);
-  right: var(--sp-3);
+  float: right;
+  margin: var(--sp-3) var(--sp-3) -40px 0;
   z-index: 3;
   width: 28px;
   height: 28px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: var(--fill);
+  background: var(--material);
+  backdrop-filter: var(--blur-chrome);
+  -webkit-backdrop-filter: var(--blur-chrome);
+  box-shadow: var(--shadow-control);
   color: var(--text-secondary);
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
@@ -1250,7 +1255,11 @@ kbd {
 
 .sheet-close.inline {
   position: static;
+  float: none;
+  margin: 0;
   flex-shrink: 0;
+  background: var(--fill);
+  box-shadow: none;
 }
 
 .sheet-hero {

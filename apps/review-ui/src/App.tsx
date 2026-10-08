@@ -1838,13 +1838,20 @@ function humanizeVoiceIds(text: string | undefined, media: MediaRecord[]): strin
 // Review titles arrive as "Resolve face cluster: Filia / Filip / Филя"; keep
 // the prefix, badge the alias soup.
 function ReviewItemTitle({ item, media, compact }: { item: ReviewItem; media: MediaRecord[]; compact?: boolean }) {
-  const title = item.title ?? "";
+  const title = (item.title ?? "").replace(/\s->\s/g, " → ");
   const colonAt = title.indexOf(":");
-  if (item.task_type === "resolve_speaker" && colonAt >= 0) {
-    const raw = title.slice(colonAt + 1).trim();
-    const voice = humanVoiceLabel(raw, media);
+  // In the queue the glyph already names the kind, so "Resolve speaker:" goes.
+  const lead = colonAt >= 0 && !compact ? `${title.slice(0, colonAt + 1)} ` : "";
+  const subject = colonAt >= 0 ? title.slice(colonAt + 1).trim() : title;
+  if (item.task_type === "resolve_speaker") {
+    const voice = humanVoiceLabel(subject, media);
     if (voice) {
-      return <span title={raw}>{`${title.slice(0, colonAt + 1)} ${voice}`}</span>;
+      return (
+        <span title={subject}>
+          {lead}
+          {voice}
+        </span>
+      );
     }
   }
   if (String(item.task_type) === "resolve_duplicate_person" && title.includes(" + ")) {
@@ -1864,21 +1871,26 @@ function ReviewItemTitle({ item, media, compact }: { item: ReviewItem; media: Me
       );
     }
   }
-  if (item.task_type === "confirm_relationship" && title.includes(" / ")) {
-    return <AliasAwareLabel text={title.replace(/\s->\s/g, " → ")} />;
+  if (item.task_type === "confirm_relationship" && subject.includes(" / ")) {
+    return (
+      <>
+        {lead}
+        <AliasAwareLabel text={subject} />
+      </>
+    );
   }
-  if (!PERSONISH_TASKS.has(item.task_type) || !title.includes("/")) {
-    return <>{title}</>;
-  }
-  const colon = title.indexOf(":");
-  const tail = (colon >= 0 ? title.slice(colon + 1) : title).trim();
-  if (!tail.includes("/")) {
-    return <>{title}</>;
+  if (!PERSONISH_TASKS.has(item.task_type) || !subject.includes("/")) {
+    return (
+      <>
+        {lead}
+        {subject}
+      </>
+    );
   }
   return (
     <>
-      {colon >= 0 ? `${title.slice(0, colon + 1)} ` : null}
-      <PersonNameBadge label={tail} />
+      {lead}
+      <PersonNameBadge label={subject} />
     </>
   );
 }
