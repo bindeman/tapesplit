@@ -36,6 +36,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
+import { MONTHS, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
   applyReviewActions,
@@ -896,8 +897,6 @@ function eventKind(event: EventRecord): string {
   return "other";
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 // "Mar – May 2006", "1998 – 2001": the span a tape's datable moments cover.
 function tapeDateSpan(events: EventRecord[]): string {
   const stamps: Array<{ year: number; month: number | null }> = [];
@@ -924,22 +923,6 @@ function tapeDateSpan(events: EventRecord[]): string {
     return `${MONTHS[first.month - 1]} – ${MONTHS[last.month - 1]} ${first.year}`;
   }
   return first.month ? `${MONTHS[first.month - 1]} ${first.year}` : String(first.year);
-}
-
-// "2002-08-22" → "Aug 22, 2002"; partial dates keep their precision.
-function formatDateValue(value: string): string {
-  const match = /^((?:19|20)\d{2})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(value.trim());
-  if (!match) {
-    return value;
-  }
-  const [, year, month, day] = match;
-  if (month && day) {
-    return `${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`;
-  }
-  if (month) {
-    return `${MONTHS[Number(month) - 1]} ${year}`;
-  }
-  return year;
 }
 
 function EventCard({
@@ -1566,13 +1549,6 @@ function libraryGroups(events: EventRecord[], media: MediaRecord[], sort: Librar
   });
 }
 
-// One vocabulary for naming tapes everywhere: the library's roll numbers,
-// never raw video ids.
-function tapeDisplayLabel(videoId: string, media: MediaRecord[]): string {
-  const index = media.findIndex((row) => row.id === videoId);
-  return index >= 0 ? `Tape ${index + 1}` : "Loose footage";
-}
-
 // Camcorders don't predate ~1970; narrated years older than that (volcano
 // eruptions, building cornerstones) are historical context, not event dates.
 const EARLIEST_PLAUSIBLE_YEAR = 1970;
@@ -1647,26 +1623,6 @@ function personInitials(label: string): string {
     .slice(0, 2)
     .map((word) => word[0]?.toUpperCase() ?? "")
     .join("");
-}
-
-function humanizeToken(value: string): string {
-  const text = value.replace(/_/g, " ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-// Pipeline labels hold every alias at once ("Filia / Filip / Филя"); a person
-// deserves one confident name, with the rest demoted to a byline.
-function personDisplayName(label: string): string {
-  const parts = label
-    .split("/")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length <= 1) {
-    return label.trim() || label;
-  }
-  const latin = parts.filter((part) => /^[ -ɏ]+$/.test(part));
-  const pool = latin.length ? latin : parts;
-  return pool.reduce((best, part) => (part.length < best.length ? part : best));
 }
 
 function personAliasList(label: string, extra: string[] = []): string[] {
@@ -1813,23 +1769,6 @@ function pairKey(a: PersonRecord, b: PersonRecord): string {
 
 const PERSONISH_TASKS = new Set(["resolve_face_cluster", "resolve_speaker", "resolve_person"]);
 
-// Diarizer ids ("AZ_SPEAKER_01@video_000012", "AZ_P04_C") name a voice the
-// archive hasn't met yet; on screen they read as unnamed voices, and the raw
-// id stays a hover away.
-function humanVoiceLabel(raw: string | undefined, media: MediaRecord[]): string | null {
-  const label = (raw ?? "").trim();
-  const tapeVoice = /^AZ_SPEAKER_(\d+)@(video_\d+)$/.exec(label);
-  if (tapeVoice) {
-    const letter = String.fromCharCode(65 + (Number(tapeVoice[1]) % 26));
-    return `Unnamed voice ${letter} · ${tapeDisplayLabel(tapeVoice[2], media)}`;
-  }
-  const partVoice = /^AZ_P\d+_([A-Z])$/.exec(label);
-  if (partVoice) {
-    return `Unnamed voice ${partVoice[1]}`;
-  }
-  return null;
-}
-
 // The same voices inside free text: rationales and evidence notes.
 function humanizeVoiceIds(text: string | undefined, media: MediaRecord[]): string {
   return (text ?? "").replace(/AZ_SPEAKER_\d+@video_\d+|AZ_P\d+_[A-Z]\b/g, (raw) => humanVoiceLabel(raw, media) ?? raw);
@@ -1924,82 +1863,6 @@ function AliasAwareLabel({ text }: { text: string }) {
       {cut >= 0 ? rest.slice(cut) : ""}
     </>
   );
-}
-
-// Regions that must never share one scope: two of these in a parenthetical
-// means the pipeline is asserting a contradiction, so we suppress it.
-const DISJOINT_REGIONS = [
-  "oregon",
-  "wisconsin",
-  "idaho",
-  "hawaii",
-  "alaska",
-  "california",
-  "florida",
-  "washington",
-  "switzerland",
-  "russia",
-];
-
-// Context groups named after tapes are honest about being unplaced; named
-// contexts drop the trailing machinery word.
-function contextDisplayLabel(raw: string): string {
-  const label = raw.trim();
-  if (/^video_\d+/i.test(label)) {
-    const year = /(19|20)\d{2}(?:\s*[–-]\s*(?:19|20)\d{2})?/.exec(label)?.[0];
-    return year ? `${year} · unplaced` : "Unplaced";
-  }
-  return label.replace(/\s*context$/i, "");
-}
-
-// Machine scopes ("video_000003 context") and contradictory compound scopes
-// ("Hawaii, Moscow context") assert things the archive has not earned; only a
-// scope that reads as one coherent place survives to the screen.
-// Generic labels arrive lowercase from the pipeline ("home", "zoo"); on
-// screen they read as proper nouns.
-function titleCasePlace(label: string): string {
-  if (!label || label !== label.toLowerCase()) {
-    return label;
-  }
-  return label.replace(/(^|[\s-])(\p{Ll})/gu, (full, sep, ch) => sep + ch.toUpperCase());
-}
-
-function placeDisplayLabel(raw?: string): string {
-  if (!raw) {
-    return "";
-  }
-  const trimmed = raw.trim();
-  const match = /^(.*?)\s*\(([^()]*)\)$/.exec(trimmed);
-  if (!match) {
-    return titleCasePlace(trimmed);
-  }
-  const label = titleCasePlace(match[1].trim() || trimmed);
-  let scope = match[2].trim();
-  if (!scope || /video_\d+/i.test(scope)) {
-    return label;
-  }
-  if (/^near\s/i.test(scope)) {
-    return `${label} · ${scope}`;
-  }
-  scope = scope.replace(/\s*context$/i, "").trim();
-  const parts = scope
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    // Years and placeholder words are provenance, not geography — never
-    // part of a place name on screen ("home (2006, unplaced)" → "Home").
-    .filter((part) => !/^(19|20)\d{2}$/.test(part) && !/^(unplaced|unknown|unresolved)$/i.test(part));
-  if (!parts.length) {
-    return label;
-  }
-  const regionHits = new Set(
-    parts.map((part) => part.toLowerCase()).filter((part) => DISJOINT_REGIONS.includes(part)),
-  );
-  const leadsWithRegion = DISJOINT_REGIONS.includes(parts[0]?.toLowerCase() ?? "");
-  if (regionHits.size > 1 || parts.length > 2 || (leadsWithRegion && parts.length > 1)) {
-    return label;
-  }
-  return `${label} · ${parts.join(", ")}`;
 }
 
 function ProjectStats({ summary, backlogCount }: { summary: Record<string, number>; backlogCount: number }) {
@@ -4468,10 +4331,6 @@ function firstPlaceThumbnail(place: PlaceRecord | undefined, eventsById: Map<str
   return "";
 }
 
-function uniqueStrings(values: string[]) {
-  return values.filter((value, index) => value && values.indexOf(value) === index);
-}
-
 function normalizeLabel(value?: string) {
   return String(value || "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
@@ -4513,18 +4372,6 @@ function formatConfidence(value?: number) {
 
 function formatScore(value?: number) {
   return typeof value === "number" ? `score ${value.toFixed(2)}` : "score n/a";
-}
-
-function formatTime(value?: number) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "0:00";
-  const total = Math.max(0, Math.floor(value));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatSignedSeconds(value: number) {
