@@ -1471,15 +1471,17 @@ h3 {
   font-size: 16px;
 }
 
+/* Screenshot windows: Golden Gate chrome to match the app inside them. A flat,
+   light title bar, squarer 12px corners, and the candy stoplights. */
 .window {
   display: block;
   width: 100%;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 12px;
   overflow: hidden;
   background: var(--card);
-  box-shadow: var(--shadow-2);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 22px 48px -18px rgba(0, 0, 0, 0.42);
   cursor: zoom-in;
   text-align: left;
   color: inherit;
@@ -1490,26 +1492,35 @@ h3 {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 26px;
-  padding-inline: 10px;
-  background: linear-gradient(#ececee, #d6d6d9);
-  border-bottom: 1px solid #b9b9bd;
-  font-family: var(--font-ui);
-  font-size: 11.5px;
-  color: #4a4a4e;
+  height: 28px;
+  padding-inline: 11px;
+  background: #f4f4f6;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b5b60;
 }
 
 @media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .window {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
   :root:not([data-theme="light"]) .window-bar {
-    background: linear-gradient(#3a3a3d, #2a2a2d);
-    border-bottom-color: #111;
+    background: #2b2b2e;
+    border-bottom-color: rgba(0, 0, 0, 0.6);
     color: #c8c8cc;
   }
 }
 
+:root[data-theme="dark"] .window {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 :root[data-theme="dark"] .window-bar {
-  background: linear-gradient(#3a3a3d, #2a2a2d);
-  border-bottom-color: #111;
+  background: #2b2b2e;
+  border-bottom-color: rgba(0, 0, 0, 0.6);
   color: #c8c8cc;
 }
 
