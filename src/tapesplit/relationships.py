@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from tapesplit.social import build_social_candidates, social_review_question
 from tapesplit.storage import append_jsonl, read_jsonl
 from tapesplit.visibility import build_visibility_filter
 
@@ -205,6 +206,20 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
     _add_event_summary_relationships(relationship_buckets, events=events, person_entities=person_entities)
 
     candidates = [_candidate_from_bucket(index, bucket) for index, bucket in enumerate(relationship_buckets.values(), start=1)]
+    # People outside the family, scoped to the moments they turn up in.
+    social = build_social_candidates(
+        transcripts=transcripts,
+        events=events,
+        person_entities=person_entities,
+        kinship_candidates=candidates,
+        date_groups=read_jsonl(project / "date_groups.jsonl"),
+        era_contexts=read_jsonl(project / "era_contexts.jsonl"),
+        event_for_segment=_event_for_segment,
+        contains_term=_contains_term,
+        context_seconds=context_seconds,
+    )
+    candidates += [{"id": f"relationship_candidate_{index:06d}", **candidate}
+                   for index, candidate in enumerate(social, start=len(candidates) + 1)]
     review_tasks = [_review_task_from_candidate(index, candidate) for index, candidate in enumerate(candidates, start=1)]
 
     relationship_output = project / "relationship_candidates.jsonl"
@@ -273,10 +288,14 @@ def _review_task_from_candidate(index: int, candidate: dict[str, Any]) -> dict[s
     predicate_label = _predicate_label(str(candidate.get("predicate") or "relationship"))
     subject = str(candidate.get("subject_label") or "this person").replace("Unresolved ", "").lower()
     obj = str(candidate.get("object_label") or "the named person")
+    if candidate.get("source") == "local_social_resolver":
+        question = social_review_question(candidate)
+    else:
+        question = f"Is the person referred to as {subject} likely {obj}'s {predicate_label}?"
     return {
         "id": f"relationship_review_task_{index:06d}",
         "task_type": "confirm_relationship",
-        "question": f"Is the person referred to as {subject} likely {obj}'s {predicate_label}?",
+        "question": question,
         "candidate_ids": [candidate.get("id")],
         "evidence_ids": candidate.get("evidence_ids", []),
         "priority": "high" if float(candidate.get("confidence") or 0.0) >= 0.7 else "medium",
@@ -667,6 +686,10 @@ def _predicate_label(predicate: str) -> str:
         "father_candidate": "father",
         "grandparent_candidate": "grandparent",
         "sibling_candidate": "sibling",
+        "friend_or_classmate_candidate": "friend or classmate",
+        "family_friend_candidate": "family friend",
+        "teacher_or_caretaker_candidate": "teacher or caretaker",
+        "honorific_family_friend_candidate": "relative or family friend",
     }
     return labels.get(predicate, predicate.replace("_candidate", "").replace("_", " "))
 
