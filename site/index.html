@@ -465,6 +465,20 @@
         </div>
         <div class="places-list" id="places-list"></div>
       </div>
+
+      <div class="landmarks" id="landmarks">
+        <div class="prose">
+          <h3 id="landmarks-title">How it finds a landmark</h3>
+          <p>A pin starts as words: a sign in the frame, a line on the soundtrack, or the video model naming what it sees. tapesplit checks those against each other, looks the name up within the trip or place around it, and asks a second model whether the match fits the moment. Four real ones:</p>
+        </div>
+        <div class="lm-grid" id="lm-grid"></div>
+        <p class="lm-aside" id="lm-aside"></p>
+        <div class="lm-slips">
+          <h4>Where it still slips</h4>
+          <ul id="lm-slips"></ul>
+        </div>
+        <p class="lm-note">The lookup's score mostly measures how well known a match is, not how well it fits, so the context and the verifier do the real checking. On this page nothing near home gets an exact pin; that rule lives in the site's build, not in tapesplit.</p>
+      </div>
     </div>
   </section>
 
@@ -540,7 +554,7 @@
     <div class="wrap">
       <div class="prose">
         <h2 id="trust-title">What it still gets wrong</h2>
-        <p>It's an alpha, and it's wrong in instructive ways. It once looked up “zoo” and landed in Guangzhou, China, and it put “Redwood Forest” in Melbourne, Australia. It decided a cable car in Davos had something to do with Madison, Wisconsin, because that's where we lived that summer. It hears “Eugene” as «Фьюджин». And when the transcriber got stuck on «Филя, посмотри на папу» (“Filya, look at Dad”) and wrote it 474 times in twelve minutes, 19 of those repeats went into the case that Dad is my dad.</p>
+        <p>It's an alpha, and it's wrong in instructive ways. It once looked up “zoo” and landed in Guangzhou, China, and it put “Redwood Forest” in Melbourne, Australia. After a rebuild renumbered its places, a correction meant for Madison, Wisconsin landed on a cable car in Davos. It hears “Eugene” as «Фьюджин». And when the transcriber got stuck on «Филя, посмотри на папу» (“Filya, look at Dad”) and wrote it 474 times in twelve minutes, 19 of those repeats went into the case that Dad is my dad.</p>
         <p>So it's built to be checked. Every guess keeps its evidence, strong guesses are accepted only under rules for each kind of fact, and everything else waits in a review queue: 368 items for this archive.</p>
       </div>
       <div class="trust">

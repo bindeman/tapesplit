@@ -573,6 +573,50 @@
     langStat.innerHTML = `Across the archive: <b>${st.speech_ru_hours} hours</b> of Russian speech and <b>${st.speech_en_hours} hours</b> of English, in ${num(st.speaker_segments)} diarized lines.`;
   }
 
+  // ------------------------------------------------------------ landmarks: from words to a pin
+  const LM = H.landmarks;
+  const lmGrid = $("#lm-grid");
+  if (LM && lmGrid) {
+    const deg = (v, pos, neg) => `${Math.abs(v).toFixed(4)}° ${v >= 0 ? pos : neg}`;
+    const VERDICT = { support: "Agrees", refute: "Disagrees", insufficient: "Not sure" };
+    const lookupItem = (l) => {
+      return `<li class="lm-step look${l.wrong ? " miss" : " hit"}"><b>Looked up</b>
+        <span class="lm-q">“${esc(l.query)}”</span> → <span class="lm-r">${esc(l.name)}</span>
+        <span class="lm-conf">${l.confidence.toFixed(2)}</span>${l.suspect ? `<span class="lm-flag">flagged</span>` : ""}
+        <span class="lm-sub">${l.note ? esc(l.note) : `${deg(l.lat, "N", "S")}, ${deg(l.lng, "E", "W")}`}</span></li>`;
+    };
+    const voteItem = (v) => `<li class="lm-step vote ${esc(v.verdict)}"><b>Checked</b>
+        <span class="lm-r">${VERDICT[v.verdict] || esc(v.verdict)}</span> <span class="lm-conf">${v.confidence.toFixed(2)}</span>
+        <span class="lm-sub">“${esc(v.reasoning)}”</span></li>`;
+    const saidItem = (s) => `<li class="lm-step heard"><b>Heard</b><span class="lm-ru" lang="ru">«${esc(s.ru)}»</span>
+        <span class="lm-sub">“${esc(s.en)}” · Tape ${s.tape} · ${esc(s.clock)}</span></li>`;
+    lmGrid.innerHTML = LM.cards.map((c) => {
+      const steps = [];
+      if (c.ocr) steps.push(`<li class="lm-step read"><b>Read</b><span class="lm-sign">${esc(c.ocr.text)}</span>
+        <span class="lm-sub">Apple Vision · Tape ${c.ocr.tape} · ${esc(c.ocr.clock)}</span></li>`);
+      if (c.said) steps.push(saidItem(c.said));
+      if (c.said2) steps.push(saidItem(c.said2));
+      if (c.vote.verdict === "refute") {
+        steps.push(lookupItem(c.lookups[0]), voteItem(c.vote), ...c.lookups.slice(1).map(lookupItem));
+      } else {
+        steps.push(...c.lookups.map(lookupItem), voteItem(c.vote));
+      }
+      return `<article class="lm-card reveal">
+        <div class="lm-pic"><img src="${c.image}" alt="${esc(c.title)}" loading="lazy" width="960" height="656">${c.ocr ? boxes([{ box: c.ocr.box }]) : ""}</div>
+        <div class="lm-body">
+          <span class="lm-kind">${esc(c.kind)}</span>
+          <h4>${esc(c.title)} <span>${esc(c.place)}</span></h4>
+          <ol class="lm-chain">${steps.join("")}</ol>
+          <p class="lm-story">${esc(c.story)}</p>
+        </div>
+      </article>`;
+    }).join("");
+    lmGrid.querySelectorAll(".lm-card").forEach((el) => watch(el, () => el.querySelectorAll(".box").forEach((b) => b.classList.add("on"))));
+    const cv = LM.convict;
+    $("#lm-aside").innerHTML = `On Tape ${cv.tape} at ${esc(cv.clock)}, the local transcript heard <i>“${esc(cv.heard)}”</i> The video model heard <i>“${esc(cv.model)}”</i> The lookup agreed with the video model: ${esc(cv.lookup.where)}, ${cv.lookup.confidence.toFixed(2)}.`;
+    $("#lm-slips").innerHTML = LM.slips.map((s) => `<li><b>${esc(s.what)}</b> ${esc(s.why)}</li>`).join("");
+  }
+
   // ------------------------------------------------------------ chronology
   const chart = $("#chrono-svg");
   if (chart) {
