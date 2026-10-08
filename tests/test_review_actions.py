@@ -592,3 +592,166 @@ def _suggested_item(
             "payload": payload,
         },
     }
+
+
+# ---------------------------------------------------------------------------- id drift
+# Generated ids are sort ranks and renumber on every rebuild. Corrections carry a
+# content fingerprint, and replay must follow it (or refuse), never the old number.
+
+
+def _person(row_id: str, label: str, key: str, **extra) -> dict:
+    return {"id": row_id, "label": label, "aliases": [], "metadata": {"normalized_key": key}, **extra}
+
+
+def test_replay_follows_the_fingerprint_when_ids_renumber(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [_person("people_group_000001", "Andrei", "andrei"), _person("people_group_000002", "Elena", "elena")],
+    )
+    apply_review_actions(
+        tmp_path,
+        actions=[{"action": "confirm_person", "target_id": "people_group_000002", "label": "Mom", "reviewer": "test"}],
+    )
+    correction = read_jsonl(tmp_path / "corrections.jsonl")[0]
+    assert correction["target_fingerprint"] == "person:elena"
+
+    # A rebuild adds a person that sorts first: everyone's number moves.
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            _person("people_group_000001", "Alla", "ala"),
+            _person("people_group_000002", "Andrei", "andrei"),
+            _person("people_group_000003", "Elena", "elena"),
+        ],
+    )
+    result = reapply_review_corrections(tmp_path)
+    people = {row["id"]: row for row in read_jsonl(tmp_path / "people_groups.jsonl")}
+
+    assert result["corrections_applied"] == 1
+    assert people["people_group_000003"]["label"] == "Mom"
+    assert people["people_group_000002"]["label"] == "Andrei"
+    assert "review_status" not in people["people_group_000002"]
+
+
+def test_replay_skips_a_fingerprint_that_matches_nothing(tmp_path: Path):
+    _write_jsonl(tmp_path / "people_groups.jsonl", [_person("people_group_000001", "Elena", "elena")])
+    apply_review_actions(
+        tmp_path,
+        actions=[{"action": "confirm_person", "target_id": "people_group_000001", "label": "Mom", "reviewer": "test"}],
+    )
+    _write_jsonl(tmp_path / "people_groups.jsonl", [_person("people_group_000001", "Fred", "fred")])
+
+    result = reapply_review_corrections(tmp_path)
+    people = read_jsonl(tmp_path / "people_groups.jsonl")
+
+    assert result["corrections_applied"] == 0
+    assert result["corrections_skipped"] == 1
+    assert people[0]["label"] == "Fred"
+
+
+def test_merge_destination_follows_its_fingerprint(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [_person("people_group_000001", "Ekaterina", "ekaterina"), _person("people_group_000002", "Mom", "mom", kind="role_candidate")],
+    )
+    apply_review_actions(
+        tmp_path,
+        actions=[{"action": "merge_person", "target_id": "people_group_000002",
+                  "merge_with_person_group_id": "people_group_000001", "reviewer": "test"}],
+    )
+    assert read_jsonl(tmp_path / "corrections.jsonl")[0]["ref_fingerprints"] == {"merge_with_person_group_id": "person:ekaterina"}
+
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            _person("people_group_000001", "Andrei", "andrei"),
+            _person("people_group_000002", "Ekaterina", "ekaterina"),
+            _person("people_group_000003", "Mom", "mom", kind="role_candidate"),
+        ],
+    )
+    reapply_review_corrections(tmp_path)
+    people = {row["id"]: row for row in read_jsonl(tmp_path / "people_groups.jsonl")}
+
+    assert people["people_group_000002"]["merged_person_group_ids"] == ["people_group_000003"]
+    assert "merged_person_group_ids" not in people["people_group_000001"]
+
+
+def test_role_groups_keep_their_fingerprint_when_events_renumber(tmp_path: Path):
+    span = {"source_ranges": [{"source_video_id": "video_000018", "start_s": 4164.0, "end_s": 4486.1}]}
+    _write_jsonl(tmp_path / "canonical_events.jsonl", [{"id": "canonical_event_000002", "metadata": span}])
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [_person("people_group_000001", "Mom", "role:mom:canonical_event_000002", kind="role_candidate")],
+    )
+    apply_review_actions(
+        tmp_path,
+        actions=[{"action": "mark_role_only", "target_id": "people_group_000001", "reviewer": "test"}],
+    )
+    assert read_jsonl(tmp_path / "corrections.jsonl")[0]["target_fingerprint"] == "person:role:mom:video_000018@4164-4486"
+
+    _write_jsonl(
+        tmp_path / "canonical_events.jsonl",
+        [{"id": "canonical_event_000002", "metadata": {"source_ranges": []}}, {"id": "canonical_event_000005", "metadata": span}],
+    )
+    _write_jsonl(
+        tmp_path / "people_groups.jsonl",
+        [
+            _person("people_group_000001", "Grandma", "role:grandma:canonical_event_000002", kind="role_candidate"),
+            _person("people_group_000002", "Mom", "role:mom:canonical_event_000005", kind="role_candidate"),
+        ],
+    )
+    result = reapply_review_corrections(tmp_path)
+    people = {row["id"]: row for row in read_jsonl(tmp_path / "people_groups.jsonl")}
+
+    assert result["corrections_applied"] == 1
+    assert people["people_group_000002"]["metadata"]["identity_role_only"] is True
+    assert "identity_role_only" not in people["people_group_000001"]["metadata"]
+
+
+def test_quarantine_stops_replaying_id_only_machine_corrections(tmp_path: Path):
+    from tapesplit.review_actions import quarantine_unfingerprinted_corrections
+
+    rows = [
+        {"id": "correction_000001", "action": "confirm_person", "target_id": "people_group_000001",
+         "reviewer": "auto-pipeline", "payload": {}},
+        {"id": "correction_000002", "action": "confirm_person", "target_id": "people_group_000001",
+         "reviewer": "auto-pipeline", "target_fingerprint": "person:elena", "payload": {}},
+        {"id": "correction_000003", "action": "confirm_person", "target_id": "people_group_000001",
+         "reviewer": "phillip", "payload": {}},
+    ]
+    _write_jsonl(tmp_path / "corrections.jsonl", rows)
+
+    first = quarantine_unfingerprinted_corrections(tmp_path)
+    second = quarantine_unfingerprinted_corrections(tmp_path)
+    stored = {row["id"]: row for row in read_jsonl(tmp_path / "corrections.jsonl")}
+
+    assert first["quarantined"] == 1
+    assert second["quarantined"] == 0
+    assert stored["correction_000001"]["superseded_by"] == "id_drift_quarantine"
+    assert not stored["correction_000002"].get("superseded")
+    assert not stored["correction_000003"].get("superseded")
+
+
+def test_apply_suggestions_does_not_reaccept_a_decision_already_on_file(tmp_path: Path):
+    _write_jsonl(
+        tmp_path / "date_groups.jsonl",
+        [{"id": "date_group_000002", "label": "Sep 7 2005", "metadata": {"normalized_key": "sep 7 2005"},
+          "review_status": "needs_review"}],
+    )
+    _write_jsonl(
+        tmp_path / "corrections.jsonl",
+        [{"id": "correction_000001", "action": "confirm_event_date", "target_id": "date_group_000001",
+          "target_fingerprint": "date:sep 7 2005", "reviewer": "auto-pipeline", "payload": {}}],
+    )
+    _write_visualization(
+        tmp_path,
+        review_queue=[
+            _suggested_item("review_item_000001", "date_group_000002", "date_group", "confirm_event_date",
+                            {"date_value": "2005-09-07", "precision": "day"}),
+        ],
+    )
+
+    result = apply_review_suggestions(tmp_path, dry_run=True)
+
+    assert result["suggestions_selected"] == 0
+    assert any(item["reason"] == "already decided" for item in result["skipped"])

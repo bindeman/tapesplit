@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from tapesplit.claim_store import DualWriter
@@ -92,6 +93,33 @@ FACE_ANCHOR_MIN_IOU = 0.5
 # resolvable anchors agree on one current cluster.
 FACE_ANCHOR_MIN_CLUSTER_FRACTION = 0.5
 
+# Generated rows are numbered by sort rank and renumber on every rebuild, so a
+# correction that only stores target_id lands on whatever row took that number.
+# Every correction also stores a content fingerprint of its target (and of any
+# other generated row its payload names). Replay resolves the fingerprint
+# against the current rows and skips the correction when it matches nothing or
+# more than one row, instead of changing the wrong record.
+FINGERPRINT_TARGET_FILES = {
+    "canonical_events.jsonl",
+    "context_edges.jsonl",
+    "date_groups.jsonl",
+    "people_groups.jsonl",
+    "place_groups.jsonl",
+    "relationship_candidates.jsonl",
+    "speaker_identity_candidates.jsonl",
+}
+# Payload fields that name other generated rows, and the file each lives in.
+PAYLOAD_REF_FILES = {
+    "merge_with_person_group_id": "people_groups.jsonl",
+    "destination_person_group_id": "people_groups.jsonl",
+    "person_group_id": "people_groups.jsonl",
+    "subject_entity_id": "people_groups.jsonl",
+    "object_entity_id": "people_groups.jsonl",
+}
+# Machine reviewers whose id-only corrections the drift migration quarantines.
+MACHINE_REVIEWERS = {"auto-pipeline", "bulk-suggestion", "review-ui-bulk"}
+_ROLE_KEY = re.compile(r"^role:([^:]+):(canonical_event_\d+)$")
+
 
 def apply_review_actions(
     project_dir: Path,
@@ -113,6 +141,7 @@ def apply_review_actions(
     for offset, action in enumerate(pending_actions):
         correction = _normalize_action(action, correction_index=next_index + offset)
         _attach_face_anchors(state, correction)
+        _attach_fingerprints(state, correction)
         effects = _apply_action(state, correction)
         correction["applied_effects"] = effects
         corrections.append(correction)
@@ -157,6 +186,8 @@ def apply_review_suggestions(
         reviewer=reviewer,
         policy=policy,
     )
+    selected, already = _drop_already_decided(project, selected)
+    skipped = [*skipped, *already]
     summary: dict[str, Any] = {
         "project": str(project),
         "tier": tier,
@@ -366,7 +397,7 @@ def _move_event_range(state: _ProjectReviewState, correction: dict[str, Any]) ->
 def _confirm_identity(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
     candidate = _require_target(state, "face_identity_candidates.jsonl", correction)
     payload = correction["payload"]
-    person_group_id = str(payload.get("person_group_id") or candidate.get("person_group_id") or "")
+    person_group_id = _resolve_ref(state, correction, "person_group_id") or str(candidate.get("person_group_id") or "")
     face_cluster_id = str(payload.get("face_cluster_id") or candidate.get("face_cluster_id") or "")
     if not person_group_id or not face_cluster_id:
         raise ValueError("confirm_identity requires person_group_id and face_cluster_id")
@@ -566,7 +597,7 @@ def _confirm_speaker_identity(state: _ProjectReviewState, correction: dict[str, 
     candidate = _require_target(state, "speaker_identity_candidates.jsonl", correction)
     payload = correction["payload"]
     speaker_label = str(payload.get("speaker_label") or candidate.get("speaker_label") or "")
-    person_group_id = str(payload.get("person_group_id") or candidate.get("person_group_id") or "")
+    person_group_id = _resolve_ref(state, correction, "person_group_id") or str(candidate.get("person_group_id") or "")
     if not speaker_label or not person_group_id:
         raise ValueError("confirm_speaker_identity requires speaker_label and person_group_id")
 
@@ -610,7 +641,8 @@ def _confirm_person(state: _ProjectReviewState, correction: dict[str, Any]) -> l
 def _merge_person(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
     source = _require_target(state, "people_groups.jsonl", correction)
     payload = correction["payload"]
-    destination_id = str(payload.get("merge_with_person_group_id") or payload.get("destination_person_group_id") or "")
+    field = "merge_with_person_group_id" if payload.get("merge_with_person_group_id") else "destination_person_group_id"
+    destination_id = _resolve_ref(state, correction, field)
     destination = state.row_by_id("people_groups.jsonl", destination_id)
     if not destination:
         raise ValueError("merge_person requires merge_with_person_group_id or destination_person_group_id")
@@ -726,7 +758,7 @@ def _reject_place_context(state: _ProjectReviewState, correction: dict[str, Any]
 
 def _confirm_relationship(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
     relationship = _require_target(state, "relationship_candidates.jsonl", correction)
-    _apply_relationship_payload(relationship, correction["payload"])
+    _apply_relationship_payload(relationship, _payload_with_resolved_refs(state, correction))
     _mark_reviewed(relationship, "confirmed", correction)
     return [_effect("relationship_candidates.jsonl", relationship, "confirmed relationship")]
 
@@ -739,7 +771,7 @@ def _reject_relationship(state: _ProjectReviewState, correction: dict[str, Any])
 
 def _edit_relationship(state: _ProjectReviewState, correction: dict[str, Any]) -> list[dict[str, Any]]:
     relationship = _require_target(state, "relationship_candidates.jsonl", correction)
-    _apply_relationship_payload(relationship, correction["payload"])
+    _apply_relationship_payload(relationship, _payload_with_resolved_refs(state, correction))
     _mark_reviewed(relationship, correction["payload"].get("review_status") or "needs_review", correction)
     return [_effect("relationship_candidates.jsonl", relationship, "edited relationship")]
 
@@ -860,6 +892,14 @@ def _apply_place_payload(place: dict[str, Any], payload: dict[str, Any]) -> None
         place.setdefault("not_exportable_as_gps", True)
 
 
+def _payload_with_resolved_refs(state: _ProjectReviewState, correction: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(correction.get("payload") or {})
+    for field in ("subject_entity_id", "object_entity_id"):
+        if payload.get(field) and field in (correction.get("ref_fingerprints") or {}):
+            payload[field] = _resolve_ref(state, correction, field)
+    return payload
+
+
 def _apply_relationship_payload(row: dict[str, Any], payload: dict[str, Any]) -> None:
     for key in ["predicate", "subject_label", "object_label", "subject_entity_id", "object_entity_id"]:
         if payload.get(key) not in (None, ""):
@@ -931,12 +971,189 @@ def _sync_edge_metric_status(
 
 def _require_target(state: _ProjectReviewState, filename: str, correction: dict[str, Any]) -> dict[str, Any]:
     target_id = str(correction.get("target_id") or "")
+    expected = correction.get("target_fingerprint")
+    if expected and filename in FINGERPRINT_TARGET_FILES:
+        return _row_for_fingerprint(state, filename, str(expected), target_id)
     row = state.row_by_id(filename, target_id)
     if not row and filename in FACE_ANCHOR_TARGET_FILES:
         row = _resolve_face_target_by_anchors(state, filename, correction)
     if not row:
         raise ValueError(f"{target_id} not found in {filename}")
     return row
+
+
+def _row_for_fingerprint(state: _ProjectReviewState, filename: str, expected: str, row_id: str) -> dict[str, Any]:
+    """The one current row with this fingerprint; the row at row_id wins when it still matches."""
+
+    events_by_id = _events_by_id(state)
+    row = state.row_by_id(filename, row_id) if row_id else None
+    if row is not None and _row_fingerprint(filename, row, events_by_id) == expected:
+        return row
+    matches = [candidate for candidate in state.rows(filename) if _row_fingerprint(filename, candidate, events_by_id) == expected]
+    if len(matches) == 1:
+        return matches[0]
+    reason = "matches several rows" if matches else "matches no row"
+    raise ValueError(f"{row_id or expected} not found in {filename} (fingerprint {reason})")
+
+
+def _resolve_ref(state: _ProjectReviewState, correction: dict[str, Any], field: str) -> str:
+    """The current id for a payload field that names another generated row."""
+
+    payload = correction.get("payload") or {}
+    raw = str(payload.get(field) or "")
+    expected = (correction.get("ref_fingerprints") or {}).get(field)
+    filename = PAYLOAD_REF_FILES.get(field)
+    if not expected or not filename:
+        return raw
+    return str(_row_for_fingerprint(state, filename, str(expected), raw).get("id") or "")
+
+
+def _attach_fingerprints(state: _ProjectReviewState, correction: dict[str, Any]) -> None:
+    """Stamp a correction with content fingerprints of its target and payload references."""
+
+    events_by_id = _events_by_id(state)
+
+    def unique_fingerprint(filename: str, row_id: str) -> str | None:
+        row = state.row_by_id(filename, row_id) if row_id else None
+        fingerprint = _row_fingerprint(filename, row, events_by_id) if row else None
+        if not fingerprint:
+            return None
+        twins = sum(1 for other in state.rows(filename) if _row_fingerprint(filename, other, events_by_id) == fingerprint)
+        return fingerprint if twins == 1 else None
+
+    filename = _target_filename(correction)
+    if filename in FINGERPRINT_TARGET_FILES and not correction.get("target_fingerprint"):
+        fingerprint = unique_fingerprint(filename, str(correction.get("target_id") or ""))
+        if fingerprint:
+            correction["target_fingerprint"] = fingerprint
+    refs = dict(correction.get("ref_fingerprints") or {})
+    for field, ref_file in PAYLOAD_REF_FILES.items():
+        ref_id = str((correction.get("payload") or {}).get(field) or "")
+        if not ref_id or field in refs:
+            continue
+        fingerprint = unique_fingerprint(ref_file, ref_id)
+        if fingerprint:
+            refs[field] = fingerprint
+    if refs:
+        correction["ref_fingerprints"] = refs
+
+
+def _events_by_id(state: _ProjectReviewState) -> dict[str, dict[str, Any]]:
+    return {str(event.get("id") or ""): event for event in state.rows("canonical_events.jsonl")}
+
+
+def _row_fingerprint(filename: str, row: dict[str, Any], events_by_id: dict[str, dict[str, Any]]) -> str | None:
+    """A content key that survives renumbering. Never built from labels a correction can change."""
+
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    if filename == "people_groups.jsonl":
+        key = str(metadata.get("normalized_key") or "")
+        role = _ROLE_KEY.match(key)
+        if role:
+            span = _event_span_key(events_by_id.get(role.group(2)))
+            key = f"role:{role.group(1)}:{span}" if span else ""
+        return f"person:{key}" if key else None
+    if filename == "place_groups.jsonl":
+        key = str(metadata.get("resolution_key") or "")
+        return f"place:{key}" if key else None
+    if filename == "date_groups.jsonl":
+        key = str(metadata.get("normalized_key") or "")
+        return f"date:{key}" if key else None
+    if filename == "canonical_events.jsonl":
+        span = _event_span_key(row)
+        return f"event:{span}" if span else None
+    if filename == "relationship_candidates.jsonl":
+        scope = row.get("scope") if isinstance(row.get("scope"), dict) else {}
+        parts = [str(row.get("predicate") or ""), _fingerprint_text(row.get("subject_label")),
+                 _fingerprint_text(row.get("object_label")), _scope_key(scope)]
+        return "relationship:" + "|".join(parts) if all(parts[:3]) else None
+    if filename == "speaker_identity_candidates.jsonl":
+        label = str(row.get("speaker_label") or "")
+        person = _fingerprint_text(row.get("person_label"))
+        return f"speaker:{label}|{person}" if label and person else None
+    if filename == "context_edges.jsonl":
+        scope = row.get("scope") if isinstance(row.get("scope"), dict) else {}
+        parts = [str(row.get("predicate") or ""), _fingerprint_text(row.get("subject_label")),
+                 _fingerprint_text(row.get("object_label")), _scope_key(scope)]
+        return "edge:" + "|".join(parts) if all(parts[:3]) else None
+    return None
+
+
+def _event_span_key(event: dict[str, Any] | None) -> str:
+    if not event:
+        return ""
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    ranges = metadata.get("source_ranges") or event.get("source_ranges") or []
+    spans = sorted(
+        f"{item.get('source_video_id')}@{round(float(item.get('start_s') or 0))}-{round(float(item.get('end_s') or 0))}"
+        for item in ranges
+        if isinstance(item, dict) and item.get("source_video_id")
+    )
+    return ",".join(spans)
+
+
+def _scope_key(scope: dict[str, Any]) -> str:
+    videos = ",".join(sorted(str(video) for video in scope.get("source_video_ids") or []))
+    start = scope.get("start_s")
+    return f"{videos}@{round(float(start))}" if videos and start is not None else videos
+
+
+def _fingerprint_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w]+", " ", str(value or "").casefold())).strip()
+
+
+def _drop_already_decided(project: Path, actions: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Skip suggestions whose decision is already on file for the same content."""
+
+    decided = {
+        (str(row.get("action") or ""), str(row.get("target_fingerprint") or ""))
+        for row in read_jsonl(project / "corrections.jsonl")
+        if not row.get("superseded") and row.get("target_fingerprint")
+    }
+    if not decided or not actions:
+        return actions, []
+    state = _ProjectReviewState(project)
+    events_by_id = _events_by_id(state)
+    kept, skipped = [], []
+    for action in actions:
+        target_id = str(action.get("target_id") or "")
+        filename = _target_filename({"target_id": target_id, "target_type": action.get("target_type")})
+        row = state.row_by_id(filename, target_id) if filename in FINGERPRINT_TARGET_FILES else None
+        fingerprint = _row_fingerprint(filename, row, events_by_id) if row else None
+        if fingerprint and (str(action.get("action") or ""), fingerprint) in decided:
+            skipped.append({"target_id": target_id, "action": action.get("action"), "reason": "already decided"})
+            continue
+        kept.append(action)
+    return kept, skipped
+
+
+def quarantine_unfingerprinted_corrections(project_dir: Path, *, reason: str = "id_drift_quarantine") -> dict[str, Any]:
+    """Stop replaying machine-made corrections that only know their target by a positional id.
+
+    Those ids renumber on every rebuild, so such corrections now land on other
+    records. They were all made by the pipeline itself (nothing human is lost);
+    replay skips superseded rows, and the next auto-accept pass re-derives the
+    decisions with fingerprints. Idempotent.
+    """
+
+    project = project_dir.expanduser().resolve()
+    path = project / "corrections.jsonl"
+    rows = read_jsonl(path)
+    stamped = _now_iso()
+    quarantined = 0
+    for row in rows:
+        if row.get("superseded") or row.get("target_fingerprint"):
+            continue
+        if str(row.get("reviewer") or "") not in MACHINE_REVIEWERS:
+            continue
+        row["superseded"] = True
+        row["superseded_by"] = reason
+        row["superseded_at"] = stamped
+        row["superseded_reason"] = "target known only by a positional id that renumbers on rebuild"
+        quarantined += 1
+    if quarantined:
+        _write_jsonl(path, rows)
+    return {"project": str(project), "quarantined": quarantined, "total": len(rows)}
 
 
 def _attach_face_anchors(state: _ProjectReviewState, correction: dict[str, Any]) -> None:

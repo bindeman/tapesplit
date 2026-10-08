@@ -368,13 +368,19 @@ def _summary_relationship_match(
     object_entity: dict[str, Any],
     terms: list[str],
 ) -> str:
-    for subject_alias in sorted(subject.get("aliases") or [], key=len, reverse=True):
-        if len(subject_alias) < 2:
-            continue
-        for object_alias in sorted(object_entity.get("aliases") or [], key=len, reverse=True):
-            if len(object_alias) < 2:
-                continue
-            for term in terms:
+    # Every pattern needs both names and the term in the text, so check that cheaply
+    # before compiling regexes for each alias pair (this loop dominated rebuilds).
+    lowered = text.casefold()
+    present_terms = [term for term in terms if term.casefold() in lowered]
+    if not present_terms:
+        return ""
+    subject_aliases = [alias for alias in sorted(subject.get("aliases") or [], key=len, reverse=True)
+                       if len(alias) >= 2 and alias.casefold() in lowered]
+    object_aliases = [alias for alias in sorted(object_entity.get("aliases") or [], key=len, reverse=True)
+                      if len(alias) >= 2 and alias.casefold() in lowered]
+    for subject_alias in subject_aliases:
+        for object_alias in object_aliases:
+            for term in present_terms:
                 if _direct_relationship_phrase(text, subject_alias, object_alias, term):
                     return term
     return ""

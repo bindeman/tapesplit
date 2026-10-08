@@ -1325,6 +1325,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when a correction target is missing instead of reporting it as skipped.",
     )
+    review_quarantine = review_subparsers.add_parser(
+        "quarantine-drift",
+        help="Stop replaying machine-made corrections that only know their target by a renumbering id.",
+    )
+    review_quarantine.add_argument("project", type=Path, help="tapesplit project directory.")
     review_list = review_subparsers.add_parser(
         "list",
         help="List durable review corrections for a project.",
@@ -2435,6 +2440,11 @@ def main(argv: list[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
+                return 0
+            if args.review_command == "quarantine-drift":
+                from tapesplit.review_actions import quarantine_unfingerprinted_corrections
+
+                print(json.dumps(quarantine_unfingerprinted_corrections(args.project), indent=2, sort_keys=True))
                 return 0
             if args.review_command == "list":
                 print(json.dumps(list_review_corrections(args.project), indent=2, sort_keys=True))
