@@ -445,7 +445,7 @@ export function PlacesMapView({
                 return (
                   <button
                     key={cluster.key}
-                    className={`map-pin${single && primary.approximate ? " approximate" : ""}${single ? "" : " cluster"}`}
+                    className={`map-pin${single && primary.approximate ? " approximate" : ""}${single ? "" : " cluster"}${primary.cover ? "" : " no-cover"}`}
                     style={{ transform: `translate(${screen.x}px, ${screen.y}px)` }}
                     title={
                       single
@@ -462,7 +462,7 @@ export function PlacesMapView({
                     }}
                   >
                     <span className="pin-frame">
-                      {primary.cover ? <img src={assetUrl(primary.cover)} alt="" loading="lazy" /> : <MapPin size={14} />}
+                      {primary.cover ? <img src={assetUrl(primary.cover)} alt="" loading="lazy" /> : null}
                     </span>
                     {(cluster.count > 1 || !single) && <em>{single ? cluster.count : cluster.places.length}</em>}
                   </button>

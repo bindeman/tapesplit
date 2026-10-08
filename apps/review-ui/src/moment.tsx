@@ -320,11 +320,27 @@ const LATIN = /[A-Za-z]/g;
 
 // A transcript line's language, by script: these tapes mix Russian and
 // English, often mid-sentence.
-export function lineLanguage(text: string): "ru" | "en" | "" {
+export function lineLanguage(text: string): "ru" | "en" | "mixed" | "" {
   const cyrillic = (text.match(CYRILLIC) ?? []).length;
   const latin = (text.match(LATIN) ?? []).length;
   if (!cyrillic && !latin) return "";
+  if (cyrillic >= 3 && latin >= 3) return "mixed";
   return cyrillic > latin ? "ru" : "en";
+}
+
+// One pill per language heard in the line; a line that switches gets both.
+export function LanguagePills({ language }: { language: ReturnType<typeof lineLanguage> }) {
+  if (!language) return null;
+  const pills = language === "mixed" ? ["ru", "en"] : [language];
+  return (
+    <>
+      {pills.map((code) => (
+        <span key={code} className={`lang-pill ${code}`}>
+          {code.toUpperCase()}
+        </span>
+      ))}
+    </>
+  );
 }
 
 function voiceName(label: string | undefined, videoId: string, media: MediaRecord[]): string {
@@ -444,8 +460,8 @@ export function VoicesPane({
               </button>
               <div className="line-body">
                 <span className="line-who">{voiceName(line.speaker_label, range.videoId, media)}</span>
-                <p lang={language || undefined}>
-                  {language && <span className={`lang-pill ${language}`}>{language.toUpperCase()}</span>}
+                <p lang={language === "ru" || language === "en" ? language : undefined}>
+                  <LanguagePills language={language} />
                   {text}
                 </p>
                 {translation && <p className="line-gloss">{translation}</p>}

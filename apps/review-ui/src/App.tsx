@@ -36,7 +36,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
-import { lineLanguage, momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
+import { LanguagePills, lineLanguage, momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
 import { MONTHS, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
@@ -1177,9 +1177,9 @@ function EventSheet({
             </section>
           )}
 
-          <section className="evidence" aria-label="How TapeSplit knows">
-            <h2 className="evidence-title">How TapeSplit knows</h2>
-            <div className="evidence-grid">
+          <section className="knows" aria-label="How TapeSplit knows">
+            <h2 className="knows-title">How TapeSplit knows</h2>
+            <div className="knows-grid">
               <WhenPane event={event} range={range} />
               <WherePane event={event} places={places} roles={placeRoles} continuity={continuity} />
             </div>
@@ -3842,8 +3842,8 @@ function SpokenHitRow({ hit, media, onPlay }: { hit: SemanticHit; media: MediaRe
   const language = lineLanguage(text);
   return (
     <button className="spoken-hit" onClick={() => moment && onPlay(moment)} disabled={!moment}>
-      <span className="spoken-quote" lang={language || undefined}>
-        {language && <span className={`lang-pill ${language}`}>{language.toUpperCase()}</span>}
+      <span className="spoken-quote" lang={language === "ru" || language === "en" ? language : undefined}>
+        <LanguagePills language={language} />
         {text}
       </span>
       {moment ? (
@@ -3965,7 +3965,7 @@ function AlbumsView({
                     const fullEvent = eventsById.get(event.event_id);
                     return (
                       <button key={`${album.id}-${event.event_id}`} className="album-event-tile" onClick={() => playEvent(event, media, onPlay)}>
-                        {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                        {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" loading="lazy" /> : <span className="tile-placeholder"><ImageIcon size={18} /></span>}
                         <span>{event.title}</span>
                       </button>
                     );
@@ -4110,7 +4110,7 @@ function PlacesView({
                 const fullEvent = eventsById.get(event.event_id);
                 return (
                   <button key={event.event_id} className="moment-tile" onClick={() => playEvent(event, media, onPlay)}>
-                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" /> : <ImageIcon size={18} />}
+                    {fullEvent?.thumbnail_path ? <img src={assetUrl(fullEvent.thumbnail_path)} alt="" loading="lazy" /> : <span className="tile-placeholder"><ImageIcon size={18} /></span>}
                     <span>{event.title}</span>
                   </button>
                 );
