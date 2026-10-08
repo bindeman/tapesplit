@@ -37,7 +37,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { PlacesMapView } from "./PlacesMap";
 import { LanguagePills, lineLanguage, momentDate, momentRange, stampLabel, VoicesPane, WhenPane, WherePane } from "./moment";
-import { MONTHS, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
+import { MONTHS, MONTH_BOUNDARY, stampSpanLabel, formatDateValue, tapeDisplayLabel, humanizeToken, personDisplayName, humanVoiceLabel, DISJOINT_REGIONS, contextDisplayLabel, titleCasePlace, placeDisplayLabel, uniqueStrings, formatTime } from "./format";
 import { AppIcon, Segmented, ShellContext, Toolbar } from "./shell";
 import {
   applyReviewActions,
@@ -4008,39 +4008,19 @@ function albumCoverPath(album: AlbumRecord, eventsById: Map<string, EventRecord>
   return candidates.find((path) => !avoid?.has(path)) ?? candidates[0] ?? "";
 }
 
-// Day-albums carry every constituent date ("MAY 10 2002, MAY 11 2002, ...");
-// a Memory reads as a span. Dates themselves may contain commas ("March 22,
-// 2006"), so split only at commas that start a new month token.
-const MONTH_BOUNDARY = /,\s*(?=(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d)/i;
-
 // Memories hang like snapshots on a board: a little tilt, a strip of tape.
 const MEMORY_TILTS = ["-1.4deg", "1deg", "-0.7deg", "1.3deg", "-1.1deg", "0.8deg"];
 const MEMORY_WASHI = ["var(--washi-1)", "var(--washi-2)", "var(--washi-3)", "var(--washi-4)"];
 
-// The memory's span the way a camcorder stamp prints it: "MAR 22–25 2006".
+// A day-album reads as one span on its label-maker tag: "MAR 22–25 2006".
 function memoryTagLabel(album: AlbumRecord): string {
-  const parts = (album.date_label ?? "").split(MONTH_BOUNDARY).map((part) => part.trim()).filter(Boolean);
-  const parse = (text: string) => {
-    const match = /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d{2})/i.exec(text);
-    if (!match) return null;
-    const month = MONTHS.findIndex((name) => name.toLowerCase() === match[1].toLowerCase());
-    return { year: Number(match[3]), month, day: Number(match[2]) };
-  };
-  const dates = parts.map(parse).filter((date): date is { year: number; month: number; day: number } => Boolean(date));
-  if (!dates.length) {
-    return memoryDateLabel(album).toUpperCase();
-  }
-  dates.sort((a, b) => a.year - b.year || a.month - b.month || a.day - b.day);
-  const first = dates[0];
-  const last = dates[dates.length - 1];
-  const mon = (date: { month: number }) => MONTHS[date.month].toUpperCase();
-  if (first.year === last.year && first.month === last.month) {
-    return first.day === last.day ? `${mon(first)} ${first.day} ${first.year}` : `${mon(first)} ${first.day}–${last.day} ${first.year}`;
-  }
-  if (first.year === last.year) {
-    return `${mon(first)} ${first.day} – ${mon(last)} ${last.day} ${first.year}`;
-  }
-  return `${mon(first)} ${first.year} – ${mon(last)} ${last.year}`;
+  return stampSpanLabel(album.date_label ?? "") ?? memoryDateLabel(album).toUpperCase();
+}
+
+// Journal entries carry whatever date label drafting produced ("September 1,
+// 2005", "JAN 1 2004, JAN 4 2004"); every byline prints in one stamp style.
+function journalDateLabel(post: JournalPost): string {
+  return stampSpanLabel(post.date_label) ?? post.date_label;
 }
 
 function memoryDateLabel(album: AlbumRecord): string {
@@ -4627,7 +4607,7 @@ function JournalView({
                   <h2 className="journal-display">{post.title}</h2>
                   <p className="journal-card-dek">{post.dek}</p>
                   <span className="journal-byline">
-                    {post.date_label}
+                    {journalDateLabel(post)}
                     {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
                   </span>
                 </div>
@@ -4706,7 +4686,7 @@ function JournalPostArticle({
 
   return (
     <section className="journal-page reading">
-      <Toolbar title={post.title} subtitle={post.date_label} onBack={onBack} backLabel="Journal" />
+      <Toolbar title={post.title} subtitle={journalDateLabel(post)} onBack={onBack} backLabel="Journal" />
       <div className="stage-body">
         <article className="journal-article">
           <header>
@@ -4714,7 +4694,7 @@ function JournalPostArticle({
             <h1 className="journal-display journal-title">{post.title}</h1>
             {post.dek ? <p className="journal-dek">{post.dek}</p> : null}
             <p className="journal-byline">
-              {post.date_label}
+              {journalDateLabel(post)}
               {post.read_minutes ? ` · ${post.read_minutes} min read` : ""}
               {post.generated ? " · drafted from the tapes" : ""}
             </p>
