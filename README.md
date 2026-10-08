@@ -107,9 +107,9 @@ A local review app that feels like a photo library. Every card links to the seco
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/event-davos-dark.webp">
-        <img alt="A moment opened: Cable Car Ride to Jakobshorn, dated Aug 22, 2002, with its scenes and colored date and place chips" src="site/media/ui/event-davos-light.webp">
+        <img alt="A moment opened: Cable Car Ride to Jakobshorn, with the camcorder stamp AUG 22 2002 boxed where Apple Vision read it and a map of where its places came from" src="site/media/ui/event-davos-light.webp">
       </picture>
-      <p><b>A moment</b> plays from the right second, with its keyframes, people and places. This date came off the camcorder stamp in the frame.</p>
+      <p><b>A moment</b> plays from the right second. Underneath, <i>How TapeSplit knows</i> shows the date stamp it read, boxed where Apple Vision found it, and where each place came from.</p>
     </td>
     <td width="50%" valign="top">
       <picture>
