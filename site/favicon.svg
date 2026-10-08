@@ -1,26 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f4f53"/><stop offset=".45" stop-color="#1c1c1f"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <linearGradient id="l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf8ea"/><stop offset="1" stop-color="#e3d8bb"/></linearGradient>
-    <linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43434a"/><stop offset="1" stop-color="#101012"/></linearGradient>
-    <radialGradient id="r" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#b9b9c1"/></radialGradient>
-    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f97ff"/><stop offset="1" stop-color="#c3e4ff"/></linearGradient>
+    <linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43434c"/><stop offset="1" stop-color="#17171c"/></linearGradient>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f97ff"/><stop offset="1" stop-color="#bfe1ff"/></linearGradient>
   </defs>
-  <g transform="rotate(-8 60 58)">
-    <rect x="8" y="20" width="104" height="68" rx="8" fill="url(#b)" stroke="#000" stroke-opacity=".7"/>
-    <rect x="9" y="21" width="102" height="30" rx="7" fill="url(#g)"/>
-    <rect x="21" y="28" width="78" height="23" rx="2.5" fill="url(#l)"/>
-    <rect x="21" y="28" width="78" height="5.5" rx="1.5" fill="#e0302a"/>
-    <rect x="33" y="57" width="54" height="22" rx="5.5" fill="url(#w)"/>
-    <circle cx="48" cy="68" r="11.5" fill="#4b2f1c"/>
-    <circle cx="48" cy="68" r="7" fill="url(#r)"/><circle cx="48" cy="68" r="2.4" fill="#2a2a2e"/>
-    <circle cx="72" cy="68" r="7" fill="url(#r)"/><circle cx="72" cy="68" r="2.4" fill="#2a2a2e"/>
-  </g>
-  <g transform="rotate(9 92 86)">
-    <rect x="64" y="62" width="52" height="44" rx="2" fill="#fff" stroke="#c3c3ca"/>
-    <rect x="68.5" y="66.5" width="43" height="30" fill="url(#s)"/>
-    <path d="M68.5 89c6-6 12-8 18-4s10 2 14-1 8-2 11 1v11.5h-43z" fill="#3c9a3b"/>
-    <circle cx="103.5" cy="74" r="4.2" fill="#ffd54a"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#b)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#fff" stroke-opacity=".14"/>
+  <rect x="17" y="30" width="72" height="50" rx="8" fill="#0d0d11" stroke="#fff" stroke-opacity=".12"/>
+  <rect x="24" y="36" width="58" height="21" rx="3.5" fill="#f7efdc"/>
+  <rect x="24" y="36" width="58" height="5.5" rx="2" fill="#e2392f"/>
+  <path d="M30 48h20M30 52.5h32" stroke="#b3a585" stroke-width="2" stroke-linecap="round"/>
+  <rect x="33" y="62" width="40" height="13" rx="6.5" fill="#050507"/>
+  <circle cx="44" cy="68.5" r="4.4" fill="#ececf1"/>
+  <circle cx="62" cy="68.5" r="4.4" fill="#ececf1"/>
+  <g transform="rotate(9 86 80)">
+    <rect x="62" y="58" width="46" height="42" rx="3" fill="#fff"/>
+    <rect x="66" y="62" width="38" height="25" rx="1" fill="url(#s)"/>
+    <path d="M66 81c5-5 10-6.5 15-3.5s8.5 2 12-.8 7.5-2 11 1V87H66z" fill="#33a046"/>
+    <circle cx="97" cy="68" r="3.6" fill="#ffd54a"/>
   </g>
 </svg>
