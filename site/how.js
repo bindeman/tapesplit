@@ -20,8 +20,6 @@
     return `${MONTHS[m - 1]} ${d}, ${y}`;
   };
   const num = (n) => Number(n).toLocaleString("en-US");
-  // A gloss in both languages; the section's English/Français toggle shows one.
-  const tr = (en, fr, wrap = (s) => s) => `<span class="t-en">${wrap(esc(en))}</span>${fr ? `<span class="t-fr" lang="fr">${wrap(esc(fr))}</span>` : `<span class="t-fr">${wrap(esc(en))}</span>`}`;
   const quote = (s) => `“${s}”`;
   const boxes = (list, extra = "") => list.map((o, i) =>
     `<span class="box${extra}" style="--x:${o.box[0]};--y:${o.box[1]};--w:${o.box[2]};--h:${o.box[3]};--i:${i}"></span>`).join("");
@@ -49,6 +47,59 @@
       if (cb) cb();
     }
   };
+
+  // ------------------------------------------------------------ cover: what goes in, what comes out
+  document.querySelectorAll("[data-stat]").forEach((el) => {
+    const v = H.stats[el.dataset.stat];
+    if (v != null) el.textContent = num(v);
+  });
+  const outThumbs = $("#out-thumbs");
+  if (outThumbs && T.examples) {
+    // the last one is drawn on top
+    outThumbs.innerHTML = [["189", "Moscow"], ["254", "Davos"], ["260", "Hawaiʻi"]].map(([id, label]) => {
+      const e = T.examples.find((x) => x.event === id);
+      const year = (String(e && e.when.label).match(/\b(19|20)\d\d\b/) || [""])[0];
+      return e ? `<figure><img src="${e.image || e.poster}" alt="" width="160" height="120"><figcaption>${esc(label)}, ${year}</figcaption></figure>` : "";
+    }).join("");
+  }
+  const outChrono = $("#out-chrono");
+  if (outChrono) {
+    const tapes = H.archive.tapes, W = 300, top = 3, rowH = 5, y0 = 1996, y1 = 2009;
+    const X = (y) => 6 + ((y - y0) / (y1 - y0)) * (W - 12);
+    const hgt = top + tapes.length * rowH + 13;
+    outChrono.setAttribute("viewBox", `0 0 ${W} ${hgt}`);
+    let g = "";
+    tapes.forEach((t, r) => {
+      const cy = top + r * rowH + rowH / 2;
+      if (t.direct && t.window[0]) g += `<line class="w" x1="${X(t.window[0]).toFixed(1)}" x2="${X(t.window[1] + 1).toFixed(1)}" y1="${cy}" y2="${cy}"/>`;
+      for (const [iso, kind] of t.dates) {
+        const [y, m, d] = iso.split("-").map(Number);
+        g += `<circle class="${kind}" cx="${X(y + ((m - 1) * 30.44 + d) / 365.25).toFixed(1)}" cy="${cy}" r="1.9"/>`;
+      }
+    });
+    for (const y of [1997, 2002, 2007]) g += `<text x="${X(y + 0.5).toFixed(1)}" y="${hgt - 2}">${y}</text>`;
+    outChrono.innerHTML = g;
+  }
+  const outMap = $("#out-map");
+  if (outMap && T.map) {
+    const MP = T.map, RD = Math.PI / 180;
+    const merc = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * RD) / 2));
+    const K = MP.width / (MP.lon1 - MP.lon0), top = merc(MP.latTop);
+    const proj = (lat, lng) => [(lng - MP.lon0) * K, ((top - merc(lat)) / RD) * K];
+    const PINS = ["Kilauea volcano", "Katmai National Park", "Jakobshorn", "Red Square", "Florence, Oregon", "Castle Lake"];
+    outMap.setAttribute("viewBox", `0 0 ${MP.width} ${MP.height}`);
+    outMap.innerHTML = `<use href="#ts-land" class="land"/>` +
+      T.dots.map((d) => { const [x, y] = proj(d.lat, d.lng); return `<circle class="dot" cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="9"/>`; }).join("") +
+      T.dots.filter((d) => PINS.includes(d.name)).map((d) => { const [x, y] = proj(d.lat, d.lng); return `<circle class="pin" cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="22"/>`; }).join("");
+  }
+  const outTree = $("#out-tree");
+  if (outTree) {
+    const P = { grandma: [31, 19], grandpa: [69, 19], mom: [15, 54], dad: [85, 54], phil: [50, 80] };
+    outTree.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path class="ok" d="M15 54 C 24 72, 36 80, 50 80"/><path d="M85 54 C 76 72, 64 80, 50 80"/>
+        <path d="M31 19 C 34 40, 46 54, 50 80"/><path d="M69 19 C 66 40, 54 54, 50 80"/></svg>` +
+      Object.entries(P).map(([k, [x, y]]) => `<img src="media/how/avatars/${k}.svg" alt="" width="30" height="30" style="left:${x}%;top:${y}%">`).join("");
+  }
 
   // ------------------------------------------------------------ tape 18 at a glance
   const tp = H.tape;
@@ -128,7 +179,7 @@
     clues.innerHTML = H.where.clues.map((c, i) => {
       const speech = c.kind === "speech";
       const body = speech
-        ? `<span class="clue-text" lang="ru">“${esc(c.ru)}”</span><span class="clue-note">${tr(c.en, c.fr, quote)}</span>`
+        ? `<span class="clue-text" lang="ru">“${esc(c.ru)}”</span><span class="clue-note">${quote(esc(c.en))}</span>`
         : `<span class="sign-text">${esc(c.text)}</span><span class="clue-note">${esc(c.note)}</span>`;
       return `<div class="glass clue ${speech ? "speech" : "sign"} reveal" style="transition-delay:${i * 90}ms">
         <span class="clue-icon">${speech ? ICON_SPEECH : ICON_SIGN}</span>
@@ -240,7 +291,7 @@
     const bars = [...plot.querySelectorAll(".wv")].map((el) => [el, Number(el.dataset.t)]);
     const head = $("#who-head");
     const lines = $("#who-lines");
-    lines.innerHTML = V.segments.map((s, i) => `<li data-i="${i}" style="--vc:var(--voice-${s.voice})"><span><span class="who-name">${esc(V.names[s.voice])}</span><span class="ru" lang="ru">${esc(s.ru)}</span><span class="en">${tr(s.en, s.fr)}</span></span></li>`).join("");
+    lines.innerHTML = V.segments.map((s, i) => `<li data-i="${i}" style="--vc:var(--voice-${s.voice})"><span><span class="who-name">${esc(V.names[s.voice])}</span><span class="ru" lang="ru">${esc(s.ru)}</span><span class="en">${esc(s.en)}</span></span></li>`).join("");
     const lineEls = [...lines.children];
     const tc = $("#who-tc");
     let last = -1;
@@ -387,7 +438,7 @@
     }).join("") + EDGES.filter((e) => e.tag).map((e) => `<button type="button" class="fam-tag" data-rel="${e.rel}" aria-controls="family-card" style="--x:${(e.tag[0] / 6).toFixed(2)};--y:${(e.tag[1] / 4.8).toFixed(2)};--dr:${e.tag[2]}deg"></button>`).join(""));
 
     const conf = (label, v, st) => `<div class="row ${st}"><span>${esc(label)}</span><span class="bar"><i style="--v:${v}"></i></span><b>${v.toFixed(2)}</b></div>`;
-    const lineItem = (l) => `<li><p class="ru" lang="ru">${hl(l.ru)}</p><span class="gl">${tr(l.en, l.fr, quote)}</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
+    const lineItem = (l) => `<li><p class="ru" lang="ru">${hl(l.ru)}</p><span class="gl">${quote(esc(l.en))}</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
     const renderCard = () => {
       const r = REL[sel], st = status(sel);
       let text = "", confs = "";
@@ -484,13 +535,13 @@
       <div class="sw-line${i ? " small" : ""}">
         <span class="sw-meta">Tape 18 · ${esc(line.clock)}${i === 2 ? " · at the classroom door" : ""}</span>
         <p class="sw-text">${line.parts.map(([lang, text]) => `<span class="part ${lang}" lang="${lang}"><span class="pill ${lang}">${lang.toUpperCase()}</span>${esc(text)}</span>`).join("")}</p>
-        ${line.en ? `<span class="sw-gloss">${tr(line.en, line.fr, quote)}</span>` : ""}
+        ${line.en ? `<span class="sw-gloss">${quote(esc(line.en))}</span>` : ""}
       </div>`).join("") + (L.journal ? `
       <div class="sw-journal">
         <span class="sw-meta">In the Journal for ${esc(L.journal.date)} · Tape ${L.journal.tape} · ${esc(L.journal.clock)}</span>
         <blockquote lang="ru">“${esc(L.journal.ru)}”</blockquote>
-        <span class="tr">${tr(L.journal.en, L.journal.fr)}</span>
-        <span class="sw-meta"><span class="t-en">Quotes stay verbatim. The translation is tapesplit's own.</span><span class="t-fr">Quotes stay verbatim. tapesplit's own translation is in English; this one was added for the page.</span></span>
+        <span class="tr">${esc(L.journal.en)}</span>
+        <span class="sw-meta">Quotes stay verbatim. The translation is tapesplit's own.</span>
       </div>` : "");
     watch(sw);
   }
@@ -498,7 +549,7 @@
   if (demo) {
     const q = $("#search-q");
     const hits = $("#search-hits");
-    hits.innerHTML = L.search.hits.map((h) => `<li><span class="ru" lang="ru">${esc(h.ru)}</span><span class="en">${tr(h.en, h.fr, quote)}</span><span class="where">Tape ${h.tape} · ${esc(h.clock)}</span></li>`).join("");
+    hits.innerHTML = L.search.hits.map((h) => `<li><span class="ru" lang="ru">${esc(h.ru)}</span><span class="en">${quote(esc(h.en))}</span><span class="where">Tape ${h.tape} · ${esc(h.clock)}</span></li>`).join("");
     $("#search-foot").textContent = "Found by meaning, not spelling: a multilingual model (" + L.search.model + ") matches the English words to Russian speech. Translations added for this page.";
     const items = [...hits.children];
     const finish = () => {
@@ -627,8 +678,8 @@
     watch(el);
   });
 
-  // ------------------------------------------------------------ why I made this: clips play while on screen
-  const clips = [...document.querySelectorAll(".why-clip")];
+  // ------------------------------------------------------------ short muted clips play while on screen
+  const clips = [...document.querySelectorAll(".why-clip, .loop-clip")];
   if (clips.length && !reduce && "IntersectionObserver" in window) {
     const clipIO = new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -643,18 +694,6 @@
     }, { threshold: 0.35 });
     clips.forEach((v) => clipIO.observe(v));
   }
-
-  // ------------------------------------------------------------ English / Français
-  const inside = $("#inside");
-  const setTr = (lang) => {
-    inside.classList.toggle("tr-fr", lang === "fr");
-    document.querySelectorAll(".tr-toggle button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tr === lang)));
-    try { localStorage.setItem("tapesplit.tr", lang); } catch (e) { /* private mode */ }
-  };
-  document.querySelectorAll(".tr-toggle button").forEach((b) => b.addEventListener("click", () => setTr(b.dataset.tr)));
-  let savedTr = "en";
-  try { savedTr = localStorage.getItem("tapesplit.tr") || "en"; } catch (e) { /* private mode */ }
-  if (inside) setTr(savedTr === "fr" ? "fr" : "en");
 
   // the chapter heads and the rest of the static reveals
   document.querySelectorAll("#inside .reveal:not(.in), #timeline .reveal:not(.in)").forEach((el) => {
