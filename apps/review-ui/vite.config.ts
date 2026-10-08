@@ -59,6 +59,10 @@ function reviewApiPlugin(): Plugin {
             await sendJson(res, await loadJournalPosts());
             return;
           }
+          if (req.method === "GET" && req.url.startsWith("/api/stamps")) {
+            sendStamps(req, res);
+            return;
+          }
           if (req.method === "GET" && req.url.startsWith("/api/search/semantic")) {
             await sendSemanticSearch(req, res);
             return;
@@ -108,6 +112,79 @@ function reviewApiPlugin(): Plugin {
 async function loadJournalPosts() {
   const journalPath = join(projectDir, "journal_posts.jsonl");
   return { projectDir, posts: readJsonlIfExists(journalPath) };
+}
+
+// --- Camcorder date stamps --------------------------------------------------
+// The moment sheet shows the frame a date came from, with the boxes Apple
+// Vision drew around the stamp. Only stamp-shaped text ("SEP", "7 2005",
+// "FEB 17 2006", "11:57:19AM") ever leaves this function, so OCR of signs,
+// name tags or class lists never reaches the UI through it.
+
+type StampRow = { video: string; time: number; text: string; image: string; bbox: { x: number; y: number; width: number; height: number } };
+
+const STAMP_TEXT =
+  /^(?:(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\.?(?:\s+\d{1,2})?(?:[\s,]+\d{4,5})?|\d{1,2}[\s,]+\d{4}|\d{4,5}|\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?)$/i;
+const VIDEO_ID = /^[A-Za-z0-9_-]{1,64}$/;
+let stampCache: { mtimeMs: number; rows: StampRow[] } | null = null;
+
+function loadStampRows(): StampRow[] {
+  const path = join(projectDir, "visual_text_observations.jsonl");
+  if (!existsSync(path)) {
+    return [];
+  }
+  const { mtimeMs } = statSync(path);
+  if (stampCache && stampCache.mtimeMs === mtimeMs) {
+    return stampCache.rows;
+  }
+  const rows: StampRow[] = [];
+  for (const row of readJsonlIfExists(path)) {
+    const text = typeof row.text === "string" ? row.text.trim() : "";
+    const bbox = row.bbox as StampRow["bbox"] | undefined;
+    const image = typeof row.source_image_path === "string" ? row.source_image_path : "";
+    const video = typeof row.source_video_id === "string" ? row.source_video_id : "";
+    const time = typeof row.time_s === "number" ? row.time_s : NaN;
+    if (!text || !STAMP_TEXT.test(text) || !bbox || !image || !video || !Number.isFinite(time)) {
+      continue;
+    }
+    // Scene keyframes only: their ids are stable, so the boxes line up with
+    // the picture the UI loads.
+    if (!image.startsWith("keyframes/scenes/") || image.split(/[\\/]/).some((part) => part === ".." || part === "")) {
+      continue;
+    }
+    rows.push({ video, time, text, image, bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height } });
+  }
+  stampCache = { mtimeMs, rows };
+  return rows;
+}
+
+function sendStamps(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url || "", "http://localhost");
+  const video = url.searchParams.get("video") || "";
+  const start = Number(url.searchParams.get("start"));
+  const end = Number(url.searchParams.get("end"));
+  if (!VIDEO_ID.test(video) || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end - start > 6 * 3600) {
+    sendJson(res, { error: "bad_request" }, 400);
+    return;
+  }
+  const byImage = new Map<string, { image: string; time_s: number; boxes: Array<{ text: string } & StampRow["bbox"]> }>();
+  for (const row of loadStampRows()) {
+    if (row.video !== video || row.time < start - 1 || row.time > end + 1) {
+      continue;
+    }
+    const frame = byImage.get(row.image) ?? { image: row.image, time_s: row.time, boxes: [] };
+    if (frame.boxes.length < 8) {
+      frame.boxes.push({ text: row.text, ...row.bbox });
+    }
+    byImage.set(row.image, frame);
+  }
+  // A frame counts as a stamp only if it shows a month or a clock time; bare
+  // numbers on their own are altimeters, scoreboards and house numbers.
+  const anchored = /^(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\b|\d:\d{2}(?::\d{2}|\s?(?:AM|PM))/i;
+  const frames = [...byImage.values()]
+    .filter((frame) => frame.boxes.some((box) => anchored.test(box.text)))
+    .sort((a, b) => a.time_s - b.time_s)
+    .slice(0, 4);
+  sendJson(res, { video, frames });
 }
 
 async function loadProject() {

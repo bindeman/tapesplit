@@ -52,6 +52,8 @@ export interface VisualizationData {
     event_reconciliations?: EventReconciliationAsset[];
     speaker_segments?: SpeakerSegment[];
     speaker_identity_candidates?: SpeakerIdentityCandidate[];
+    place_roles?: PlaceRoleAsset[];
+    event_continuity_contexts?: ContinuityContextAsset[];
   };
 }
 
@@ -177,6 +179,8 @@ export interface DateRef extends EntityRef {
   precision?: string;
   excluded_as_event_date?: boolean;
   source_kind?: string;
+  origin?: string;
+  capture_window_check?: string;
 }
 
 export interface PersonRecord {
@@ -324,6 +328,38 @@ export interface SpeakerSegment {
   confidence?: number;
   provider?: string;
   model?: string;
+  metadata?: {
+    transcript_text?: string;
+    raw_speaker?: string;
+    known_speaker?: boolean;
+  };
+}
+
+export interface PlaceRoleAsset {
+  id: string;
+  canonical_event_id: string;
+  label: string;
+  normalized_label?: string;
+  role?: string;
+  role_family?: string;
+  source_label?: string;
+  confidence?: number;
+  evidence_texts?: string[];
+  review_status?: string;
+}
+
+export interface ContinuityContextAsset {
+  id: string;
+  canonical_event_id: string;
+  context_label?: string;
+  confidence?: number;
+  supporting_signals?: string[] | string;
+}
+
+export interface StampFrame {
+  image: string;
+  time_s: number;
+  boxes: Array<{ text: string; x: number; y: number; width: number; height: number }>;
 }
 
 export interface SpeakerIdentityCandidate {
