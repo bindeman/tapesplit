@@ -10,6 +10,7 @@ import { ImageIcon, List, Map as MapIcon, MapPin, X } from "lucide-react";
 import worldTopo from "world-atlas/countries-110m.json";
 import usTopo from "us-atlas/states-10m.json";
 import { assetUrl } from "./api";
+import { Segmented, Toolbar } from "./shell";
 import type { EventRecord, MediaRecord, PlaceRecord } from "./types";
 
 const VIEW_W = 1000;
@@ -66,6 +67,10 @@ function geometryPath(geometry: Geometry): string {
   return "";
 }
 
+// Antarctica (ISO 3166 010) only ever shows as a clamped band along the
+// bottom edge; no family tape was filmed there.
+const OMITTED_FEATURES = new Set(["010"]);
+
 function buildPaths(topo: unknown, objectName: string): string[] {
   const topology = topo as { objects: Record<string, never> };
   const collection = feature(
@@ -73,6 +78,7 @@ function buildPaths(topo: unknown, objectName: string): string[] {
     (topology.objects as Record<string, never>)[objectName],
   ) as unknown as FeatureCollection;
   return collection.features
+    .filter((item: { id?: string | number }) => !OMITTED_FEATURES.has(String(item.id ?? "")))
     .map((item: { geometry: Geometry | null }) => (item.geometry ? geometryPath(item.geometry) : ""))
     .filter(Boolean);
 }
@@ -184,7 +190,26 @@ export function PlacesMapView({
     );
   }, [mapped]);
 
-  // Camera: start framed on the full pin set.
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [surface, setSurface] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) setSurface({ w: rect.width, h: rect.height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [mode]);
+  // Never zoom out past one copy of the world across the surface.
+  const minK = surface ? Math.min(MIN_K, surface.w / VIEW_W) : MIN_K;
+
+  // Camera: start framed on the full pin set, measured against the surface
+  // the map actually has, so the outermost pins (Alaska, Hawaii, Sakhalin)
+  // land inside the frame with room for their ~50px photo boxes.
   const initialCamera = useMemo<Camera>(() => {
     if (!mapped.length) return { k: 1.6, cx: VIEW_W / 2, cy: VIEW_H / 2 };
     const xs = mapped.map((item) => item.point.x);
@@ -195,15 +220,15 @@ export function PlacesMapView({
     const maxY = Math.max(...ys);
     const spanX = Math.max(maxX - minX, 40);
     const spanY = Math.max(maxY - minY, 40);
-    // Generous framing: pins are ~54px boxes, so the fitted view needs real
-    // margin or the outermost pin (Alaska) sits half-clipped at the edge.
-    const k = Math.min(Math.max(Math.min(VIEW_W / (spanX * 1.85), VIEW_H / (spanY * 1.85)), MIN_K), 6);
+    const w = surface?.w ?? VIEW_W;
+    const h = surface?.h ?? VIEW_H;
+    const pad = 72;
+    const k = Math.min(Math.max(Math.min((w - 2 * pad) / spanX, (h - 2 * pad) / spanY), minK), 6);
     return { k, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
-  }, [mapped]);
+  }, [mapped, surface, minK]);
 
   const [camera, setCamera] = useState<Camera>(initialCamera);
   useEffect(() => setCamera(initialCamera), [initialCamera]);
-  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const animRef = useRef<number | null>(null);
   const dragRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null);
 
@@ -265,7 +290,7 @@ export function PlacesMapView({
     if (!surface) return;
     const rect = surface.getBoundingClientRect();
     const factor = Math.exp(-wheel.deltaY * 0.0016);
-    const nextK = Math.min(Math.max(camera.k * factor, MIN_K), MAX_K);
+    const nextK = Math.min(Math.max(camera.k * factor, minK), MAX_K);
     // zoom toward cursor: keep the map point under the cursor stationary
     const px = wheel.clientX - rect.left;
     const py = wheel.clientY - rect.top;
@@ -297,26 +322,28 @@ export function PlacesMapView({
     dragRef.current = null;
   }
 
-  const surfaceSize = surfaceRef.current?.getBoundingClientRect();
-  const width = surfaceSize?.width ?? 960;
-  const height = surfaceSize?.height ?? 560;
+  const width = surface?.w ?? 960;
+  const height = surface?.h ?? 560;
 
   return (
-    <section className="places-map-view">
-      <header className="places-map-head">
-        <h1>Places</h1>
-        <div className="segmented" role="tablist" aria-label="Places display mode">
-          <button role="tab" aria-selected={mode === "map"} className={mode === "map" ? "active" : ""} onClick={() => setMode("map")}>
-            <MapIcon size={13} /> Map
-          </button>
-          <button role="tab" aria-selected={mode === "list"} className={mode === "list" ? "active" : ""} onClick={() => setMode("list")}>
-            <List size={13} /> List
-          </button>
-        </div>
-      </header>
+    <section className={`places-map-view mode-${mode}`}>
+      <Toolbar
+        title="Places"
+        subtitle={`${mapped.length === 1 ? "1 place" : `${mapped.length} places`} on the map${unplaced.length ? ` · ${unplaced.length} not yet placed` : ""}`}
+      >
+        <Segmented
+          label="Places display mode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: "map", label: <><MapIcon size={13} /> Map</> },
+            { id: "list", label: <><List size={13} /> List</> },
+          ]}
+        />
+      </Toolbar>
 
       {mode === "list" ? (
-        renderList()
+        <div className="stage-body">{renderList()}</div>
       ) : (
         <div className="places-map-body">
           <div
@@ -334,7 +361,7 @@ export function PlacesMapView({
               else if (key.key === "ArrowUp") setCamera((c) => ({ ...c, cy: c.cy - pan }));
               else if (key.key === "ArrowDown") setCamera((c) => ({ ...c, cy: c.cy + pan }));
               else if (key.key === "+" || key.key === "=") setCamera((c) => ({ ...c, k: Math.min(c.k * 1.4, MAX_K) }));
-              else if (key.key === "-") setCamera((c) => ({ ...c, k: Math.max(c.k / 1.4, MIN_K) }));
+              else if (key.key === "-") setCamera((c) => ({ ...c, k: Math.max(c.k / 1.4, minK) }));
               else return;
               key.preventDefault();
             }}
@@ -468,9 +495,14 @@ function PlaceSheet({
     .join(" · ");
   return (
     <div className="sheet-scrim" onClick={onClose}>
-      <article className="sheet place-sheet" onClick={(click) => click.stopPropagation()}>
+      <article
+        className="event-sheet place-sheet"
+        role="dialog"
+        aria-label={helpers.placeDisplayLabel(place.display_label)}
+        onClick={(click) => click.stopPropagation()}
+      >
         <button className="sheet-close" onClick={onClose} aria-label="Close">
-          <X size={16} />
+          <X size={15} />
         </button>
         {hero && (
           <div className="sheet-hero">
@@ -479,9 +511,16 @@ function PlaceSheet({
         )}
         <div className="sheet-body">
           <header>
+            {place.place_type && <p className="sheet-kicker">{helpers.humanizeToken(place.place_type)}</p>}
             <h1>{helpers.placeDisplayLabel(place.display_label)}</h1>
-            {subtitle && <p className="place-subtitle">{subtitle}</p>}
-            {place.place_type && <p className="place-kind">{helpers.humanizeToken(place.place_type)}</p>}
+            {subtitle && (
+              <div className="fact-row">
+                <span className="fact where">
+                  <MapPin size={13} />
+                  {subtitle}
+                </span>
+              </div>
+            )}
           </header>
           <div className="place-sheet-events">
             {placeEvents.map((event) => (
