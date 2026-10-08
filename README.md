@@ -54,10 +54,10 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
   <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates TapeSplit took from them" width="100%">
 </p>
 
-**Where.** Mom says they're back in Eugene, and the sign over the doors says Maplewood School. That name alone matches schools in three states, so TapeSplit searched again near where the family lived that year, then had a blind verifier check the clip.
+**Where.** Mom says they're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere this family lived, so TapeSplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
 
 <p align="center">
-  <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map with three Maplewood Schools; Salt Lake City and Phoenix are grayed out and Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
+  <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map of the United States: the first search's Maplewood Schools in Florida, Utah and Arizona are grayed out, and the one found near home in Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
 </p>
 
 **Who.** Two voices, separated and lined up with their words. Mom asks, in Russian, what Filip thinks of his first day; he says he isn't scared. Names for voices are suggestions you confirm in Review.

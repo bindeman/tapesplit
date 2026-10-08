@@ -886,13 +886,35 @@
 .us-map.s1 .cand:nth-of-type(3) .drop { transition-delay: 0.24s; }
 
 .us-map.s2 .cand.out {
-  opacity: 0.28;
+  opacity: 0.3;
   filter: grayscale(1);
+}
+
+.us-map .cand.later .drop,
+.us-map .cand.later .cand-text,
+.us-map.s1 .cand.later .drop {
+  transform: translateY(-26px);
+  opacity: 0;
+}
+
+.us-map .cand.later .cand-text {
+  transform: none;
+  transition: opacity 0.4s ease 0.3s;
+}
+
+.us-map.s2 .cand.later .drop,
+.us-map.s2 .cand.later .cand-text {
+  transform: none;
+  opacity: 1;
+}
+
+.us-map .cand.first .cand-label {
+  fill: #c8322b;
 }
 
 .us-map .cand-label {
   font-family: var(--font-ui);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: bold;
   fill: var(--ink);
   paint-order: stroke;
@@ -903,7 +925,7 @@
 
 .us-map .cand-sub {
   font-family: var(--font-ui);
-  font-size: 6.6px;
+  font-size: 8.4px;
   fill: var(--ink-3);
   paint-order: stroke;
   stroke: var(--land);

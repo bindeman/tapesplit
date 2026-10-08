@@ -149,34 +149,41 @@
     const K = M.width / (M.lon1 - M.lon0);
     const Y0 = mercY(M.latTop);
     const P = (lat, lng) => [(lng - M.lon0) * K, ((Y0 - mercY(lat)) / RAD) * K];
-    const [x0, y0] = P(50.6, -132);
-    const [x1, y1] = P(29.2, -95.5);
+    const [x0, y0] = P(50.2, -127.5);
+    const [x1, y1] = P(23.2, -64.5);
     usMap.setAttribute("viewBox", `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`);
     const keep = H.where.candidates.find((c) => c.kept);
     const [ex, ey] = P(keep.lat, keep.lng);
     let html = `<use href="#ts-land" class="land"/><use href="#ts-borders" class="borders"/>`;
     html += `<circle class="era" cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="30"/>`;
-    html += `<text class="cand-sub" x="${ex.toFixed(1)}" y="${(ey + 40).toFixed(1)}" text-anchor="middle">home from ${H.where.era.from}</text>`;
+    html += `<text class="cand-sub" x="${(ex - 27).toFixed(1)}" y="${(ey + 42).toFixed(1)}">home from ${H.where.era.from}</text>`;
     html += H.where.candidates.map((c) => {
       const [px, py] = P(c.lat, c.lng);
-      return `<g class="cand${c.kept ? " keep" : " out"}" transform="translate(${px.toFixed(1)} ${py.toFixed(1)})">
+      const left = c.lng > -90;
+      const tx = left ? -10 : 10;
+      const anchor = left ? "end" : "start";
+      return `<g class="cand${c.kept ? " keep" : " out"}${c.later ? " later" : ""}${c.first ? " first" : ""}" transform="translate(${px.toFixed(1)} ${py.toFixed(1)})">
         ${c.kept ? `<circle class="keep-ring" cy="-17" r="11"/>` : ""}
         <g class="drop">
           <path d="M0 0V-12" stroke="#5b5b60" stroke-width="1.8" stroke-linecap="round"/>
           <circle cy="-17" r="6" fill="url(#pinGrad)" stroke="#7d0d06" stroke-width=".6"/>
           <ellipse cx="-2" cy="-19" rx="2" ry="1.3" fill="#fff" opacity=".7"/>
         </g>
-        <text class="cand-label" x="10" y="-17">${esc(c.label)}</text>
-        <text class="cand-sub" x="10" y="-7">${esc(c.city)}</text>
+        <g class="cand-text">
+          <text class="cand-label" x="${tx}" y="-17" text-anchor="${anchor}">${esc(c.label)}${c.first ? " · first pick" : ""}</text>
+          <text class="cand-sub" x="${tx}" y="-5" text-anchor="${anchor}">${esc(c.city)}</text>
+        </g>
       </g>`;
     }).join("");
     usMap.innerHTML = html;
 
     const w = H.where;
+    const first = w.candidates.find((c) => c.first);
+    const others = w.candidates.filter((c) => !c.first && !c.kept).map((c) => c.city.split(",")[0]);
     const steps = [
-      `Searched for <code>${esc(w.query)}</code>. Three schools across the country match, so the name alone isn't enough.`,
-      `The family lived in <strong>${esc(w.era.label.replace(" years", ""))}</strong> from ${w.era.from}, so TapeSplit searched again near home: <code>${esc(w.scoped_query)}</code>.`,
-      `A blind verifier re-watched the clip and agreed: <strong>Eugene, Oregon</strong>.`,
+      `Searched for <code>${esc(w.query)}</code>. The best match was in ${esc(first.city)}, with others in ${others.map(esc).join(" and ")}.`,
+      `None is anywhere this family lived, so the match was flagged. They lived in <strong>${esc(w.era.label.replace(" years", ""))}</strong> from ${w.era.from}, so TapeSplit searched again near home: <code>${esc(w.scoped_query)}</code>.`,
+      `A separate verifier checked the pairing on its own and agreed: the school is in <strong>Eugene, Oregon</strong>.`,
     ];
     const confs = [w.loose_confidence, w.scoped_confidence, w.context_confidence];
     const list = $("#where-steps");
