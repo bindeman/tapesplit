@@ -803,7 +803,7 @@ def _insert_score_summary(
 def _write_reviewer_readme(path: Path, project: Path, items: list[dict[str, Any]]) -> None:
     by_task = Counter(item["task_type"] for item in items)
     path.write_text(
-        f"""# TapeSplit Evaluation Packet
+        f"""# tapesplit Evaluation Packet
 
 Project: `{project}`
 

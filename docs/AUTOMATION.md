@@ -1,4 +1,4 @@
-# TapeSplit Automation Design
+# tapesplit Automation Design
 
 `tapesplit auto` is the one-command orchestrator: unorganized tapes in,
 reviewable archive out, with no human input required. This doc describes its

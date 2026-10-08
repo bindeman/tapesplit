@@ -1,6 +1,6 @@
-# TapeSplit v2: Semantic-Core Re-foundation
+# tapesplit v2: Semantic-Core Re-foundation
 
-Design for re-founding TapeSplit's semantic core — the data model where
+Design for re-founding tapesplit's semantic core — the data model where
 entities, evidence, contexts, dates, and events live — while keeping the
 validated periphery (orchestrator, adapters, ML stages, UI shell, calibration)
 untouched. Written for review before any implementation starts. Companion

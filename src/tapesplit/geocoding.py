@@ -149,7 +149,7 @@ def _google_places_text_search(api_key: str, query: str, max_results: int) -> li
 
 GEOCODES_FILENAME = "place_geocodes.jsonl"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_USER_AGENT = "TapeSplit/0.1 (family-archive tool; +https://github.com/bindeman/tapesplit)"
+NOMINATIM_USER_AGENT = "tapesplit/0.1 (family-archive tool; +https://github.com/bindeman/tapesplit)"
 NOMINATIM_SLEEP_S = 1.1
 
 

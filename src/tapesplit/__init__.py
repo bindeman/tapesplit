@@ -1,4 +1,4 @@
-"""TapeSplit core package."""
+"""tapesplit core package."""
 
 __version__ = "0.1.0"
 

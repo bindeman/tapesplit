@@ -1,6 +1,6 @@
 # Context Graph Visualization
 
-TapeSplit should eventually show the context humans naturally carry in their
+tapesplit should eventually show the context humans naturally carry in their
 heads: who people are to each other, where they appear, what eras they belong
 to, and how social circles change over time.
 
@@ -127,7 +127,7 @@ Every edge should have scope.
 }
 ```
 
-This lets TapeSplit express ideas like:
+This lets tapesplit express ideas like:
 
 ```text
 Alex is probably Dan's friend in the 2004-2006 Oregon childhood era.
@@ -605,6 +605,6 @@ This is the deeper product insight: the user does not only want sorted videos.
 They want the archive to recover context.
 
 Humans remember relationships as a mix of family, place, era, events, habits,
-and social proximity. TapeSplit can represent that context explicitly, with
+and social proximity. tapesplit can represent that context explicitly, with
 evidence and uncertainty, instead of forcing every connection into a brittle
 family-tree edge.

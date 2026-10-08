@@ -1,6 +1,6 @@
 # Relationship Inference And Family Graph
 
-TapeSplit should infer family and social relationships as reviewable candidates,
+tapesplit should infer family and social relationships as reviewable candidates,
 not final truth. The goal is to help a user or digitizer quickly build a family
 graph from messy tapes while preserving evidence, uncertainty, and correction
 history.

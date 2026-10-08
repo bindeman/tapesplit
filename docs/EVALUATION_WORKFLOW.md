@@ -1,6 +1,6 @@
 # Evaluation Workflow
 
-TapeSplit evaluation is a family-review loop, not just a benchmark. The goal is
+tapesplit evaluation is a family-review loop, not just a benchmark. The goal is
 to find out which inferred events, albums, people, places, dates, relationships,
 and context edges are correct enough to trust, which need corrections, and which
 need another family member.
@@ -36,7 +36,7 @@ items.
   --max-items 0
 ```
 
-The packet uses TapeSplit's visibility filter. Events and derived records that
+The packet uses tapesplit's visibility filter. Events and derived records that
 are marked as unrelated, non-content, or excluded are omitted from the
 family-facing review artifacts.
 
@@ -151,7 +151,7 @@ should we ask a family member?
 ```
 
 Then compare the model's proposed follow-up question with the human annotation.
-This is useful for learning prompt design and for improving TapeSplit's future
+This is useful for learning prompt design and for improving tapesplit's future
 review prompts.
 
 ## How This Improves The Product

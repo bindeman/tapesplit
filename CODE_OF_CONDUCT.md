@@ -1,6 +1,6 @@
 # Code of Conduct
 
-TapeSplit follows the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). It applies in every project space (issues, pull requests, code review, and any other discussion) and whenever you represent the project in public. The text at that link is the authoritative version; this page is a short summary.
+tapesplit follows the [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). It applies in every project space (issues, pull requests, code review, and any other discussion) and whenever you represent the project in public. The text at that link is the authoritative version; this page is a short summary.
 
 ## In short
 

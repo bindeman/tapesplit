@@ -1,4 +1,4 @@
-# TapeSplit MVP Engineering Plan
+# tapesplit MVP Engineering Plan
 
 ## Objective
 
@@ -9,7 +9,7 @@ a static review report plus machine-readable exports.
 
 The MVP should prove the product thesis:
 
-> Existing digitizers already create raw video files. TapeSplit turns those files
+> Existing digitizers already create raw video files. tapesplit turns those files
 > into searchable, reviewable family timelines and album-ready metadata.
 
 ## Non-Goals For This Week
@@ -267,7 +267,7 @@ Family tapes often contain explicit anchor statements, such as:
 > "Here we are in Kyiv on July 4th, 1995."
 
 Later scenes may share the same environment, clothing, weather, people, or
-continuous tape position. TapeSplit should use these anchors, but never as hard
+continuous tape position. tapesplit should use these anchors, but never as hard
 truth unless there is direct evidence in the target scene.
 
 Model context as evidence propagation:

@@ -1,6 +1,6 @@
 # Context Alignment Agent
 
-TapeSplit should treat model output as hypotheses, not final metadata. The agent loop is:
+tapesplit should treat model output as hypotheses, not final metadata. The agent loop is:
 
 1. **Narrative pass**
    Ask a long-context video model for the tape story, unrelated content ranges, major people, places, dates, and recurring motifs. This pass is allowed to be broad, but it is not trusted for final timestamps.

@@ -1,4 +1,4 @@
-# TapeSplit Review UI
+# tapesplit Review UI
 
 Local React review surface for a generated `.tapesplit` project.
 

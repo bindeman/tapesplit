@@ -37,7 +37,7 @@ jobs:
 
       # Base package only: tests that need an optional extra (numpy, scikit-learn,
       # OpenCV, ...) skip themselves with pytest.importorskip.
-      - name: Install TapeSplit
+      - name: Install tapesplit
         run: python -m pip install -e . pytest
 
       - name: Run tests

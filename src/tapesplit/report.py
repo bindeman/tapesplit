@@ -153,7 +153,7 @@ def _render_html(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TapeSplit Review</title>
+  <title>tapesplit Review</title>
   <style>
     :root {{
       color-scheme: light;
@@ -204,7 +204,7 @@ def _render_html(
   <main>
   <div class="topline">
     <div>
-      <h1>TapeSplit Review</h1>
+      <h1>tapesplit Review</h1>
       <p class="muted">Generated from local evidence, Gemini video analysis, TwelveLabs search output, and Azure extraction claims.</p>
     </div>
     <div class="muted">{len(tapes)} source video, {html.escape(event_context)}, {len(claims)} claims</div>

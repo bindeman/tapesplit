@@ -9,15 +9,15 @@ Please report vulnerabilities privately. Do not open a public issue or pull requ
 
 Include the commit you tested, the steps you took, what happened, and the impact you expect. A reproduction on a synthetic project (a few JSONL rows with made-up names) is ideal. Do not attach real family media, transcripts, or API keys. If a report seems to need a sample of your data, describe its shape instead.
 
-TapeSplit has a single maintainer, so replies are best-effort. Please give a fix time to land before you disclose publicly; the advisory thread is where we will coordinate.
+tapesplit has a single maintainer, so replies are best-effort. Please give a fix time to land before you disclose publicly; the advisory thread is where we will coordinate.
 
 ## Supported versions
 
-TapeSplit is pre-1.0 and under active development. Only the latest commit on `main` is supported. Fixes land there, and older commits and tags do not get backports.
+tapesplit is pre-1.0 and under active development. Only the latest commit on `main` is supported. Fixes land there, and older commits and tags do not get backports.
 
-## How TapeSplit is meant to be run
+## How tapesplit is meant to be run
 
-TapeSplit is local-first. It reads the video files you point it at, writes a `.tapesplit` project folder, and serves a review UI on your own machine.
+tapesplit is local-first. It reads the video files you point it at, writes a `.tapesplit` project folder, and serves a review UI on your own machine.
 
 - **API keys live only in your local `.env`.** Provider keys (TwelveLabs, Azure OpenAI, Google Maps, Hugging Face) are read from a git-ignored `.env` file in the directory you run `tapesplit` from. `.env.example` lists the variables and contains no values. Vertex Gemini uses your Google application-default credentials instead of a key. `tapesplit doctor` reports whether each provider is configured and never prints a secret.
 - **Data leaves your machine only through providers you turn on.** Video, frames, audio, and transcript text go to Vertex Gemini, TwelveLabs, or Azure OpenAI only when you configure that provider and run (or opt in to) the matching stage, and `tapesplit auto --profile local` skips the cloud stages. Place names go to Google Places or OpenStreetMap Nominatim only when you run a `tapesplit geocode` command, and Google also needs `GOOGLE_MAPS_ENABLED=true`, a budget, and `--allow-api`.
@@ -27,13 +27,13 @@ TapeSplit is local-first. It reads the video files you point it at, writes a `.t
 
 - Credentials from `.env` or your environment showing up in logs, project outputs, or exported files.
 - Path traversal or arbitrary file read or write through project files, review actions, or the review UI's API.
-- Command injection through filenames, media metadata, transcripts, or other project data. TapeSplit runs `ffmpeg`, `ffprobe`, `exiftool`, and the `tapesplit` CLI itself as subprocesses.
+- Command injection through filenames, media metadata, transcripts, or other project data. tapesplit runs `ffmpeg`, `ffprobe`, `exiftool`, and the `tapesplit` CLI itself as subprocesses.
 - Code execution when loading a project, an imported transcript or speaker file, or model output.
 - Ways for a web page or another local user to reach or drive the review UI despite its loopback binding.
 
 ## What is out of scope
 
 - Reaching the review UI after you have deliberately exposed it to a network.
-- Vulnerabilities in third-party dependencies or model providers that have no TapeSplit-specific impact. Report those upstream; Dependabot tracks version updates here.
+- Vulnerabilities in third-party dependencies or model providers that have no tapesplit-specific impact. Report those upstream; Dependabot tracks version updates here.
 - Wrong or unflattering AI guesses about names, dates, or relationships. File those as regular issues.
 - Attacks that need physical or administrator access to a machine that already holds the archive.

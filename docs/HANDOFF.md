@@ -1,4 +1,4 @@
-# TapeSplit Agent Handoff
+# tapesplit Agent Handoff
 
 This file is the blind-takeover entry point. Use it before reading the longer
 design docs or chat history.
@@ -19,7 +19,7 @@ before a new task starts.
 
 ## Product Goal
 
-TapeSplit takes digitized VHS/DVD/home-video files and produces a reviewable
+tapesplit takes digitized VHS/DVD/home-video files and produces a reviewable
 modern archive:
 
 - canonical events and albums

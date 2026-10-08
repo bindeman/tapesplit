@@ -1,12 +1,12 @@
-# Contributing to TapeSplit
+# Contributing to tapesplit
 
-Thanks for helping. TapeSplit turns digitized VHS and home-video files into a reviewable, searchable family archive: a Python CLI in `src/tapesplit` and a React review UI in `apps/review-ui`. Small, focused pull requests are the easiest to review. For anything bigger than a bug fix, open an issue first so we can agree on the approach before you spend the time.
+Thanks for helping. tapesplit turns digitized VHS and home-video files into a reviewable, searchable family archive: a Python CLI in `src/tapesplit` and a React review UI in `apps/review-ui`. Small, focused pull requests are the easiest to review. For anything bigger than a bug fix, open an issue first so we can agree on the approach before you spend the time.
 
 By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## Licensing of contributions
 
-TapeSplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal and other noncommercial use, with commercial rights reserved to the author. So that a contribution can ship in every version of TapeSplit, including commercial ones:
+tapesplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal and other noncommercial use, with commercial rights reserved to the author. So that a contribution can ship in every version of tapesplit, including commercial ones:
 
 - You confirm that you wrote the contribution, or otherwise have the right to submit it.
 - You keep the copyright in your contribution.
@@ -67,7 +67,7 @@ These come from "Development Rules" in [docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Privacy: tests, docs, and issues
 
-TapeSplit exists to process people's family tapes, so nothing from a real archive belongs in this repository.
+tapesplit exists to process people's family tapes, so nothing from a real archive belongs in this repository.
 
 - Use fictional people and places in tests, docs, screenshots, and issue reports.
 - Never paste real transcripts, names, faces, or frames from your own tapes into a test, doc, issue, or PR. To show a bug, write a few synthetic JSONL rows or describe the shape of the data.

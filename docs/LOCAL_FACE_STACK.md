@@ -69,7 +69,7 @@ Backends should stay optional:
 - `--backend apple-vision`: explicit macOS detector
 - `--backend opencv`: deterministic fallback for Linux, Windows, and CI
 
-TapeSplit should keep the JSON schemas backend-agnostic. Detector
+tapesplit should keep the JSON schemas backend-agnostic. Detector
 and embedding model names should be stored as metadata so a deployment
 can swap in server GPU models without changing the review UI or downstream graph.
 

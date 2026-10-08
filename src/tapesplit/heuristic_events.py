@@ -1,6 +1,6 @@
 """Local heuristic event synthesis for tapes without cloud/LLM analysis.
 
-TapeSplit's richest events come from Gemini video analysis (``gemini_events.jsonl``)
+tapesplit's richest events come from Gemini video analysis (``gemini_events.jsonl``)
 or the legacy Azure claim extractor (``events.jsonl``). Both are cloud calls. When
 neither has covered a tape, this module synthesizes low-confidence "recording
 segment" events from purely local signals:

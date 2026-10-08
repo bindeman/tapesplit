@@ -1,6 +1,6 @@
 # Local Model Upgrade Plan
 
-TapeSplit should treat every model as an adapter that writes grounded evidence
+tapesplit should treat every model as an adapter that writes grounded evidence
 into stable project artifacts. The UI, graph, search, and review system should
 not care whether evidence came from Apple Vision, OpenCV, ArcFace, Gemini,
 Whisper, CLIP, or a server GPU model.

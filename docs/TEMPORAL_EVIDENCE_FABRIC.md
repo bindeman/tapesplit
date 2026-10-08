@@ -1,6 +1,6 @@
 # Temporal Evidence Fabric
 
-TapeSplit should evolve into a temporal evidence fabric: an evidence-first memory
+tapesplit should evolve into a temporal evidence fabric: an evidence-first memory
 system for long, messy video collections.
 
 The product should not depend on one model "understanding" a whole tape. It
@@ -208,7 +208,7 @@ summer alone
   -> not enough
 ```
 
-This lets TapeSplit infer "likely summer trip to family home country" while
+This lets tapesplit infer "likely summer trip to family home country" while
 preserving uncertainty and requiring direct evidence for exact city/country.
 
 Useful place claim predicates:

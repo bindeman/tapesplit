@@ -116,44 +116,35 @@ export function Segmented<T extends string>({
 // The app icon: a cassette with a photo print tucked into it, drawn the way
 // Golden Gate draws icons: flat layers, a crisp outline and real contrast.
 export function AppIcon({ size = 30 }: { size?: number }) {
+  // The split cassette: one tape, two halves.
   return (
     <svg className="app-icon" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
       <defs>
-        <linearGradient id="ts-icon-body" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#45454c" />
-          <stop offset="1" stopColor="#17171b" />
+        <linearGradient id="ts-icon-warm" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ff7a45" />
+          <stop offset="1" stopColor="#e23b3b" />
         </linearGradient>
-        <linearGradient id="ts-icon-label" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fffaf0" />
-          <stop offset="1" stopColor="#efe5cc" />
-        </linearGradient>
-        <linearGradient id="ts-icon-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#2f8cff" />
-          <stop offset="1" stopColor="#b9dcff" />
-        </linearGradient>
-        <linearGradient id="ts-icon-sheen" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity="0.2" />
-          <stop offset="0.5" stopColor="#fff" stopOpacity="0" />
-        </linearGradient>
+        <clipPath id="ts-icon-left">
+          <path d="M0 0H35L29 64H0z" />
+        </clipPath>
+        <clipPath id="ts-icon-right">
+          <path d="M37 0H64V64H31z" />
+        </clipPath>
+        <g id="ts-icon-cassette">
+          <rect x="5" y="15" width="54" height="36" rx="6" fill="url(#ts-icon-warm)" />
+          <rect x="11" y="20" width="42" height="11" rx="2.2" fill="#fff4e8" />
+          <rect x="11" y="20" width="42" height="3.2" rx="1.2" fill="#1d1d1f" />
+          <rect x="17" y="35" width="30" height="11" rx="5.5" fill="#3a0f12" />
+          <circle cx="24" cy="40.5" r="3.4" fill="#ffe2c4" />
+          <circle cx="40" cy="40.5" r="3.4" fill="#ffe2c4" />
+        </g>
       </defs>
-      <rect x="3" y="3" width="58" height="58" rx="14" fill="url(#ts-icon-body)" />
-      <path d="M11 15.5a3.5 3.5 0 0 1 3.5-3.5h35a3.5 3.5 0 0 1 3.5 3.5V31H11z" fill="url(#ts-icon-label)" />
-      <path d="M11 15.5a3.5 3.5 0 0 1 3.5-3.5h35a3.5 3.5 0 0 1 3.5 3.5V18H11z" fill="#e2392f" />
-      <path d="M16 23.5h22M16 27h14" stroke="#c9bb98" strokeWidth="1.6" strokeLinecap="round" />
-      <rect x="11" y="37" width="26" height="14" rx="7" fill="#0c0c0f" stroke="#fff" strokeOpacity="0.14" />
-      <circle cx="18" cy="44" r="4.2" fill="#ececf1" />
-      <circle cx="18" cy="44" r="1.5" fill="#26262b" />
-      <circle cx="30" cy="44" r="4.2" fill="#ececf1" />
-      <circle cx="30" cy="44" r="1.5" fill="#26262b" />
-      <g transform="rotate(9 47 43)">
-        <rect x="36.5" y="31.5" width="21" height="22" rx="1.6" fill="#fff" stroke="#000" strokeOpacity="0.28" strokeWidth="0.8" />
-        <rect x="39" y="34" width="16" height="13" fill="url(#ts-icon-sky)" />
-        <path d="M39 44.5c2.6-2.6 5.4-3.2 8.2-1.4 2.4 1.5 4.6 1 7.8-1V47H39z" fill="#33a046" />
-        <circle cx="51.4" cy="37.6" r="1.9" fill="#ffd34d" />
+      <g clipPath="url(#ts-icon-left)" transform="translate(-1.6 1.4) rotate(-3 20 33)">
+        <use href="#ts-icon-cassette" />
       </g>
-      <rect x="3" y="3" width="58" height="58" rx="14" fill="url(#ts-icon-sheen)" />
-      <rect x="3.5" y="3.5" width="57" height="57" rx="13.5" fill="none" stroke="#fff" strokeOpacity="0.12" />
-      <rect x="3" y="3" width="58" height="58" rx="14" fill="none" stroke="#000" strokeOpacity="0.45" />
+      <g clipPath="url(#ts-icon-right)" transform="translate(1.6 -1.4) rotate(3 44 33)">
+        <use href="#ts-icon-cassette" />
+      </g>
     </svg>
   );
 }

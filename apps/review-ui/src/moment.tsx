@@ -1,4 +1,4 @@
-// The moment sheet's evidence: when it was filmed and how TapeSplit knows,
+// The moment sheet's evidence: when it was filmed and how tapesplit knows,
 // where, and who is talking. Each pane shows the evidence itself (the frame a
 // date was read from, the clues behind a place, the voices on the
 // soundtrack), the way the website's How It Works chapters do.

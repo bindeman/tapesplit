@@ -1,6 +1,6 @@
 # Visualization Backend
 
-TapeSplit should act as the backend for a richer visualization app. The frontend
+tapesplit should act as the backend for a richer visualization app. The frontend
 should not have to understand every raw JSONL artifact. It should consume a
 small set of stable, UI-ready outputs.
 

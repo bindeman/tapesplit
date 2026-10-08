@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in TapeSplit crashed, gave a wrong result, or behaved unexpectedly.
+description: Something in tapesplit crashed, gave a wrong result, or behaved unexpectedly.
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -49,7 +49,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: TapeSplit version
+      label: tapesplit version
       description: The commit from `git rev-parse --short HEAD` in your checkout, or the output of `pip show tapesplit`.
       placeholder: e.g. 1a2b3c4
     validations:
@@ -70,7 +70,7 @@ body:
     id: python
     attributes:
       label: Python version
-      description: The output of `python --version` inside the environment where TapeSplit is installed.
+      description: The output of `python --version` inside the environment where tapesplit is installed.
       placeholder: e.g. Python 3.12.11
     validations:
       required: true

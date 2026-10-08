@@ -1,6 +1,6 @@
 # Retrieval Architecture
 
-TapeSplit should use vector search, but not only vector search.
+tapesplit should use vector search, but not only vector search.
 
 Home-video understanding is a hybrid retrieval problem:
 

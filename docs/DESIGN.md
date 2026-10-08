@@ -1,4 +1,4 @@
-# TapeSplit Design Standard
+# tapesplit Design Standard
 
 The review UI is built to feel like an intentionally designed Apple product —
 Photos, not a dashboard. This document is the enforceable standard: every
@@ -276,7 +276,7 @@ Ken Burns (14s ease-in-out alternate), the loading shimmer on a stamp frame
   the filed date over the hero, then where the moment sits on its tape (the
   Library's tape strip at 16px with this moment bracketed in
   `--text-primary` and the rest dimmed; clicking another segment opens it),
-  then "How TapeSplit knows" (Title 2 700) with three evidence cards on
+  then "How tapesplit knows" (Title 2 700) with three evidence cards on
   `--bg-elev` at `--r-l`, each headed by a Footnote 700 uppercase source line
   in its fact `-ink`:
   - **When** — the filed date in Title 2 with its weekday, one sentence on its

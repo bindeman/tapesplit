@@ -1,6 +1,6 @@
 # Entity Resolution And Alias Memory
 
-TapeSplit needs a dedicated entity-resolution layer. Family tapes repeatedly
+tapesplit needs a dedicated entity-resolution layer. Family tapes repeatedly
 refer to the same person, place, object, school, room, trip, or event with
 different names across languages, dates, speakers, and model outputs.
 
@@ -81,7 +81,7 @@ but the application still needs a durable memory layer that can:
 
 In practice this sits between named-entity recognition, entity linking,
 cross-lingual alias matching, face clustering, speaker clustering, knowledge
-graphs, and human review. It is likely a defensible part of TapeSplit because
+graphs, and human review. It is likely a defensible part of tapesplit because
 generic video-intelligence APIs usually return labels and summaries, not a
 family-specific memory system with provenance, uncertainty, and correction
 history.
@@ -390,7 +390,7 @@ global lifelong relationship.
 ## Common Candid Tape Patterns
 
 Old home videos are full of socially meaningful signals that are easy for a
-generic model to flatten into a vague people list. TapeSplit should preserve
+generic model to flatten into a vague people list. tapesplit should preserve
 these patterns as role and relationship evidence.
 
 ### Calling For Attention

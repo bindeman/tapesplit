@@ -223,21 +223,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "status",
         help="Show pipeline stage state and archive metrics for a project.",
     )
-    status_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    status_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     ui_parser = subparsers.add_parser(
         "ui",
         help="Launch the local review UI against a project.",
     )
-    ui_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    ui_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     ui_parser.add_argument("--port", type=int, help="Preferred dev server port (default 5173).")
 
     reground_parser = subparsers.add_parser(
         "reground-events",
         help="Find where mislocated events actually live on the tape via CLIP search.",
     )
-    reground_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    reground_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     reground_parser.add_argument(
         "--all-events",
         action="store_true",
@@ -248,7 +248,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "synthesize-events",
         help="Synthesize low-confidence local events for tapes without cloud analysis.",
     )
-    synth_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    synth_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     synth_parser.add_argument(
         "--include-covered",
         action="store_true",
@@ -263,7 +263,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument(
         "--out",
         type=Path,
-        help="TapeSplit project output directory. Defaults to <input>.tapesplit.",
+        help="tapesplit project output directory. Defaults to <input>.tapesplit.",
     )
     ingest_parser.add_argument(
         "--window-seconds",
@@ -304,7 +304,7 @@ def _build_parser() -> argparse.ArgumentParser:
     tl_subparsers.add_parser("list-indexes", help="List TwelveLabs indexes.")
 
     tl_upload = tl_subparsers.add_parser("upload", help="Upload project videos to a TwelveLabs index.")
-    tl_upload.add_argument("project", type=Path, help="TapeSplit project directory.")
+    tl_upload.add_argument("project", type=Path, help="tapesplit project directory.")
     tl_upload.add_argument("--index-id", required=True, help="TwelveLabs index id.")
     tl_upload.add_argument("--wait", action="store_true", help="Wait for indexing tasks to finish.")
     tl_upload.add_argument("--limit", type=int, help="Maximum videos to upload.")
@@ -316,10 +316,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     tl_status = tl_subparsers.add_parser("status", help="Show TwelveLabs indexed asset status.")
-    tl_status.add_argument("project", type=Path, help="TapeSplit project directory.")
+    tl_status.add_argument("project", type=Path, help="tapesplit project directory.")
 
     tl_search = tl_subparsers.add_parser("search", help="Search an indexed project.")
-    tl_search.add_argument("project", type=Path, help="TapeSplit project directory.")
+    tl_search.add_argument("project", type=Path, help="tapesplit project directory.")
     tl_search.add_argument("query", help="Natural-language search query.")
     tl_search.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
     tl_search.add_argument(
@@ -342,7 +342,7 @@ def _build_parser() -> argparse.ArgumentParser:
     azure_smoke.add_argument(
         "--project",
         type=Path,
-        help="Optional TapeSplit project directory where token usage should be logged.",
+        help="Optional tapesplit project directory where token usage should be logged.",
     )
 
     gemini_parser = subparsers.add_parser(
@@ -354,13 +354,13 @@ def _build_parser() -> argparse.ArgumentParser:
     gemini_smoke.add_argument(
         "--project",
         type=Path,
-        help="Optional TapeSplit project directory where usage should be logged.",
+        help="Optional tapesplit project directory where usage should be logged.",
     )
     gemini_estimate = gemini_subparsers.add_parser(
         "estimate-video",
         help="Estimate Gemini video analysis tokens and cost before calling the model.",
     )
-    gemini_estimate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_estimate.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_estimate.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
     gemini_estimate.add_argument("--all", action="store_true", help="Estimate all project videos.")
     gemini_estimate.add_argument(
@@ -395,7 +395,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "prepare-video",
         help="Create Gemini-ready whole-video analysis proxies under the upload size limit.",
     )
-    gemini_prepare.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_prepare.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_prepare.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
     gemini_prepare.add_argument(
         "--max-upload-gb",
@@ -410,7 +410,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "analyze-video",
         help="Analyze a project video with Vertex Gemini and write gemini_analyses.jsonl.",
     )
-    gemini_analyze.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_analyze.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_analyze.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
     gemini_analyze.add_argument("--all", action="store_true", help="Analyze all project videos.")
     gemini_analyze.add_argument(
@@ -449,7 +449,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "analyze-video-chunks",
         help="Analyze a project video with Gemini in source-offset-preserving chunks.",
     )
-    gemini_analyze_chunks.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_analyze_chunks.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_analyze_chunks.add_argument("--source-video-id", help="Source video id. Defaults to first video.")
     gemini_analyze_chunks.add_argument("--fps", type=float, help="Video sampling FPS. Defaults to GEMINI_DEFAULT_FPS.")
     gemini_analyze_chunks.add_argument(
@@ -490,7 +490,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "import-analysis",
         help="Normalize the latest Gemini analysis into reviewable event/evidence JSONL.",
     )
-    gemini_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_import.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_import.add_argument("--run-id", help="Import a specific Gemini analysis_run_id.")
     gemini_import.add_argument(
         "--all",
@@ -506,13 +506,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "summarize-analyses",
         help="Summarize Gemini analysis coverage, entities, and follow-up signals.",
     )
-    gemini_summary.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_summary.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_summary.add_argument("--source-video-id", help="Limit summary to one source video id.")
     gemini_compare = gemini_subparsers.add_parser(
         "compare-analyses",
         help="Compare chunked Gemini analysis against whole-tape Gemini analysis.",
     )
-    gemini_compare.add_argument("project", type=Path, help="TapeSplit project directory.")
+    gemini_compare.add_argument("project", type=Path, help="tapesplit project directory.")
     gemini_compare.add_argument("--source-video-id", help="Limit comparison to one source video id.")
 
     claims_parser = subparsers.add_parser(
@@ -521,9 +521,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     claims_subparsers = claims_parser.add_subparsers(dest="claims_command", required=True)
     claims_stats = claims_subparsers.add_parser("stats", help="Summarize the project claim store.")
-    claims_stats.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_stats.add_argument("project", type=Path, help="tapesplit project directory.")
     claims_export = claims_subparsers.add_parser("export", help="Export all claims to JSONL.")
-    claims_export.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_export.add_argument("project", type=Path, help="tapesplit project directory.")
     claims_export.add_argument(
         "--output",
         type=Path,
@@ -533,7 +533,7 @@ def _build_parser() -> argparse.ArgumentParser:
     claims_diff = claims_subparsers.add_parser(
         "diff", help="Oracle diff: is a v1 artifact regenerable from live claims byte-for-byte?"
     )
-    claims_diff.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_diff.add_argument("project", type=Path, help="tapesplit project directory.")
     claims_diff.add_argument(
         "--artifact",
         default="gemini_events.jsonl",
@@ -552,7 +552,7 @@ def _build_parser() -> argparse.ArgumentParser:
     claims_backfill = claims_subparsers.add_parser(
         "backfill", help="Write claims for existing v1 rows that predate the substrate (idempotent)."
     )
-    claims_backfill.add_argument("project", type=Path, help="TapeSplit project directory.")
+    claims_backfill.add_argument("project", type=Path, help="tapesplit project directory.")
 
     costs_parser = subparsers.add_parser(
         "costs",
@@ -560,22 +560,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     costs_subparsers = costs_parser.add_subparsers(dest="costs_command", required=True)
     costs_llm = costs_subparsers.add_parser("llm", help="Summarize LLM token/cost ledger.")
-    costs_llm.add_argument("project", type=Path, help="TapeSplit project directory.")
+    costs_llm.add_argument("project", type=Path, help="tapesplit project directory.")
     costs_api = costs_subparsers.add_parser("api", help="Summarize non-LLM provider usage/cost ledger.")
-    costs_api.add_argument("project", type=Path, help="TapeSplit project directory.")
+    costs_api.add_argument("project", type=Path, help="tapesplit project directory.")
     costs_project = costs_subparsers.add_parser("project", help="Summarize all tracked project costs.")
-    costs_project.add_argument("project", type=Path, help="TapeSplit project directory.")
+    costs_project.add_argument("project", type=Path, help="tapesplit project directory.")
     costs_estimate = costs_subparsers.add_parser(
         "estimate-twelvelabs-index",
         help="Estimate TwelveLabs indexing cost from project video durations before upload.",
     )
-    costs_estimate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    costs_estimate.add_argument("project", type=Path, help="tapesplit project directory.")
 
     detect_parser = subparsers.add_parser(
         "detect-non-content",
         help="Detect blank/blue/static/no-signal ranges in a project.",
     )
-    detect_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    detect_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     detect_parser.add_argument(
         "--sample-interval",
         type=float,
@@ -593,7 +593,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "detect-scenes",
         help="Detect local visual scene intervals and write scenes.jsonl.",
     )
-    scenes_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    scenes_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     scenes_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     scenes_parser.add_argument(
         "--threshold",
@@ -614,13 +614,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     metadata_subparsers = metadata_parser.add_subparsers(dest="metadata_command", required=True)
     metadata_exif = metadata_subparsers.add_parser("exif", help="Load ExifTool metadata for project videos.")
-    metadata_exif.add_argument("project", type=Path, help="TapeSplit project directory.")
+    metadata_exif.add_argument("project", type=Path, help="tapesplit project directory.")
 
     visuals_parser = subparsers.add_parser(
         "extract-visuals",
         help="Extract scene/event keyframes and thumbnails.",
     )
-    visuals_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visuals_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     visuals_parser.add_argument(
         "--subjects",
         default="scenes,events",
@@ -650,7 +650,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "detect-text",
         help="Run local OCR over extracted scene/event keyframes.",
     )
-    text_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    text_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     text_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     text_parser.add_argument(
         "--subject-type",
@@ -681,7 +681,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "embed-visuals",
         help="Generate local image embeddings for extracted scene/event keyframes.",
     )
-    visual_embeddings_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_embeddings_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     visual_embeddings_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     visual_embeddings_parser.add_argument(
         "--subject-type",
@@ -706,7 +706,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "caption-visuals",
         help="Generate local captions for extracted scene/event keyframes.",
     )
-    visual_captions_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_captions_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     visual_captions_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     visual_captions_parser.add_argument(
         "--subject-type",
@@ -736,7 +736,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-visual-similarity",
         help="Build local visual-similarity candidate edges from visual embeddings.",
     )
-    visual_similarity_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    visual_similarity_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     visual_similarity_parser.add_argument(
         "--min-similarity",
         type=float,
@@ -754,7 +754,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "classify-content",
         help="Classify event content as likely family, unrelated, non-content, or uncertain.",
     )
-    content_classification_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    content_classification_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     content_classification_parser.add_argument(
         "--confidence-threshold",
         type=float,
@@ -766,7 +766,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "detect-faces",
         help="Detect local face thumbnails from extracted scene/event keyframes.",
     )
-    faces_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    faces_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     faces_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     faces_parser.add_argument(
         "--subject-type",
@@ -792,7 +792,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "face-tracks",
         help="Track faces through scenes (frames at a few fps) so clustering works on tracks.",
     )
-    face_tracks_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    face_tracks_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     face_tracks_parser.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     face_tracks_parser.add_argument(
         "--fps", type=float, default=5.0, help="Frames per second to decode within scenes. Default: 5."
@@ -811,13 +811,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "age-models",
         help="Build per-person birth-year posteriors from face ages in dated footage.",
     )
-    age_models_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    age_models_parser.add_argument("project", type=Path, help="tapesplit project directory.")
 
     cluster_faces_parser = subparsers.add_parser(
         "cluster-faces",
         help="Cluster face thumbnails and create reviewable person identity candidates.",
     )
-    cluster_faces_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    cluster_faces_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     cluster_faces_parser.add_argument(
         "--max-distance",
         type=float,
@@ -846,12 +846,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     transcribe_subparsers = transcribe_parser.add_subparsers(dest="transcribe_command", required=True)
     transcribe_audio = transcribe_subparsers.add_parser("extract-audio", help="Extract 16 kHz mono WAV audio for local ASR.")
-    transcribe_audio.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_audio.add_argument("project", type=Path, help="tapesplit project directory.")
     transcribe_audio.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
     transcribe_audio.add_argument("--force", action="store_true", help="Overwrite existing audio files.")
 
     transcribe_local = transcribe_subparsers.add_parser("local", help="Run a local Whisper-compatible transcription CLI.")
-    transcribe_local.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_local.add_argument("project", type=Path, help="tapesplit project directory.")
     transcribe_local.add_argument("--source-video-id", help="Source video id. Defaults to all videos.")
     transcribe_local.add_argument(
         "--engine",
@@ -881,7 +881,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     transcribe_import = transcribe_subparsers.add_parser("import", help="Import an existing JSON/SRT/VTT transcript.")
-    transcribe_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    transcribe_import.add_argument("project", type=Path, help="tapesplit project directory.")
     transcribe_import.add_argument("transcript", type=Path, help="Transcript file to import.")
     transcribe_import.add_argument("--source-video-id", required=True, help="Source video id for the transcript.")
     transcribe_import.add_argument(
@@ -905,7 +905,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     speaker_subparsers = speaker_parser.add_subparsers(dest="speaker_command", required=True)
     speaker_diarize = speaker_subparsers.add_parser("diarize", help="Run local speaker diarization.")
-    speaker_diarize.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_diarize.add_argument("project", type=Path, help="tapesplit project directory.")
     speaker_diarize.add_argument("--source-video-id", help="Specific source video id. Defaults to all videos.")
     speaker_diarize.add_argument(
         "--backend",
@@ -920,7 +920,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     speaker_diarize.add_argument("--force", action="store_true", help="Replace matching speaker segments.")
     speaker_import = speaker_subparsers.add_parser("import", help="Import speaker segments from JSON or RTTM.")
-    speaker_import.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_import.add_argument("project", type=Path, help="tapesplit project directory.")
     speaker_import.add_argument("speaker_file", type=Path, help="JSON or RTTM speaker segment file.")
     speaker_import.add_argument("--source-video-id", required=True, help="Source video id for imported speaker segments.")
     speaker_import.add_argument(
@@ -940,7 +940,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "identify",
         help="Infer reviewable person identity candidates for local speaker tracks.",
     )
-    speaker_identify.add_argument("project", type=Path, help="TapeSplit project directory.")
+    speaker_identify.add_argument("project", type=Path, help="tapesplit project directory.")
     speaker_identify.add_argument(
         "--min-confidence",
         type=float,
@@ -979,7 +979,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "places",
         help="Batch-geocode named place candidates via Nominatim into place_geocodes.jsonl.",
     )
-    geocode_places_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    geocode_places_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     geocode_places_parser.add_argument("--force", action="store_true", help="Re-query places already cached.")
     geocode_places_parser.add_argument("--limit", type=int, default=None, help="Only geocode the first N places.")
 
@@ -987,13 +987,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-evidence",
         help="Normalize project artifacts into evidence.jsonl.",
     )
-    build_evidence_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_evidence_parser.add_argument("project", type=Path, help="tapesplit project directory.")
 
     extract_claims_parser = subparsers.add_parser(
         "extract-claims",
         help="Use Azure OpenAI to extract grounded claims/events from evidence.",
     )
-    extract_claims_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    extract_claims_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     extract_claims_parser.add_argument(
         "--deployment",
         default="fast",
@@ -1004,7 +1004,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "stitch-events",
         help="Build canonical events from raw event candidates.",
     )
-    stitch_events_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    stitch_events_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     stitch_events_parser.add_argument(
         "--max-gap-seconds",
         type=float,
@@ -1021,7 +1021,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-groups",
         help="Build local people/place/date/language/event/album group projections.",
     )
-    build_groups_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_groups_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     build_groups_parser.add_argument(
         "--use-event-candidates",
         action="store_true",
@@ -1032,7 +1032,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-place-roles",
         help="Classify raw event place mentions into filming, context, travel-plan, and ambiguous roles.",
     )
-    build_place_roles_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_place_roles_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     build_place_roles_parser.add_argument(
         "--use-event-candidates",
         action="store_true",
@@ -1043,7 +1043,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-relationships",
         help="Build local transcript-derived relationship candidates and review tasks.",
     )
-    build_relationships_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_relationships_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     build_relationships_parser.add_argument(
         "--context-seconds",
         type=float,
@@ -1055,7 +1055,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build-context-graph",
         help="Build local context graph edges and edge metrics.",
     )
-    build_context_graph_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    build_context_graph_parser.add_argument("project", type=Path, help="tapesplit project directory.")
 
     agent_parser = subparsers.add_parser(
         "agent",
@@ -1066,7 +1066,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "align",
         help="Align canonical events against transcript/evidence support.",
     )
-    agent_align.add_argument("project", type=Path, help="TapeSplit project directory.")
+    agent_align.add_argument("project", type=Path, help="tapesplit project directory.")
     agent_align.add_argument(
         "--context-seconds",
         type=float,
@@ -1077,13 +1077,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "reconcile",
         help="Reconcile event titles and metadata from aligned local evidence.",
     )
-    agent_reconcile.add_argument("project", type=Path, help="TapeSplit project directory.")
+    agent_reconcile.add_argument("project", type=Path, help="tapesplit project directory.")
 
     rebuild_parser = subparsers.add_parser(
         "rebuild",
         help="Rebuild derived events, groups, graph, search, report, and visualization artifacts.",
     )
-    rebuild_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    rebuild_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     rebuild_parser.add_argument(
         "--import-gemini",
         action="store_true",
@@ -1143,7 +1143,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_subparsers = search_parser.add_subparsers(dest="search_command", required=True)
     search_build = search_subparsers.add_parser("build", help="Build a local search.sqlite index.")
-    search_build.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_build.add_argument("project", type=Path, help="tapesplit project directory.")
     search_build.add_argument(
         "--no-groups",
         action="store_true",
@@ -1161,11 +1161,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="SentenceTransformers model when --embedding-backend sentence-transformers/auto is used.",
     )
     search_query = search_subparsers.add_parser("query", help="Search local transcript/evidence/event/group text.")
-    search_query.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_query.add_argument("project", type=Path, help="tapesplit project directory.")
     search_query.add_argument("query", help="Natural-language search query.")
     search_query.add_argument("--limit", type=int, default=10, help="Max results. Default: 10.")
     search_similar = search_subparsers.add_parser("similar", help="Find indexed records similar to an existing record.")
-    search_similar.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_similar.add_argument("project", type=Path, help="tapesplit project directory.")
     search_similar.add_argument("source_id", help="Source id such as canonical_event_000001 or event:canonical_event_000001.")
     search_similar.add_argument(
         "--record-type",
@@ -1195,7 +1195,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "embed",
         help="Add dense multilingual + CLIP semantic vectors to the search index (incremental).",
     )
-    search_embed.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_embed.add_argument("project", type=Path, help="tapesplit project directory.")
     search_embed.add_argument(
         "--model",
         default=DEFAULT_EMBEDDING_MODEL,
@@ -1210,14 +1210,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "semantic",
         help="Sectioned semantic search: People / Places / Moments / Spoken / Seen.",
     )
-    search_semantic.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_semantic.add_argument("project", type=Path, help="tapesplit project directory.")
     search_semantic.add_argument("query", help="Natural-language search query (Russian or English).")
     search_semantic.add_argument("--limit", type=int, default=8, help="Max results per section. Default: 8.")
     search_serve = search_subparsers.add_parser(
         "serve",
         help="Warm semantic-search sidecar: JSON-lines requests on stdin, responses on stdout.",
     )
-    search_serve.add_argument("project", type=Path, help="TapeSplit project directory.")
+    search_serve.add_argument("project", type=Path, help="tapesplit project directory.")
 
     eval_parser = subparsers.add_parser(
         "eval",
@@ -1228,7 +1228,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "build",
         help="Create a reviewer packet with JSONL, CSV, and SQLite artifacts.",
     )
-    eval_build.add_argument("project", type=Path, help="TapeSplit project directory.")
+    eval_build.add_argument("project", type=Path, help="tapesplit project directory.")
     eval_build.add_argument(
         "--out",
         type=Path,
@@ -1249,7 +1249,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "score",
         help="Score completed annotations and produce follow-up queues.",
     )
-    eval_score.add_argument("project", type=Path, help="TapeSplit project directory.")
+    eval_score.add_argument("project", type=Path, help="tapesplit project directory.")
     eval_score.add_argument(
         "--eval-dir",
         type=Path,
@@ -1270,13 +1270,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "apply",
         help="Apply review actions from a JSON or JSONL file and append corrections.jsonl.",
     )
-    review_apply.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_apply.add_argument("project", type=Path, help="tapesplit project directory.")
     review_apply.add_argument("actions", type=Path, help="JSON/JSONL review action file.")
     review_apply_suggestions = review_subparsers.add_parser(
         "apply-suggestions",
         help="Apply review_queue suggested actions in bulk.",
     )
-    review_apply_suggestions.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_apply_suggestions.add_argument("project", type=Path, help="tapesplit project directory.")
     review_apply_suggestions.add_argument(
         "--tier",
         choices=["primary", "backlog", "all"],
@@ -1309,7 +1309,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "calibrate",
         help="Tune safe-policy confidence floors from this project's review outcomes.",
     )
-    review_calibrate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_calibrate.add_argument("project", type=Path, help="tapesplit project directory.")
     review_calibrate.add_argument(
         "--dry-run",
         action="store_true",
@@ -1319,7 +1319,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "reapply",
         help="Replay existing corrections.jsonl against regenerated project artifacts.",
     )
-    review_reapply.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_reapply.add_argument("project", type=Path, help="tapesplit project directory.")
     review_reapply.add_argument(
         "--strict",
         action="store_true",
@@ -1329,7 +1329,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "list",
         help="List durable review corrections for a project.",
     )
-    review_list.add_argument("project", type=Path, help="TapeSplit project directory.")
+    review_list.add_argument("project", type=Path, help="tapesplit project directory.")
 
     verify_parser = subparsers.add_parser(
         "verify",
@@ -1340,7 +1340,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "run",
         help="Sample claims, extract clips, blind-describe, and adjudicate.",
     )
-    verify_run.add_argument("project", type=Path, help="TapeSplit project directory.")
+    verify_run.add_argument("project", type=Path, help="tapesplit project directory.")
     verify_run.add_argument(
         "--sample-size",
         type=int,
@@ -1376,19 +1376,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "report",
         help="Grounded-precision metrics from verifications.jsonl.",
     )
-    verify_report.add_argument("project", type=Path, help="TapeSplit project directory.")
+    verify_report.add_argument("project", type=Path, help="tapesplit project directory.")
 
     report_parser = subparsers.add_parser(
         "export-report",
         help="Export a static review.html report.",
     )
-    report_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    report_parser.add_argument("project", type=Path, help="tapesplit project directory.")
 
     story_parser = subparsers.add_parser(
         "export-story",
         help="Export a grounded JSON/Markdown tape story from reviewed local artifacts.",
     )
-    story_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    story_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     story_parser.add_argument("--json-out", type=Path, help="Output JSON path. Defaults to <project>/story.json.")
     story_parser.add_argument("--md-out", type=Path, help="Output Markdown path. Defaults to <project>/tape_story.md.")
 
@@ -1398,7 +1398,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     journal_sub = journal_parser.add_subparsers(dest="journal_command", required=True)
     journal_generate = journal_sub.add_parser("generate", help="Draft journal posts for the richest dated albums.")
-    journal_generate.add_argument("project", type=Path, help="TapeSplit project directory.")
+    journal_generate.add_argument("project", type=Path, help="tapesplit project directory.")
     journal_generate.add_argument("--limit", type=int, default=8, help="Maximum posts to draft. Default: 8.")
     journal_generate.add_argument("--album", action="append", dest="albums", help="Specific album id (repeatable).")
     journal_generate.add_argument(
@@ -1411,13 +1411,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Regenerate posts that already exist for the selected albums."
     )
     journal_list = journal_sub.add_parser("list", help="List generated journal posts.")
-    journal_list.add_argument("project", type=Path, help="TapeSplit project directory.")
+    journal_list.add_argument("project", type=Path, help="tapesplit project directory.")
 
     viz_parser = subparsers.add_parser(
         "export-visualization",
         help="Export UI-ready timeline, place, people, relationship, and asset data.",
     )
-    viz_parser.add_argument("project", type=Path, help="TapeSplit project directory.")
+    viz_parser.add_argument("project", type=Path, help="tapesplit project directory.")
     viz_parser.add_argument(
         "--out",
         type=Path,
@@ -1506,7 +1506,7 @@ def _doctor(as_json: bool) -> int:
     if as_json:
         print(json.dumps(status, indent=2, sort_keys=True))
     else:
-        print("TapeSplit doctor")
+        print("tapesplit doctor")
         print(f"  ffmpeg: {'installed' if status['ffmpeg'] else 'missing'}")
         print(f"  ffprobe: {'installed' if status['ffprobe'] else 'missing'}")
         print(f"  TwelveLabs key: {'configured' if status['twelvelabs_api_key'] else 'missing'}")
@@ -1601,7 +1601,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 print(json.dumps(status, indent=2, sort_keys=True))
                 return 0
-            print(f"TapeSplit project: {status['project']}")
+            print(f"tapesplit project: {status['project']}")
             print("  stages:")
             for row in status["stages"]:
                 duration = f" ({row['duration_s']}s)" if row.get("duration_s") else ""

@@ -6,20 +6,20 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea. TapeSplit is local-first and tries to make a family archive reviewable with as little human effort as possible, so proposals that cut review work, keep corrections durable, or let a provider be swapped are especially welcome.
+        Thanks for the idea. tapesplit is local-first and tries to make a family archive reviewable with as little human effort as possible, so proposals that cut review work, keep corrections durable, or let a provider be swapped are especially welcome.
 
         Issues are public. Describe your situation with made-up names and places, and do not paste transcripts, faces, or frames from private tapes.
   - type: textarea
     id: problem
     attributes:
       label: What problem are you trying to solve?
-      description: Describe what you are trying to do with your tapes or archive and where TapeSplit gets in the way.
+      description: Describe what you are trying to do with your tapes or archive and where tapesplit gets in the way.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: What would you like TapeSplit to do?
+      label: What would you like tapesplit to do?
       description: The behavior you have in mind. A sketch of the command, UI flow, or output is plenty.
     validations:
       required: true

@@ -25,7 +25,7 @@ Russian quotes stay Russian with a gentle translation alongside.
 
 - **Display type is rounded**: post titles, kickers, and pull-quotes use
   `font-family: ui-rounded, -apple-system, system-ui` (SF Rounded on Apple
-  platforms) — the one place TapeSplit departs from the standard SF text
+  platforms) — the one place tapesplit departs from the standard SF text
   ladder, giving the Journal its scrapbook warmth. Body text stays on the
   standard reading stack.
 - Editorial reading measure (~65ch), generous whitespace, soft date bylines.

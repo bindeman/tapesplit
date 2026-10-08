@@ -399,7 +399,7 @@ export function App() {
         <header className="sidebar-brand" title={bundle.projectDir}>
           <AppIcon size={30} />
           <div className="brand-copy">
-            <strong>TapeSplit</strong>
+            <strong>tapesplit</strong>
             <span>{archiveByline(bundle)}</span>
           </div>
         </header>
@@ -1177,8 +1177,8 @@ function EventSheet({
             </section>
           )}
 
-          <section className="knows" aria-label="How TapeSplit knows">
-            <h2 className="knows-title">How TapeSplit knows</h2>
+          <section className="knows" aria-label="How tapesplit knows">
+            <h2 className="knows-title">How tapesplit knows</h2>
             <div className="knows-grid">
               <WhenPane event={event} range={range} />
               <WherePane event={event} places={places} roles={placeRoles} continuity={continuity} />

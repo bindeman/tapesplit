@@ -93,13 +93,13 @@
     if (m.people && m.people.length) {
       rows.push(`<div><dt>Who</dt><dd>${m.people.map((p) => `<span class="tag">${esc(p)}</span>`).join("")}</dd></div>`);
     }
-    rows.push(`<div><dt>TapeSplit says</dt><dd>${esc(m.summary)}</dd></div>`);
+    rows.push(`<div><dt>tapesplit says</dt><dd>${esc(m.summary)}</dd></div>`);
     if (m.timing) rows.push(`<div><dt>Timing check</dt><dd>${esc(m.timing)}</dd></div>`);
     if (m.reviews) rows.push(`<div><dd class="lb-review">${m.reviews} ${m.reviews === 1 ? "detail is" : "details are"} waiting for review in the app.</dd></div>`);
     return `<h2 id="lb-title">${esc(m.title)}</h2>
       <p class="lb-sub">Tape ${m.tape.tape} · ${esc(m.tape.start)}–${esc(m.tape.end)} · ${esc(m.tape.length)}</p>
       <dl>${rows.join("")}</dl>
-      <p class="lb-note">TapeSplit's output for this moment, unedited except for names: everyone but Filip has a stand-in name.</p>`;
+      <p class="lb-note">tapesplit's output for this moment, unedited except for names: everyone but Filip has a stand-in name.</p>`;
   }
 
   function showMedia(item, which) {
