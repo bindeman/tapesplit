@@ -10,7 +10,7 @@
   <a href="docs/"><b>Docs</b></a>
 </p>
 
-<p align="center"><b>Read the story:</b> <a href="https://tapesplit.org/">My little VHS digitization project that turned into a palantír for home video</a></p>
+<p align="center"><b>Read the story:</b> <a href="https://tapesplit.org/">My little VHS digitization project that turned into a family archive</a></p>
 
 <p align="center">
   <a href="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml/badge.svg"></a>
@@ -21,7 +21,11 @@
 
 **tapesplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
 
-> Every picture on this page is a real frame from my family's tapes (1997–2007), labeled by tapesplit. Names other than mine are changed.
+<p align="center">
+  <img src="site/media/readme/how-inout.webp" alt="In: a box of VHS tapes with no labels. tapesplit watches every minute. Out: 279 moments, each titled and dated; a timeline from 1997 to 2007 with 99 moments dated to the day; 244 places on a map; and 101 people, with a family tree" width="100%">
+</p>
+
+> Every photo on this page is a real frame from my family's tapes (1997–2007), labeled by tapesplit; the faces in the family tree are drawn. People's names other than mine are changed.
 
 ## Why I made this
 
@@ -36,10 +40,10 @@ For a decade those tapes sat in the attic. Last year I started a project to digi
 ## From the tapes
 
 <p align="center">
-  <img src="site/media/readme/weather.gif" alt="Polaroid: a grinning boy in a rain hood on a windy beach. Label: Oregon coast, 2006" width="24%">
-  <img src="site/media/readme/lava.gif" alt="Polaroid: lava glowing where it meets the ocean at dusk. Label: Kīlauea, Hawaiʻi, 2006" width="24%">
-  <img src="site/media/readme/bears.gif" alt="Polaroid: brown bears fishing along a river. Label: Katmai, Alaska, 2002" width="24%">
-  <img src="site/media/readme/stbasil.gif" alt="Polaroid: Saint Basil's Cathedral seen from a river boat. Label: Moscow, 2007" width="24%">
+  <img src="site/media/readme/weather.webp" alt="Polaroid: a grinning boy in a rain hood on a windy beach. Label: Oregon coast, 2006" width="24%">
+  <img src="site/media/readme/lava.webp" alt="Polaroid: lava glowing where it meets the ocean at dusk. Label: Kīlauea, Hawaiʻi, 2006" width="24%">
+  <img src="site/media/readme/bears.webp" alt="Polaroid: brown bears fishing along a river. Label: Katmai, Alaska, 2002" width="24%">
+  <img src="site/media/readme/stbasil.webp" alt="Polaroid: Saint Basil's Cathedral seen from a river boat. Label: Moscow, 2007" width="24%">
 </p>
 
 The captions are scrapbook notes. The label tape is tapesplit's: where each trip was and what year, worked out from what's on screen, what's said on tape and the camcorder's date stamp.
@@ -66,10 +70,10 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
   <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates tapesplit took from them" width="100%">
 </p>
 
-**Where.** My dad says we're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere we lived, so tapesplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
+**Where.** My dad says we're back in Eugene, and the video model reads Edison School off the sign above the entrance. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere we lived, so tapesplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
 
 <p align="center">
-  <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map of the United States: the first search's Maplewood Schools in Florida, Utah and Arizona are grayed out, and the one found near home in Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
+  <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map of the United States: the first search's Edison Schools in Florida, Utah and Arizona are grayed out, and the one found near home in Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
 </p>
 
 **Who.** Two voices, separated and lined up with their words: my dad asks me, in Russian, what I think of my first day, and I tell him I'm not scared. tapesplit suggests who's who; the names are mine.
@@ -99,7 +103,7 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
 
 Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. tapesplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
 
-<sub>The school and teacher names are changed, and the faces in the family tree are illustrated stand-ins. The English under the Russian lines was added for this page, except the Journal's, which is tapesplit's own. On the website you can switch those translations to French.</sub>
+<sub>The teacher's name is changed, and the faces in the family tree are illustrated stand-ins. The English under the Russian lines was added for this page, except the Journal's, which is tapesplit's own.</sub>
 
 ## What you get
 
