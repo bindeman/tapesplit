@@ -73,13 +73,12 @@
     note.style.left = `calc(${pct(f0)}% + 6px)`;
   }
 
-  // ------------------------------------------------------------ the three stamps
+  // ------------------------------------------------------------ the two stamps
   const SEQ_ALT = [
-    "A tree-lined Moscow courtyard with the camcorder's date stamp, SEP 1 2005, in the corner",
-    "Filip and his mom by the car on a sunny lawn, with the date stamp SEP 7 2005",
+    "Me and my mom by the car on a sunny lawn on my first day of first grade, with the date stamp SEP 7 2005",
     "An empty room with the date stamp FEB 17 2006",
   ];
-  const SEQ_STYLE = [["-2.4deg", "var(--washi-blue)"], ["1.6deg", "var(--washi-yellow)"], ["-1.2deg", "var(--washi-pink)"]];
+  const SEQ_STYLE = [["-2deg", "var(--washi-yellow)"], ["1.8deg", "var(--washi-pink)"]];
   const seq = $("#sequence");
   if (seq) {
     seq.innerHTML = H.sequence.map((s, i) => `
@@ -92,7 +91,7 @@
   }
 
   // ------------------------------------------------------------ when
-  const eugene = H.sequence[1];
+  const eugene = H.sequence.find((s) => s.stamp.startsWith("SEP 7")) || H.sequence[0];
   const stampPic = $("#when-stamp");
   if (stampPic) {
     stampPic.innerHTML = `<img src="${eugene.image}" alt="The first morning of school: Filip by the car, with the camcorder date stamp SEP 7 2005 in the corner" loading="lazy" width="960" height="720">${boxes(eugene.ocr)}`;
@@ -185,7 +184,7 @@
     const others = w.candidates.filter((c) => !c.first && !c.kept).map((c) => c.city.split(",")[0]);
     const steps = [
       `Searched for <code>${esc(w.query)}</code>. The best match was in ${esc(first.city)}, with others in ${others.map(esc).join(" and ")}.`,
-      `None is anywhere this family lived, so the match was flagged. They lived in <strong>${esc(w.era.label.replace(" years", ""))}</strong> from ${w.era.from}, so TapeSplit searched again near home: <code>${esc(w.scoped_query)}</code>.`,
+      `None is anywhere this family lived, so the match was flagged. They lived in <strong>${esc(w.era.label.replace(" years", ""))}</strong> from ${w.era.from}, so tapesplit searched again near home: <code>${esc(w.scoped_query)}</code>.`,
       `A separate verifier checked the pairing on its own and agreed: the school is in <strong>Eugene, Oregon</strong>.`,
     ];
     const confs = [w.loose_confidence, w.scoped_confidence, w.context_confidence];
@@ -329,6 +328,154 @@
   }
   document.querySelectorAll("#ch-who .who-more .reveal").forEach((el) => watch(el));
 
+  // ------------------------------------------------------------ family
+  const F = H.family;
+  const board = $("#family-board");
+  const fcard = $("#family-card");
+  if (F && board && fcard) {
+    const AV = (k) => `media/how/avatars/${k}.svg`;
+    const REL = Object.fromEntries(F.relations.map((r) => [r.key, r]));
+    // Board coordinates are 600 × 480; the SVG stretches with the board, so the
+    // nodes (placed in %) and the lines stay together at any aspect ratio.
+    const NODES = [
+      { k: "grandma", x: 200, y: 78, name: "Grandma", sub: "«бабушка»", rel: "grandparents" },
+      { k: "grandpa", x: 400, y: 78, name: "Grandpa", sub: "«дедушка»", rel: "grandparents" },
+      { k: "mom", x: 100, y: 250, name: "Mom", sub: "«мама»", rel: "mom" },
+      { k: "dad", x: 500, y: 250, name: "Dad", sub: "«папа»", rel: "dad", cam: true },
+      { k: "phil", x: 300, y: 372, name: "me", sub: "Филя · Filip", rel: null },
+    ];
+    const EDGES = [
+      { rel: "mom", d: "M100 250 C 190 268, 240 326, 300 372", tag: [220, 307, -3] },
+      { rel: "dad", d: "M500 250 C 410 268, 360 326, 300 372", tag: [380, 307, 2.5] },
+      { rel: "grandparents", d: "M200 186 C 203 200, 250 205, 300 205", tag: null },
+      { rel: "grandparents", d: "M400 186 C 397 200, 350 205, 300 205", tag: null },
+      { rel: "grandparents", d: "M300 205 L 300 372", tag: [300, 205, -1.5] },
+    ];
+    const NAME = { dad: "Dad", mom: "Mom", grandparents: "Grandparents" };
+    const PRED = { father: "father of", mother: "mother of", grandparent: "grandparents of" };
+    const STATUS = { needs_review: "Waiting for you", confirmed: "Confirmed", rejected: "Rejected" };
+    const QUESTION = {
+      dad: "Is the man everyone calls папа Phil's father?",
+      grandparents: "Are the people called бабушка and дедушка Phil's grandparents?",
+    };
+    const decided = {};
+    let sel = "dad";
+    const status = (key) => decided[key] || REL[key].status;
+    const KIN = /(пап[аеуы]|папой|мам[аеуы]|мамой|бабушк[аеиу]|дедушк[аеиу]|mother)/gi;
+    const NM = /(Филипп|Филя|Filip)/g;
+    const hl = (s) => esc(s).replace(KIN, '<mark class="kin">$1</mark>').replace(NM, '<mark class="nm">$1</mark>');
+    const tagText = (key) => {
+      const r = REL[key], st = status(key);
+      if (st === "rejected") return `${r.predicate} ✕`;
+      if (st === "confirmed") return `${key === "grandparents" ? "grandparents" : r.predicate} ✓`;
+      return key === "grandparents" ? `grandparents? ${r.confidence.toFixed(2)} · ${r.confidence_2.toFixed(2)}` : `${r.predicate}? ${r.confidence.toFixed(2)}`;
+    };
+    const camIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 11l6-3.5v9L15 13z"/></svg>';
+    const tickIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    const lines = $("#fam-lines");
+    lines.innerHTML = EDGES.map((e) => `<path data-rel="${e.rel}" d="${e.d}"/>`).join("");
+    board.insertAdjacentHTML("beforeend", NODES.map((n, i) => {
+      const tagName = n.rel ? "button" : "div";
+      const attrs = n.rel ? ` type="button" data-rel="${n.rel}" aria-controls="family-card" aria-label="${esc(n.name)}: show the evidence"` : "";
+      return `<${tagName} class="fam-node fam-${n.k}"${attrs} style="--x:${(n.x / 6).toFixed(2)};--y:${(n.y / 4.8).toFixed(2)};--i:${i}">
+        <span class="fam-av"><img src="${AV(n.k)}" alt="" width="96" height="96"></span>
+        ${n.cam ? `<span class="fam-badge cam" title="behind the camera">${camIcon}</span>` : ""}
+        ${n.k === "mom" ? `<span class="fam-badge ok" title="confirmed">${tickIcon}</span>` : ""}
+        <span class="fam-name">${esc(n.name)}</span><span class="fam-sub">${esc(n.sub)}</span>
+      </${tagName}>`;
+    }).join("") + EDGES.filter((e) => e.tag).map((e) => `<button type="button" class="fam-tag" data-rel="${e.rel}" aria-controls="family-card" style="--x:${(e.tag[0] / 6).toFixed(2)};--y:${(e.tag[1] / 4.8).toFixed(2)};--dr:${e.tag[2]}deg"></button>`).join(""));
+
+    const conf = (label, v, st) => `<div class="row ${st}"><span>${esc(label)}</span><span class="bar"><i style="--v:${v}"></i></span><b>${v.toFixed(2)}</b></div>`;
+    const lineItem = (l) => `<li><p class="ru" lang="ru">${hl(l.ru)}</p><span class="gl">${tr(l.en, l.fr, quote)}</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
+    const renderCard = () => {
+      const r = REL[sel], st = status(sel);
+      let text = "", confs = "";
+      if (sel === "dad") {
+        text = "Nobody on the tapes ever says his name. To everyone he's папа, often from behind the camera, so tapesplit keeps him as an unnamed father until someone names him.";
+        confs = conf("Dad", r.confidence, st);
+      } else if (sel === "mom") {
+        text = `The family words alone made a ${r.guess.toFixed(2)} guess. Then a summary from the video model said it outright, which starts at ${r.confidence.toFixed(2)}, and it was confirmed in review.`;
+        confs = conf("Mom", r.confidence, st);
+      } else {
+        text = "Both guesses come from one moment on Tape 15. tapesplit won't guess which side of the family they're on; that's for a person to say.";
+        confs = conf("Grandma", r.confidence, st) + conf("Grandpa", r.confidence_2, st);
+      }
+      let list = r.lines.map(lineItem).join("");
+      if (r.summary) {
+        const sum = esc(r.summary.text).replace("[Mom]", '<span class="redact" title="name hidden on this page">Mom</span>').replace(/(mother)/, '<mark class="kin">$1</mark>').replace(/(Filip)/, '<mark class="nm">$1</mark>');
+        list += `<li class="sum"><p class="en-sum">${sum}</p><span class="where">The video model's summary · Tape ${r.summary.tape} · ${esc(r.summary.clock)}</span></li>`;
+      }
+      let review;
+      if (REL[sel].status === "confirmed") {
+        review = `<p class="fc-q">Confirmed in review.</p><p class="fc-note">Corrections live in their own file and are replayed after every rebuild.</p>`;
+      } else if (decided[sel]) {
+        review = `<p class="fc-q">${st === "confirmed" ? "Confirmed." : "Rejected."} In the app, that answer is saved with your corrections and replayed after every rebuild.</p>
+          <div class="fc-actions"><button type="button" class="fc-btn" data-act="undo">Undo</button></div>`;
+      } else {
+        const n = r.observations;
+        review = `<p class="fc-q">${esc(QUESTION[sel])}</p>
+          <div class="fc-actions"><button type="button" class="fc-btn ok" data-act="confirm">${n > 1 ? "Confirm All" : "Confirm"}</button><button type="button" class="fc-btn no" data-act="reject">${n > 1 ? "Reject All" : "Reject"}</button></div>
+          <p class="fc-note">This decision applies to ${n} supporting relationship observations.</p>`;
+      }
+      fcard.innerHTML = `
+        <div class="fc-tabs" role="tablist" aria-label="Relationships">${Object.keys(NAME).map((k) => `<button type="button" role="tab" data-rel="${k}" aria-selected="${k === sel}">${REL[k].who.map((w) => `<img src="${AV(w)}" alt="" width="20" height="20">`).join("")}${NAME[k]}</button>`).join("")}</div>
+        <div class="fc-head"><span class="fc-pair">${r.who.map((w) => `<img src="${AV(w)}" alt="${w === "grandma" ? "Grandma" : w === "grandpa" ? "Grandpa" : NAME[sel]}" width="34" height="34">`).join("")}<span class="fc-pred">${PRED[r.predicate]}</span><img src="${AV("phil")}" alt="me" width="34" height="34"></span><span class="fc-status s-${st}">${STATUS[st]}</span></div>
+        <p class="fc-text">${text}</p>
+        <ol class="fc-lines">${list}</ol>
+        <p class="fc-legend"><mark class="kin">family word</mark> <mark class="nm">name</mark> · translations added for this page</p>
+        <div class="fc-conf">${confs}</div>
+        <div class="fc-review"><span class="src">In the review queue</span>${review}</div>`;
+    };
+    const paint = () => {
+      lines.querySelectorAll("path").forEach((p) => {
+        const key = p.dataset.rel, st = status(key);
+        p.setAttribute("class", `${st === "confirmed" ? "confirmed" : st === "rejected" ? "rejected" : "guess"}${key === sel ? " on" : " dim"}`);
+      });
+      board.querySelectorAll(".fam-node[data-rel]").forEach((n) => n.classList.toggle("on", n.dataset.rel === sel));
+      board.querySelectorAll(".fam-tag").forEach((t) => {
+        const key = t.dataset.rel;
+        t.textContent = tagText(key);
+        t.className = `fam-tag ${status(key)}${key === sel ? " on" : ""}`;
+        t.setAttribute("aria-label", `${NAME[key]}: ${tagText(key)}. Show the evidence`);
+      });
+      renderCard();
+    };
+    const select = (key) => { sel = key; paint(); };
+    board.addEventListener("click", (ev) => {
+      const el = ev.target.closest("[data-rel]");
+      if (el) select(el.dataset.rel);
+    });
+    fcard.addEventListener("click", (ev) => {
+      const tab = ev.target.closest(".fc-tabs [data-rel]");
+      if (tab) return select(tab.dataset.rel);
+      const act = ev.target.closest("[data-act]");
+      if (!act) return;
+      if (act.dataset.act === "undo") delete decided[sel];
+      else decided[sel] = act.dataset.act === "confirm" ? "confirmed" : "rejected";
+      paint();
+      const again = fcard.querySelector(`[data-act="${act.dataset.act === "undo" ? "confirm" : "undo"}"]`);
+      if (again) again.focus();
+    });
+    fcard.addEventListener("keydown", (ev) => {
+      const tab = ev.target.closest(".fc-tabs [role=tab]");
+      if (!tab || (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft")) return;
+      const keys = Object.keys(NAME);
+      const next = keys[(keys.indexOf(sel) + (ev.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
+      select(next);
+      fcard.querySelector(`.fc-tabs [data-rel="${next}"]`).focus();
+    });
+    paint();
+    watch(board);
+    watch(fcard);
+    document.querySelectorAll(".family-steps .reveal").forEach((el, i) => {
+      el.style.transitionDelay = `${i * 90}ms`;
+      watch(el);
+    });
+    const fs = $("#family-stat");
+    if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.`;
+  }
+
   // ------------------------------------------------------------ language
   const L = H.language;
   const sw = $("#switch-card");
@@ -343,7 +490,7 @@
         <span class="sw-meta">In the Journal for ${esc(L.journal.date)} · Tape ${L.journal.tape} · ${esc(L.journal.clock)}</span>
         <blockquote lang="ru">“${esc(L.journal.ru)}”</blockquote>
         <span class="tr">${tr(L.journal.en, L.journal.fr)}</span>
-        <span class="sw-meta"><span class="t-en">Quotes stay verbatim. The translation is TapeSplit's own.</span><span class="t-fr">Quotes stay verbatim. TapeSplit's own translation is in English; this one was added for the page.</span></span>
+        <span class="sw-meta"><span class="t-en">Quotes stay verbatim. The translation is tapesplit's own.</span><span class="t-fr">Quotes stay verbatim. tapesplit's own translation is in English; this one was added for the page.</span></span>
       </div>` : "");
     watch(sw);
   }
@@ -396,7 +543,7 @@
       const a = X(e.from), b = X(e.to + 1);
       html += `<g class="era era-${i + 1}"><rect x="${a}" y="6" width="${b - a}" height="24"/>`;
       for (const c of e.conflict || []) html += `<rect class="conflict" x="${X(c)}" y="6" width="${X(c + 1) - X(c)}" height="24"/>`;
-      html += `<text x="${a + 8}" y="22">${esc(e.label)}${e.conflict && e.conflict.length ? ` · ${e.conflict.join(", ")} also has a trip to Moscow` : ""}</text></g>`;
+      html += `<text x="${a + 8}" y="22">${esc(e.label)}</text></g>`;
     });
     let k = 0;
     tapes.forEach((t, r) => {

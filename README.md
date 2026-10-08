@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="site/media/readme/hero.webp" alt="TapeSplit: polaroids of moments from old family tapes (lava at Kīlauea, brown bears in Katmai, a boy's weather report on the Oregon coast, a cable car over Davos, Moscow from the river), each labeled with where and when TapeSplit thinks it was filmed" width="100%">
+  <img src="site/media/readme/hero.webp" alt="tapesplit: polaroids of moments from old family tapes (lava at Kīlauea, brown bears in Katmai, a boy's weather report on the Oregon coast, a cable car over Davos, Moscow from the river), each labeled with where and when tapesplit thinks it was filmed" width="100%">
 </p>
 
 <p align="center">
@@ -10,6 +10,8 @@
   <a href="docs/"><b>Docs</b></a>
 </p>
 
+<p align="center"><b>Read the story:</b> <a href="https://tapesplit.org/">My little VHS digitization project that turned into a palantír for home video</a></p>
+
 <p align="center">
   <a href="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bindeman/tapesplit/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
@@ -17,19 +19,19 @@
   <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-c9a87a"></a>
 </p>
 
-**TapeSplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
+**tapesplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
 
-> Every picture on this page is a real frame from my family's tapes (1997–2007), labeled by TapeSplit. Names other than mine are changed.
+> Every picture on this page is a real frame from my family's tapes (1997–2007), labeled by tapesplit. Names other than mine are changed.
 
 ## Why I made this
 
 <p align="center">
-  <img src="site/media/readme/why.webp" alt="A handwritten-style note titled These are my family's tapes, next to a polaroid of me today in the mountains and one of me at six on a rocky summit, above four more polaroids of me in 2001, 2002, 2005 and 2007" width="100%">
+  <img src="site/media/readme/why.webp" alt="A row of six polaroids: me at Devil's Lake in 2001, with a bagel in 2002, on my first day of school in 2005, on a summit in 2006, in 2007, and me now" width="100%">
 </p>
 
-I'm Phillip, the kid in these clips. My family's nineteen tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks what I want to tell them. I say I don't know.
+I'm Phillip, the kid in these clips. My family's nineteen tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks me, in Russian, if I'm a little scared. I tell him no.
 
-When the tapes came back from the digitizer, they were thirty-one hours of video with no labels. Nobody was ever going to sit through all of it to find the moments that matter. So I built something that would.
+For a decade those tapes sat in the attic. Last year I started a project to digitize all of them, and what came back was 36 clips: thirty-one hours of footage with no labels and no dates. I didn't want to sit through all of it, and I didn't know where to start. So I built something to watch it for me.
 
 ## From the tapes
 
@@ -40,7 +42,7 @@ When the tapes came back from the digitizer, they were thirty-one hours of video
   <img src="site/media/readme/stbasil.gif" alt="Polaroid: Saint Basil's Cathedral seen from a river boat. Label: Moscow, 2007" width="24%">
 </p>
 
-The captions are scrapbook notes. The label tape is TapeSplit's: where each trip was and what year, worked out from what's on screen, what's said on tape and the camcorder's date stamp.
+The captions are scrapbook notes. The label tape is tapesplit's: where each trip was and what year, worked out from what's on screen, what's said on tape and the camcorder's date stamp.
 
 ## One tape, split
 
@@ -48,38 +50,44 @@ The captions are scrapbook notes. The label tape is TapeSplit's: where each trip
   <img src="site/media/readme/tape-16.webp" alt="Tape 16 as a timeline: 43 colored blocks for moments in Hawaii (March 2006), on the Oregon coast (April 2006) and at home (May 2006), with hatched gaps where the tape is blank or static, and polaroid thumbnails for eight of the moments" width="100%">
 </p>
 
-Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minutes with no label. TapeSplit found 43 moments in it across a trip to Hawaii, a weekend on the Oregon coast and a spring at home, and skipped the blank tape, blue screens and static in between. The whole first archive was 19 tapes and 31 hours; it came back as 279 moments, 101 people and 244 places.
+Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minutes with no label. tapesplit found 43 moments in it across a trip to Hawaii, a weekend on the Oregon coast and a spring at home, and skipped the blank tape, blue screens and static in between. The whole first archive was 19 tapes and 31 hours; it came back as 279 moments, 101 people and 244 places.
 
 ## One morning, taken apart
 
-Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 in a Moscow courtyard, then SEP 7 2005 on a lawn in Eugene, Oregon, then FEB 17 2006. Here's what TapeSplit made of the Wednesday in the middle, my first day of first grade.
+Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 on a lawn in Eugene, Oregon: my first day of first grade. The very next scene is five months later. Here's what tapesplit made of that Wednesday.
 
 <p align="center">
-  <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above three polaroids from it: a Moscow courtyard stamped SEP 1 2005, a lawn in Eugene stamped SEP 7 2005, and an empty room stamped FEB 17 2006" width="100%">
+  <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above two polaroids from it: a lawn in Eugene stamped SEP 7 2005 and the next scene, an empty room stamped FEB 17 2006" width="100%">
 </p>
 
 **When.** For a few seconds after you press record, a camcorder burns the date into the picture. The video model read this one as SEP 7 2005 (Apple Vision found it too, in two pieces), and the teacher's whiteboard says the same day. Dates that don't describe the moment are left out: a file's own date (the day it was digitized) and years mentioned in passing.
 
 <p align="center">
-  <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates TapeSplit took from them" width="100%">
+  <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates tapesplit took from them" width="100%">
 </p>
 
-**Where.** My dad says we're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere we lived, so TapeSplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
+**Where.** My dad says we're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere we lived, so tapesplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
 
 <p align="center">
   <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map of the United States: the first search's Maplewood Schools in Florida, Utah and Arizona are grayed out, and the one found near home in Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
 </p>
 
-**Who.** Two voices, separated and lined up with their words: my dad asks me, in Russian, what I think of my first day, and I tell him I'm not scared. TapeSplit suggests who's who; the names are mine.
+**Who.** Two voices, separated and lined up with their words: my dad asks me, in Russian, what I think of my first day, and I tell him I'm not scared. tapesplit suggests who's who; the names are mine.
 
 <p align="center">
   <img src="site/media/readme/how-who.webp" alt="A video frame of Filip on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
 </p>
 
-**Language.** Russian and English, sometimes in one sentence. Every line stays in the language it was spoken, and search works across both: type "grandma and grandpa" and it finds «Скажи бабушкам, дедушкам».
+**Family.** Nobody on the tapes says "this is my dad." They say мама and папа to me, usually with my name in the same breath. tapesplit listens for those words in both languages, works out who each one is about, and sketches the family as guesses: Dad at 0.84 from lines like «Дай папе йогурт, Филипп» ("Give Dad the yogurt, Filipp"), Grandma and Grandpa at 0.76 and 0.72. Every guess waits in the review queue until a person confirms it.
 
 <p align="center">
-  <img src="site/media/readme/how-language.webp" alt="A sentence that switches from Russian to English, a Journal quote with TapeSplit's translation, and a search for grandma and grandpa that finds three Russian lines" width="100%">
+  <img src="site/media/readme/how-family.webp" alt="A family tree drawn on graph paper with illustrated avatars: Grandma and Grandpa joined to me by a dotted line labeled grandparents? 0.76 · 0.72, Mom by a solid line labeled mother ✓, and Dad, with a camcorder badge, by a dotted line labeled father? 0.84. Beside it, the three Russian lines behind Dad's guess and a Confirm All button" width="100%">
+</p>
+
+**Multilingual.** Russian and English, sometimes in one sentence. Every line stays in the language it was spoken, and search works across both: type "grandma and grandpa" and it finds «Скажи бабушкам, дедушкам».
+
+<p align="center">
+  <img src="site/media/readme/how-language.webp" alt="A sentence that switches from Russian to English, the Journal's quote of it with tapesplit's own translation, and a search for grandma and grandpa that finds three Russian lines" width="100%">
 </p>
 
 ### Nineteen tapes, one timeline
@@ -89,9 +97,9 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
   <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid where an on-screen date stamp confirms the date and hollow where it came from what was seen or heard; Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
 </picture>
 
-Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. TapeSplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
+Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. tapesplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
 
-<sub>The school and teacher names are changed. The English under the Russian lines was added for this page, except the Journal's, which is TapeSplit's own. On the website you can switch those translations to French.</sub>
+<sub>The school and teacher names are changed, and the faces in the family tree are illustrated stand-ins. The English under the Russian lines was added for this page, except the Journal's, which is tapesplit's own. On the website you can switch those translations to French.</sub>
 
 ## What you get
 
@@ -109,7 +117,7 @@ A local review app that feels like a photo library. Every card links to the seco
         <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/event-davos-dark.webp">
         <img alt="A moment opened: Cable Car Ride to Jakobshorn, with the camcorder stamp AUG 22 2002 boxed where Apple Vision read it and a map of where its places came from" src="site/media/ui/event-davos-light.webp">
       </picture>
-      <p><b>A moment</b> plays from the right second. Underneath, <i>How TapeSplit knows</i> shows the date stamp it read, boxed where Apple Vision found it, and where each place came from.</p>
+      <p><b>A moment</b> plays from the right second. Underneath, <i>How tapesplit knows</i> shows the date stamp it read, boxed where Apple Vision found it, and where each place came from.</p>
     </td>
     <td width="50%" valign="top">
       <picture>
@@ -169,7 +177,7 @@ flowchart TB
 | Pass | What happens |
 | --- | --- |
 | **Watch** | ffmpeg finds scene cuts and throws out blank tape, blue screen and static. whisper.cpp transcribes every word in whatever language was spoken. pyannote separates the voices. Apple Vision reads text in the frame, including the camcorder's burned-in date. InsightFace follows each face through the shot, and tracks are clustered into people. |
-| **Understand** | Gemini on Vertex AI watches each tape in chunks and proposes events with timestamps: what happened, who is there, where and when. Long tapes are chunked, and each chunk is told its own duration so timestamps can't drift. Every batch is estimated first and skipped if it would exceed `--max-cloud-usd`. Without Gemini, TapeSplit still builds a timeline from local signals. |
+| **Understand** | Gemini on Vertex AI watches each tape in chunks and proposes events with timestamps: what happened, who is there, where and when. Long tapes are chunked, and each chunk is told its own duration so timestamps can't drift. Every batch is estimated first and skipped if it would exceed `--max-cloud-usd`. Without Gemini, tapesplit still builds a timeline from local signals. |
 | **Reconcile** | Every signal becomes a claim that keeps its source: a transcript line, a frame, a face track. Events are stitched across chunks and dated from stamps, speech and context. Names are reconciled, so Mom, Katya and Катя become one person, while home in 2003 and home in 2006 stay two places. A blind verifier re-checks a sample of claims against the clips. |
 | **Review** | Strong guesses are accepted automatically under per-type confidence floors; a relationship also needs both people resolved and agreeing evidence. Everything else waits in the review queue. Corrections live in their own file and are replayed after every rebuild. |
 
@@ -226,7 +234,7 @@ Every stage is also its own command (`detect-scenes`, `transcribe`, `speakers di
 
 ## API keys
 
-TapeSplit works with no keys at all. Each service you add makes one part of the archive better. Keys go in `.env` (gitignored); `tapesplit doctor` reports what it found without printing secrets.
+tapesplit works with no keys at all. Each service you add makes one part of the archive better. Keys go in `.env` (gitignored); `tapesplit doctor` reports what it found without printing secrets.
 
 | Service | What it adds | Setup | Without it |
 | --- | --- | --- | --- |
@@ -267,7 +275,7 @@ Start with [docs/HANDOFF.md](docs/HANDOFF.md) for the architecture tour. The oth
 
 ## Status
 
-TapeSplit is an alpha. It runs end to end on a real 31-hour archive, and the review queue exists because it still makes mistakes, such as borrowing a place from the wrong era or attributing a quote to the wrong speaker. Next up:
+tapesplit is an alpha. It runs end to end on a real 31-hour archive, and the review queue exists because it still makes mistakes, such as borrowing a place from the wrong era or attributing a quote to the wrong speaker. Next up:
 
 - API-key backends for Gemini (AI Studio) and OpenAI, alongside Vertex AI and Azure
 - A packaged desktop app with a native project picker
@@ -279,7 +287,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## License
 
-TapeSplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, study, change and share it for personal, family, educational, research and other noncommercial purposes. Commercial use, including use inside a business or as part of a paid product or service, needs written permission from the author ([phillipbindeman.com](https://phillipbindeman.com)).
+tapesplit is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You can use, study, change and share it for personal, family, educational, research and other noncommercial purposes. Commercial use, including use inside a business or as part of a paid product or service, needs written permission from the author ([phillipbindeman.com](https://phillipbindeman.com)).
 
 The footage, stills, clips and screenshots under `site/media/` and on this page come from my family's tapes. They are © Phillip Bindeman, all rights reserved, and are not covered by the code license.
 

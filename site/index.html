@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-<title>TapeSplit</title>
-<meta name="description" content="TapeSplit watches your digitized VHS and camcorder tapes, splits them into moments, and works out when, where and who. Local-first and free for personal use.">
-<meta property="og:title" content="TapeSplit">
-<meta property="og:description" content="Every moment on every tape. Found. Local-first home-video intelligence, free for personal use.">
+<title>tapesplit · a palantír for home video</title>
+<meta name="description" content="My little VHS digitization project that turned into a palantír for home video: how tapesplit watches a box of family tapes and works out when, where and who.">
+<meta property="og:title" content="My little VHS digitization project that turned into a palantír for home video">
+<meta property="og:description" content="Last year I digitized my family's VHS tapes and got back thirty-one hours I didn't know where to start with. So I built something to watch them for me.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://tapesplit.org/">
 <meta property="og:image" content="https://tapesplit.org/media/og.jpg">
@@ -16,7 +16,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=VT323&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=VT323&display=swap">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="how.css">
 </head>
@@ -26,137 +26,83 @@
 <!-- shared icon sprite: the app icon and map gradients -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
-    <linearGradient id="icBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43434c"/><stop offset="1" stop-color="#17171c"/></linearGradient>
-    <linearGradient id="icSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f97ff"/><stop offset="1" stop-color="#bfe1ff"/></linearGradient>
     <radialGradient id="pinGrad" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ff9e92"/><stop offset=".45" stop-color="#e2281c"/><stop offset="1" stop-color="#9c1209"/></radialGradient>
     <linearGradient id="oceanGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--ocean-1)"/><stop offset="1" stop-color="var(--ocean-2)"/></linearGradient>
-    <symbol id="ts-icon" viewBox="0 0 128 128">
-      <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#icBg)"/>
-      <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#fff" stroke-opacity=".14"/>
-      <rect x="17" y="30" width="72" height="50" rx="8" fill="#0d0d11" stroke="#fff" stroke-opacity=".12"/>
-      <rect x="24" y="36" width="58" height="21" rx="3.5" fill="#f7efdc"/>
-      <rect x="24" y="36" width="58" height="5.5" rx="2" fill="#e2392f"/>
-      <path d="M30 48h20M30 52.5h32" stroke="#b3a585" stroke-width="2" stroke-linecap="round"/>
-      <rect x="33" y="62" width="40" height="13" rx="6.5" fill="#050507"/>
-      <circle cx="44" cy="68.5" r="4.4" fill="#ececf1"/>
-      <circle cx="62" cy="68.5" r="4.4" fill="#ececf1"/>
-      <g transform="rotate(9 86 80)">
-        <rect x="62" y="58" width="46" height="42" rx="3" fill="#fff"/>
-        <rect x="66" y="62" width="38" height="25" rx="1" fill="url(#icSky)"/>
-        <path d="M66 81c5-5 10-6.5 15-3.5s8.5 2 12-.8 7.5-2 11 1V87H66z" fill="#33a046"/>
-        <circle cx="97" cy="68" r="3.6" fill="#ffd54a"/>
-      </g>
+    <linearGradient id="tsWarm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7a45"/><stop offset="1" stop-color="#e23b3b"/></linearGradient>
+    <clipPath id="tsL"><path d="M0 0H35L29 64H0z"/></clipPath>
+    <clipPath id="tsR"><path d="M37 0H64V64H31z"/></clipPath>
+    <g id="tsCassette">
+      <rect x="5" y="15" width="54" height="36" rx="6" fill="url(#tsWarm)"/>
+      <rect x="11" y="20" width="42" height="11" rx="2.2" fill="#fff4e8"/>
+      <rect x="11" y="20" width="42" height="3.2" rx="1.2" fill="#1d1d1f"/>
+      <rect x="17" y="35" width="30" height="11" rx="5.5" fill="#3a0f12"/>
+      <circle cx="24" cy="40.5" r="3.4" fill="#ffe2c4"/>
+      <circle cx="40" cy="40.5" r="3.4" fill="#ffe2c4"/>
+    </g>
+    <symbol id="ts-icon" viewBox="0 0 64 64">
+      <g clip-path="url(#tsL)" transform="translate(-1.6 1.4) rotate(-3 20 33)"><use href="#tsCassette"/></g>
+      <g clip-path="url(#tsR)" transform="translate(1.6 -1.4) rotate(3 44 33)"><use href="#tsCassette"/></g>
     </symbol>
   </defs>
 </svg>
 
-<nav class="lnav" aria-label="TapeSplit">
-  <div class="lnav-inner">
-    <a class="lnav-brand" href="#top"><svg aria-hidden="true"><use href="#ts-icon"/></svg><span>TapeSplit</span></a>
-    <div class="lnav-links">
-      <a href="#why">Why</a>
-      <a href="#moments">Moments</a>
-      <a href="#inside">How It Works</a>
-      <a href="#examples">Examples</a>
-      <a href="#specs">Tech Specs</a>
-      <a class="lnav-get" href="#specs">Get</a>
-    </div>
+<header class="site-head">
+  <div class="site-head-inner">
+    <a class="brand" href="#top"><svg aria-hidden="true"><use href="#ts-icon"/></svg><span>tapesplit</span></a>
+    <nav class="site-links" aria-label="Sections">
+      <a href="#moments">The tapes</a>
+      <a href="#inside">How it works</a>
+      <a href="#specs">Try it</a>
+      <a href="https://github.com/bindeman/tapesplit">GitHub</a>
+    </nav>
   </div>
-</nav>
+</header>
 
 <main id="main">
-  <section class="hero" id="top" aria-labelledby="hero-title">
-    <div class="hero-glow" aria-hidden="true"></div>
-    <div class="wrap hero-copy">
-      <p class="hero-app"><svg aria-hidden="true"><use href="#ts-icon"/></svg>TapeSplit</p>
-      <h1 id="hero-title">Every moment on every tape. <span class="grad">Found.</span></h1>
-      <p class="hero-sub">TapeSplit watches your digitized VHS and camcorder tapes for you. It splits each one into moments, works out when and where they happened and who was there, and leaves only the uncertain guesses for you to check.</p>
-      <div class="hero-cta">
-        <a class="btn" href="#specs">Get TapeSplit</a>
-        <a class="textlink" href="#moments">Watch it split a tape</a>
+  <article class="post" id="top">
+    <header class="post-head">
+      <p class="kicker">A personal project</p>
+      <h1 id="post-title">My little VHS digitization project that turned into a palantír for home video</h1>
+      <p class="dek">Thirty-one hours of my family's home videos, and no idea where to start. So I built something to watch them for me.</p>
+      <div class="byline">
+        <img src="media/why/me-now.webp" alt="" width="44" height="44">
+        <span><b>Phillip Bindeman</b><span>October 2026 · about 12 minutes</span></span>
       </div>
-      <p class="hero-meta">Free for personal use · Runs on your Mac · Your tapes stay home</p>
-    </div>
-    <div class="hero-stage">
-      <button class="window hero-window" type="button" data-zoom="library-tape16" aria-label="Enlarge the Library screenshot">
-        <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>TapeSplit</span></span>
-        <img class="only-light" src="media/ui/library-tape16-light.webp" alt="TapeSplit's Library: a strip of tape 16 above its moments as photo tiles, from arriving in Hawaii to lava entering the ocean at night" width="1600" height="1000">
-        <img class="only-dark" src="media/ui/library-tape16-dark.webp" alt="TapeSplit's Library in dark mode" width="1600" height="1000">
-      </button>
-      <figure class="polaroid hero-pol p1" style="--r:-7deg;--tc:var(--washi-yellow)" aria-hidden="true"><div class="pic"><img src="media/clips/lava.webp" alt="" width="480" height="360"></div><figcaption>lava meets the Pacific</figcaption></figure>
-      <figure class="polaroid hero-pol p2" style="--r:5deg;--tc:var(--washi-pink)" aria-hidden="true"><div class="pic"><img src="media/clips/weather.webp" alt="" width="480" height="360"></div><figcaption>my weather report</figcaption></figure>
-      <figure class="polaroid hero-pol p3" style="--r:-3deg;--tc:var(--washi-mint)" aria-hidden="true"><div class="pic"><img src="media/clips/bears.webp" alt="" width="480" height="360"></div><figcaption>brown bears, fishing</figcaption></figure>
-    </div>
-    <p class="fineprint hero-fine">The first archive: 19 tapes and 31 hours from 1997 to 2007, turned into 279 moments, 101 people and 244 places.</p>
-  </section>
+    </header>
 
-  <section class="features wrap" aria-label="What TapeSplit does">
-    <a class="feature" href="#moments">
-      <span class="f-icon" style="--f1:#ff6b5e;--f2:#e2392f"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg></span>
-      <h3>Moments</h3>
-      <p>Every tape split into the moments on it, with blank tape and static left out.</p>
-      <span class="f-more">See a tape split</span>
-    </a>
-    <a class="feature" href="#places">
-      <span class="f-icon" style="--f1:#5fd47e;--f2:#2a9a4c"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
-      <h3>Places</h3>
-      <p>Signs, landmarks and conversations put each trip on the map.</p>
-      <span class="f-more">Open the map</span>
-    </a>
-    <a class="feature" href="#app">
-      <span class="f-icon" style="--f1:#ffb340;--f2:#e2862a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v11.5H8.5A3.5 3.5 0 0 1 5 16z"/><path d="M5 16a3.5 3.5 0 0 1 3.5-3.5H19M9 8h6"/></svg></span>
-      <h3>The Journal</h3>
-      <p>Days from the tapes, drafted into entries that cite the clips they use.</p>
-      <span class="f-more">Read an entry</span>
-    </a>
-    <a class="feature" href="#app">
-      <span class="f-icon" style="--f1:#5aa9ff;--f2:#0a6ce0"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8 12.3l2.7 2.7L16 9.6"/></svg></span>
-      <h3>Review</h3>
-      <p>Strong guesses are accepted for you. The rest wait, with the clip one click away.</p>
-      <span class="f-more">See the queue</span>
-    </a>
-  </section>
+    <div class="prose" id="why">
+      <p class="lede">I'm Phillip, the kid in most of these clips. My family's nineteen camcorder tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks me, in Russian, if I'm a little scared. I tell him no.</p>
+    </div>
 
-  <section class="section scrap why" id="why" aria-labelledby="why-title">
-    <div class="wrap why-grid">
-      <div class="why-note">
-        <span class="eyebrow">Why I made this</span>
-        <h2 id="why-title">These are my family's tapes.</h2>
-        <p>I'm Phillip, the kid in these clips. My family's nineteen tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks what I want to tell them. I say I don't know.</p>
-        <p>When the tapes came back from the digitizer, they were thirty-one hours of video with no labels. Nobody was ever going to sit through all of it to find the moments that matter. So I built something that would: TapeSplit watches the tapes, splits them into moments, works out when and where each one happened and who's in it, and leaves the guesses it isn't sure about for us to check.</p>
-        <p class="hand why-sig">Phillip</p>
+    <figure class="scrap why-reel" aria-label="Me, from 2001 to now">
+      <div class="why-row">
+        <figure class="polaroid small" style="--r:-2deg;--tc:var(--washi-mint)"><div class="pic"><video class="why-clip" src="media/why/2001.mp4" poster="media/why/2001.webp" muted loop playsinline preload="none" aria-label="A toddler in a sun hat standing up on a picnic blanket (no sound)"></video></div><figcaption>Devil's Lake, 2001</figcaption></figure>
+        <figure class="polaroid small" style="--r:1.5deg;--tc:var(--washi-pink)"><div class="pic"><video class="why-clip" src="media/why/2002.mp4" poster="media/why/2002.webp" muted loop playsinline preload="none" aria-label="A two-year-old eating a bagel (no sound)"></video></div><figcaption>a bagel, 2002</figcaption></figure>
+        <figure class="polaroid small" style="--r:-1deg;--tc:var(--washi-yellow)"><div class="pic"><video class="why-clip" src="media/why/2005.mp4" poster="media/why/2005.webp" muted loop playsinline preload="none" aria-label="Me with a backpack and lunchbox on my first day of school (no sound)"></video></div><figcaption>first grade, 2005</figcaption></figure>
+        <figure class="polaroid small" style="--r:2deg;--tc:var(--washi-blue)"><div class="pic"><video class="why-clip" src="media/why/2006.mp4" poster="media/why/2006.webp" muted loop playsinline preload="none" aria-label="Me at six, waving from a rocky summit (no sound)"></video></div><figcaption>on a summit, 2006</figcaption></figure>
+        <figure class="polaroid small" style="--r:-1.5deg;--tc:var(--washi-mint)"><div class="pic"><video class="why-clip" src="media/why/2007.mp4" poster="media/why/2007.webp" muted loop playsinline preload="none" aria-label="Me at seven, leaning into the camera (no sound)"></video></div><figcaption>2007</figcaption></figure>
+        <figure class="polaroid small why-now" style="--r:2.5deg;--tc:var(--washi-pink)"><div class="pic"><img src="media/why/me-now.webp" alt="Me today, smiling in front of a mountain range" width="460" height="460" loading="lazy"></div><figcaption>me, now</figcaption></figure>
       </div>
-      <div class="why-photos">
-        <figure class="polaroid why-now" style="--r:2.5deg;--tc:var(--washi-blue)">
-          <div class="pic"><img src="media/why/me-now.webp" alt="Phillip today, smiling in front of a mountain range" width="460" height="460" loading="lazy"></div>
-          <figcaption>me, now</figcaption>
-        </figure>
-        <figure class="polaroid why-then" style="--r:-5deg;--tc:var(--washi-yellow)">
-          <div class="pic"><video class="why-clip" src="media/why/2006.mp4" poster="media/why/2006.webp" muted loop playsinline preload="none" aria-label="Me at six, waving from a rocky summit (no sound)"></video></div>
-          <figcaption>me, 2006</figcaption>
-        </figure>
-      </div>
-    </div>
-    <div class="wrap why-strip">
-      <figure class="polaroid small" style="--r:-2deg;--tc:var(--washi-mint)"><div class="pic"><video class="why-clip" src="media/why/2001.mp4" poster="media/why/2001.webp" muted loop playsinline preload="none" aria-label="A toddler in a sun hat standing up on a picnic blanket (no sound)"></video></div><figcaption>Devil's Lake, May 2001</figcaption></figure>
-      <figure class="polaroid small" style="--r:1.5deg;--tc:var(--washi-pink)"><div class="pic"><video class="why-clip" src="media/why/2002.mp4" poster="media/why/2002.webp" muted loop playsinline preload="none" aria-label="A two-year-old eating a bagel (no sound)"></video></div><figcaption>a bagel, April 2002</figcaption></figure>
-      <figure class="polaroid small" style="--r:-1deg;--tc:var(--washi-yellow)"><div class="pic"><video class="why-clip" src="media/why/2005.mp4" poster="media/why/2005.webp" muted loop playsinline preload="none" aria-label="Me with a backpack and lunchbox on my first day of school (no sound)"></video></div><figcaption>first day of school, 2005</figcaption></figure>
-      <figure class="polaroid small" style="--r:2deg;--tc:var(--washi-blue)"><div class="pic"><video class="why-clip" src="media/why/2007.mp4" poster="media/why/2007.webp" muted loop playsinline preload="none" aria-label="Me at seven, leaning into the camera (no sound)"></video></div><figcaption>2007</figcaption></figure>
-    </div>
-  </section>
+    </figure>
 
-  <section class="section theater" id="moments" aria-labelledby="moments-title">
+    <div class="prose">
+      <p>For a decade those tapes sat in the attic. Last year I started a project to digitize all of them, and what came back was 36 clips: thirty-one hours of footage with no labels and no dates. I didn't want to sit through all of it, and I didn't know where to start.</p>
+      <p>So I started writing a script to split each tape into scenes. It kept growing. It learned to read the date a camcorder burns into the corner of the picture, to tell voices apart, to follow faces, to work out who's family, to put signs on a map and to keep Russian and English straight. By the end it was less a splitter than a palantír, the seeing stone from <i>The Lord of the Rings</i>: something I can ask what's on any tape, when it happened, where we were and who was talking.</p>
+      <p>I called it tapesplit. Here's what it does with a box of tapes.</p>
+    </div>
+
+<section class="section theater" id="moments" aria-labelledby="moments-title">
     <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Moments</span>
-        <h2 id="moments-title">Two hours of tape. Forty-three moments.</h2>
-        <p>Tape 16 came back from the digitizer as one unlabeled two-hour file. TapeSplit found a trip to Hawaiʻi, a weekend on the Oregon coast and a spring at home on it, and skipped the blank tape in between.</p>
+      <div class="prose">
+        <h2 id="moments-title">What one tape looks like now</h2>
+        <p>Here's Tape 16. It came back from the digitizer as <span class="file">tape-18.mp4</span>: two hours and four minutes, no label. tapesplit found 43 moments on it, from a trip to Hawaiʻi, a weekend on the Oregon coast and a spring at home, and skipped the blank tape in between.</p>
+        <p>Move across the filmstrip to skim the tape. Click any moment to see everything it found.</p>
       </div>
       <div class="imovie" id="imovie">
         <div class="im-titlebar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span id="im-title">Tape 16 · tape-18.mp4 · 2:04:23</span></div>
         <div class="im-viewer" id="im-viewer" aria-live="polite">
           <img id="im-image" src="media/tape16/266.webp" alt="">
-          <div class="im-blank" id="im-blank" hidden><strong>Blank tape</strong><span>Blue screen, black frames and static. TapeSplit skipped it.</span></div>
+          <div class="im-blank" id="im-blank" hidden><strong>Blank tape</strong><span>Blue screen, black frames and static. tapesplit skipped it.</span></div>
           <span class="im-chapter" id="im-chapter">Hawaiʻi · March 2006</span>
           <span class="im-timecode" id="im-timecode">25:10</span>
           <div class="im-overlay">
@@ -183,16 +129,22 @@
           </div>
         </div>
       </div>
-      <p class="theater-hint">Move across the filmstrip to skim the tape. Click any moment for everything TapeSplit found.</p>
+      <p class="theater-hint">Move across the filmstrip to skim the tape. Click any moment for everything tapesplit found.</p>
     </div>
   </section>
 
-  <section class="section scrap" id="inside" aria-labelledby="inside-title">
+    <div class="prose">
+      <h2 id="how-it-works">How it figures things out</h2>
+      <p>The short version: it watches every tape four times. First on my Mac, for scene cuts, transcripts, voices, text in the frame and faces. Then, if I let it, a video model in the cloud watches each tape in chunks. Then it reconciles all of that into claims that keep their evidence. Last, it asks me only about what it isn't sure of.</p>
+      <p>The long version is easier to show than tell, so here's one morning from Tape 18, my first day of first grade, taken apart.</p>
+    </div>
+
+<section class="section scrap" id="inside" aria-labelledby="inside-title">
     <div class="wrap">
       <div class="head">
         <span class="eyebrow">How it works</span>
         <h2 id="inside-title">One morning, taken apart.</h2>
-        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in is a Wednesday in September 2005, my first day of first grade. Here's how TapeSplit worked out when it was, where, who's talking and what they're saying.</p>
+        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in is a Wednesday in September 2005, my first day of first grade. Here's how tapesplit worked out when it was, where, who's talking, who's family and what they're saying.</p>
         <div class="tr-toggle" role="group" aria-label="Translate the Russian into">
           <span>Translate the Russian into</span>
           <button type="button" data-tr="en" aria-pressed="true">English</button>
@@ -211,14 +163,14 @@
           <p class="hand t18-note" id="t18-note">this stretch&nbsp;↓</p>
         </div>
         <div class="sequence" id="sequence"></div>
-        <figcaption class="hand spread-caption">Moscow on September&nbsp;1. Eugene six days later. Then February. All on one tape.</figcaption>
+        <figcaption class="hand spread-caption">My first day of first grade, on the camcorder's own clock. The very next scene is five months later.</figcaption>
       </figure>
 
       <article class="chapter" id="ch-when" aria-labelledby="when-title">
         <header class="ch-head">
           <span class="dymo dymo-red">When</span>
           <h3 id="when-title">It reads the clock in the corner.</h3>
-          <p>For a few seconds after you press record, a camcorder burns the date into the picture. TapeSplit reads those stamps twice: Apple Vision reads the text in the frame, and the video model reads it while it watches. It also catches dates said out loud or written on screen, and a date only counts if it fits the tape's other dates.</p>
+          <p>For a few seconds after you press record, a camcorder burns the date into the picture. tapesplit reads those stamps twice: Apple Vision reads the text in the frame, and the video model reads it while it watches. It also catches dates said out loud or written on screen, and a date only counts if it fits the tape's other dates.</p>
         </header>
         <div class="when-grid">
           <figure class="polaroid reveal" style="--r:-2.2deg;--tc:var(--washi-yellow)">
@@ -241,12 +193,6 @@
               <span class="ocr-text hand-text">“Today is Wednesday September&nbsp;7, 2005”</span>
               <strong>Agrees</strong>
             </div>
-            <div class="glass read-card">
-              <span class="src">Said six days earlier, in Moscow</span>
-              <span class="ocr-text" lang="ru">“Сегодня 1 сентября, я иду в школу…”</span>
-              <span class="gloss"><span class="t-en">“Today is September 1st. I'm going to the school…”</span><span class="t-fr" lang="fr">« Aujourd'hui, c'est le 1er septembre. Je vais à l'école… »</span></span>
-              <strong>September 1, 2005</strong>
-            </div>
           </div>
           <p class="hand when-note reveal"><svg viewBox="0 0 120 34" aria-hidden="true"><path d="M8 30 C 30 6, 52 4, 60 18 S 92 30, 112 6"/><path d="M104 5l8 1-3 7"/></svg>the camcorder and the teacher agree</p>
         </div>
@@ -268,7 +214,7 @@
         <header class="ch-head">
           <span class="dymo dymo-green">Where</span>
           <h3 id="where-title">Which Maplewood?</h3>
-          <p>My dad says we're back in Eugene. The sign over the doors says Maplewood School. But there are Maplewood Schools all over the country, so TapeSplit doesn't trust the name alone. It weighs every clue against where we lived that year.</p>
+          <p>My dad says we're back in Eugene. The sign over the doors says Maplewood School. But there are Maplewood Schools all over the country, so tapesplit doesn't trust the name alone. It weighs every clue against where we lived that year.</p>
         </header>
         <div class="where-grid">
           <div class="clues" id="clues"></div>
@@ -294,7 +240,7 @@
         <header class="ch-head">
           <span class="dymo dymo-blue">Who</span>
           <h3 id="who-title">Two voices, one conversation.</h3>
-          <p>TapeSplit separates the voices on the soundtrack and lines each one up with its words. This is my dad asking me about my first day, in Russian, for my grandparents back in Moscow. TapeSplit suggests who's who; the names are mine.</p>
+          <p>tapesplit separates the voices on the soundtrack and lines each one up with its words. This is my dad asking me about my first day, in Russian, for my grandparents back in Moscow. tapesplit suggests who's who; the names are mine.</p>
         </header>
         <div class="who-player reveal" id="who-player">
           <div class="who-video">
@@ -320,16 +266,38 @@
           <div class="glass names-card reveal">
             <span class="src">One person, eight spellings</span>
             <div class="names" id="names"></div>
-            <p>At home I'm Филя; my teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
+            <p>At home I'm Филя; my teacher writes Philip. tapesplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
           </div>
         </div>
+      </article>
+
+      <article class="chapter" id="ch-family" aria-labelledby="family-title">
+        <header class="ch-head">
+          <span class="dymo dymo-plum">Family</span>
+          <h3 id="family-title">Nobody says “this is my dad.”</h3>
+          <p>Across our tapes, people say мама and папа to a little kid, usually with his name in the same breath. tapesplit listens for those words in both languages, works out who each one is about, and sketches the family as guesses. Every guess waits for a person to confirm it.</p>
+        </header>
+        <div class="family-grid">
+          <figure class="family-board reveal" id="family-board">
+            <svg class="fam-lines" id="fam-lines" viewBox="0 0 600 480" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <figcaption class="fam-cap">faces drawn in,<br>the words are real</figcaption>
+          </figure>
+          <div class="glass family-card reveal" id="family-card"></div>
+        </div>
+        <ol class="family-steps">
+          <li class="reveal"><b>It listens for family words.</b><span>мама, маму, маме, mom, mommy… Russian changes the ending, so «папе», “to Dad”, counts the same as «папа».</span></li>
+          <li class="reveal"><b>It finds who they're about.</b><span>It looks eight seconds either side for a name it already knows, like Филя or Filip. With no name, a moment about one person points to them.</span></li>
+          <li class="reveal"><b>It counts what agrees.</b><span>One line makes a 0.72 guess, and each line that agrees adds a little, up to 0.84. A summary that says it outright starts at 0.86.</span></li>
+          <li class="reveal"><b>Then it asks.</b><span>Every guess becomes a question in the review queue, next to the lines that raised it. Which side of the family a grandparent is on is left to you.</span></li>
+        </ol>
+        <p class="ch-stat" id="family-stat"></p>
       </article>
 
       <article class="chapter" id="ch-lang" aria-labelledby="lang-title">
         <header class="ch-head">
           <span class="dymo dymo-yellow">Language</span>
-          <h3 id="lang-title">Russian, English, and both in one breath.</h3>
-          <p>My family switches languages mid-sentence. TapeSplit keeps every line in the language it was spoken, then lets you search across both.</p>
+          <h3 id="lang-title">Multilingual, even mid-sentence.</h3>
+          <p>My family switches languages mid-sentence. tapesplit keeps every line in the language it was spoken, then lets you search across both.</p>
           <div class="tr-toggle" role="group" aria-label="Translate the Russian into">
             <span>Translate the Russian into</span>
             <button type="button" data-tr="en" aria-pressed="true">English</button>
@@ -351,172 +319,11 @@
     </div>
   </section>
 
-  <section class="section chrono" id="timeline" aria-labelledby="timeline-title">
+<section class="section section-alt" id="how" aria-labelledby="how-title">
     <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Chronology</span>
-        <h2 id="timeline-title">Nineteen tapes, out of order. One timeline.</h2>
-        <p>Tapes get reused, rewound and recorded over. Tape 3 jumps from 2003 to 2006, and Tape 6 covers four years. TapeSplit dates each moment on its own, then lays the whole archive out in order.</p>
-      </div>
-      <div class="chrono-chart reveal" id="chrono-chart">
-        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid where an on-screen date stamp read by Apple Vision confirms the date, hollow where the date came from what was seen or heard in the moment.</desc></svg>
-        <div class="chrono-tip" id="chrono-tip" hidden></div>
-      </div>
-      <div class="chrono-legend">
-        <span><i class="lg-stamp"></i>Confirmed by an on-screen date stamp</span>
-        <span><i class="lg-said"></i>Seen or heard in the moment</span>
-        <span><i class="lg-window"></i>Years the tape could cover</span>
-        <span><i class="lg-none"></i>No direct evidence yet</span>
-      </div>
-      <div class="chrono-facts" id="chrono-facts"></div>
-    </div>
-  </section>
-
-  <section class="section bento-section" id="more" aria-labelledby="more-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Everything else</span>
-        <h2 id="more-title">The rest of the work, done for you.</h2>
-      </div>
-      <div class="bento" id="bento">
-        <div class="tile tile-wide reveal">
-          <div class="tile-text">
-            <h3>Blank tape, skipped.</h3>
-            <p><b id="b-blank">8.3</b> of the <span id="b-hours">31.4</span> hours were static, black frames or a blue screen. TapeSplit finds them from the picture itself and leaves them out.</p>
-          </div>
-          <div class="blank-art" id="blank-art" aria-hidden="true"></div>
-        </div>
-        <div class="tile reveal">
-          <div class="tv-art" aria-hidden="true"><span class="tv"><i></i></span><span class="dymo dymo-red">Not family</span></div>
-          <h3>Recorded TV, set aside.</h3>
-          <p>Tape 1 is an NBA game and a TV movie taped off NBC. TapeSplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
-        </div>
-        <div class="tile reveal">
-          <div class="find-art" aria-hidden="true"><span class="find-q">first day of school</span><span class="find-img" style="background-image:url(media/how/eugene-sep7.webp)"><i>Eugene</i></span><span class="find-img" style="background-image:url(media/how/moscow-sep1.webp)"><i>Moscow</i></span><span class="find-img" style="background-image:url(media/how/walk.webp)"><i>Tape 3</i></span></div>
-          <h3>Search in plain words.</h3>
-          <p>“First day of school” finds Filip's in Eugene, a copy of it on Tape 3, and the one in Moscow. It searches summaries, transcripts, captions and text read off the screen.</p>
-        </div>
-        <div class="tile reveal">
-          <div class="stat-art" aria-hidden="true"><b id="b-tracks">4,722</b><span>face tracks</span></div>
-          <h3>Faces, kept together.</h3>
-          <p>Tracks become people across tapes and years. You name a person once.</p>
-        </div>
-        <div class="tile reveal">
-          <div class="queue-art" aria-hidden="true"><span class="q-row ok">Place · Eugene, Oregon</span><span class="q-row ok">Date · Sep 7, 2005</span><span class="q-row ask">Voice 1 · who is this?</span></div>
-          <h3>Asks only when it's unsure.</h3>
-          <p>Strong guesses clear per-type rules and are accepted for you. The rest, <b id="b-review">368</b> here, wait with their evidence.</p>
-        </div>
-        <div class="tile reveal">
-          <div class="journal-art" id="journal-art" lang="ru" aria-hidden="true"></div>
-          <h3>The Journal writes the day down.</h3>
-          <p>TapeSplit drafted this entry for September 7, 2005 in Russian, the language on the tape. Every paragraph cites the clips it came from.</p>
-        </div>
-        <div class="tile tile-wide reveal">
-          <div class="tile-text">
-            <h3>Cloud is optional, and capped.</h3>
-            <p>Every cloud batch is priced before it runs and skipped if it would go over your cap. With <code>--profile local</code>, nothing leaves your Mac.</p>
-          </div>
-          <div class="cost-art" aria-hidden="true"><span class="cost-big">$8</span><span class="cost-sub">for Gemini to watch all 31 hours</span><span class="cost-cap"><i style="width:80%"></i></span><span class="cost-sub">default cap: $10 per run with <code>--max-cloud-usd</code></span></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="examples" aria-labelledby="examples-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">From the tapes</span>
-        <h2 id="examples-title">Click any moment. See what TapeSplit knows.</h2>
-        <p>When it happened and how TapeSplit knows, where it was on the map, who's in it, and which guesses are still waiting for a person. Skim a moment by moving across it.</p>
-      </div>
-      <div class="events" id="events"></div>
-      <p class="fineprint" style="text-align:center;margin-top:28px">Real frames from my family's tapes, with TapeSplit's output. Names other than mine are changed.</p>
-    </div>
-  </section>
-
-  <section class="section section-alt" id="places" aria-labelledby="places-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Places</span>
-        <h2 id="places-title">Every trip, on the map.</h2>
-        <p>TapeSplit reads place names off signs and out of conversations, checks them against the moments around them, and geocodes what it can. Red pins are the moments on this page; click one.</p>
-      </div>
-      <div class="places-layout">
-        <div class="map-wrap" id="map-wrap">
-          <div class="map-frame">
-            <div class="map-scroll">
-              <div class="map-inner" id="map-inner">
-                <svg class="map-svg" id="map-svg" role="img" aria-label="World map with pins for the moments on this page"></svg>
-              </div>
-            </div>
-          </div>
-          <div class="map-legend">
-            <span><i class="legend-pin"></i>A moment on this page</span>
-            <span><i class="legend-ring"></i>Approximate: placed from nearby moments</span>
-            <span><i class="legend-dot"></i>Another place TapeSplit found</span>
-          </div>
-        </div>
-        <div class="places-list" id="places-list"></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="app" aria-labelledby="app-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">The app</span>
-        <h2 id="app-title">A photo library for your tapes.</h2>
-        <p>A local app on your Mac where every moment links back to the second of tape it came from. Click a screenshot to see it full size.</p>
-      </div>
-      <div class="rows">
-        <div class="row">
-          <div class="row-text">
-            <h3>Every moment, back to the second it came from.</h3>
-            <p>Open a moment and it plays from the right spot. Underneath, TapeSplit shows how it knows: the date stamp it read, where each place came from, and who's in it.</p>
-            <ul>
-              <li>Dates read off the camcorder's date stamp.</li>
-              <li>Places from signs, landmarks and what was said.</li>
-              <li>Details that still need a person are flagged.</li>
-            </ul>
-          </div>
-          <button class="window" type="button" data-zoom="event-davos" aria-label="Enlarge the moment screenshot">
-            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Cable Car Ride to Jakobshorn</span></span>
-            <img class="only-light" src="media/ui/event-davos-light.webp" alt="A moment opened in TapeSplit: a cable car above Davos, with the camcorder stamp AUG 22 2002 boxed where Apple Vision read it, and a map of where its places came from" width="1600" height="1000" loading="lazy">
-            <img class="only-dark" src="media/ui/event-davos-dark.webp" alt="A moment opened in TapeSplit, dark mode" width="1600" height="1000" loading="lazy">
-          </button>
-        </div>
-        <div class="row flip">
-          <div class="row-text">
-            <h3>The Journal. Days from your tapes, written down.</h3>
-            <p>TapeSplit drafts short entries about the days on your tapes. Every paragraph cites the clips it came from, and quotes are verbatim, Russian included, with a translation alongside.</p>
-          </div>
-          <button class="window" type="button" data-zoom="journal-post" aria-label="Enlarge the Journal screenshot">
-            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Journal</span></span>
-            <img class="only-light" src="media/ui/journal-post-light.webp" alt="A Journal entry titled Filip's Ocean Questions" width="1600" height="1000" loading="lazy">
-            <img class="only-dark" src="media/ui/journal-post-dark.webp" alt="A Journal entry, dark mode" width="1600" height="1000" loading="lazy">
-          </button>
-        </div>
-        <div class="row">
-          <div class="row-text">
-            <h3>Review. The guesses that are left.</h3>
-            <p>Strong guesses are accepted for you, under rules for each kind of fact. The rest wait here with their evidence and the moments they touch. Your corrections are kept apart and replayed after every rebuild.</p>
-          </div>
-          <button class="window" type="button" data-zoom="review" aria-label="Enlarge the Review screenshot">
-            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Review</span></span>
-            <img class="only-light" src="media/ui/review-light.webp" alt="The review queue with duplicate people, speakers and places waiting for confirmation" width="1600" height="1000" loading="lazy">
-            <img class="only-dark" src="media/ui/review-dark.webp" alt="The review queue, dark mode" width="1600" height="1000" loading="lazy">
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section section-alt" id="how" aria-labelledby="how-title">
-    <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">The pipeline</span>
-        <h2 id="how-title">Four passes over every tape.</h2>
-        <p>One command runs the whole pipeline. Each stage checks what your Mac can do, skips with a reason when it can't, and picks up where it stopped if you run it again.</p>
+      <div class="prose">
+        <h2 id="how-title">Under the hood</h2>
+        <p>One command runs the whole thing. It makes four passes over every tape, checks what my Mac can do at each stage, skips with a reason when it can't, and picks up where it stopped if I run it again.</p>
       </div>
       <div class="steps">
         <article class="step">
@@ -571,11 +378,126 @@
     </div>
   </section>
 
-  <section class="section" aria-labelledby="trust-title">
+<section class="section chrono" id="timeline" aria-labelledby="timeline-title">
     <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Built to be checked</span>
-        <h2 id="trust-title">It shows its work.</h2>
+      <div class="prose">
+        <h2 id="timeline-title">Nineteen tapes, one timeline</h2>
+        <p>Tapes get reused, rewound and recorded over. Tape 3 jumps from 2003 to 2006, and Tape 6 covers four years. So tapesplit dates every moment on its own, then lays the whole archive out in order.</p>
+      </div>
+      <div class="chrono-chart reveal" id="chrono-chart">
+        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid where an on-screen date stamp read by Apple Vision confirms the date, hollow where the date came from what was seen or heard in the moment.</desc></svg>
+        <div class="chrono-tip" id="chrono-tip" hidden></div>
+      </div>
+      <div class="chrono-legend">
+        <span><i class="lg-stamp"></i>Confirmed by an on-screen date stamp</span>
+        <span><i class="lg-said"></i>Seen or heard in the moment</span>
+        <span><i class="lg-window"></i>Years the tape could cover</span>
+        <span><i class="lg-none"></i>No direct evidence yet</span>
+      </div>
+      <div class="chrono-facts" id="chrono-facts"></div>
+    </div>
+  </section>
+
+<section class="section section-alt" id="places" aria-labelledby="places-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="places-title">Everywhere the camera went</h2>
+        <p>It reads place names off signs and out of conversations, checks them against the moments around them, and looks up what it can. The red pins are moments in this post; click one. Nothing near home gets an exact pin.</p>
+      </div>
+      <div class="places-layout">
+        <div class="map-wrap" id="map-wrap">
+          <div class="map-frame">
+            <div class="map-scroll">
+              <div class="map-inner" id="map-inner">
+                <svg class="map-svg" id="map-svg" role="img" aria-label="World map with pins for the moments on this page"></svg>
+              </div>
+            </div>
+          </div>
+          <div class="map-legend">
+            <span><i class="legend-pin"></i>A moment on this page</span>
+            <span><i class="legend-ring"></i>Approximate: placed from nearby moments</span>
+            <span><i class="legend-dot"></i>Another place tapesplit found</span>
+          </div>
+        </div>
+        <div class="places-list" id="places-list"></div>
+      </div>
+    </div>
+  </section>
+
+<section class="section" id="examples" aria-labelledby="examples-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="examples-title">Some of what it found</h2>
+        <p>A few of my favorite moments. Click one to see when it happened and how tapesplit knows, where it was, who's in it, and which guesses are still waiting for me. Move across a picture to skim it.</p>
+      </div>
+      <div class="events" id="events"></div>
+      <p class="fineprint" style="text-align:center;margin-top:28px">Real frames from my family's tapes, with tapesplit's output. Names other than mine are changed.</p>
+    </div>
+  </section>
+
+<section class="section" id="app" aria-labelledby="app-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="app-title">The app</h2>
+        <p>All of this lives in a small app on my Mac that feels like a photo library for tapes. Every moment links back to the second of tape it came from. Click a screenshot to see it full size.</p>
+      </div>
+      <figure class="wide-shot">
+        <button class="window" type="button" data-zoom="library-tape16" aria-label="Enlarge the Library screenshot">
+          <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>tapesplit</span></span>
+          <img class="only-light" src="media/ui/library-tape16-light.webp" alt="The Library: a strip of tape 16 above its moments as photo tiles, from arriving in Hawaii to lava entering the ocean at night" width="1600" height="1000" loading="lazy">
+          <img class="only-dark" src="media/ui/library-tape16-dark.webp" alt="The Library in dark mode" width="1600" height="1000" loading="lazy">
+        </button>
+        <figcaption>The Library: Tape 16, with a strip of the whole tape and its moments underneath.</figcaption>
+      </figure>
+      <div class="rows">
+        <div class="row">
+          <div class="row-text">
+            <h3>Every moment, back to the second it came from.</h3>
+            <p>Open a moment and it plays from the right spot. Underneath, tapesplit shows how it knows: the date stamp it read, where each place came from, and who's in it.</p>
+            <ul>
+              <li>Dates read off the camcorder's date stamp.</li>
+              <li>Places from signs, landmarks and what was said.</li>
+              <li>Details that still need a person are flagged.</li>
+            </ul>
+          </div>
+          <button class="window" type="button" data-zoom="event-davos" aria-label="Enlarge the moment screenshot">
+            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Cable Car Ride to Jakobshorn</span></span>
+            <img class="only-light" src="media/ui/event-davos-light.webp" alt="A moment opened in tapesplit: a cable car above Davos, with the camcorder stamp AUG 22 2002 boxed where Apple Vision read it, and a map of where its places came from" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/event-davos-dark.webp" alt="A moment opened in tapesplit, dark mode" width="1600" height="1000" loading="lazy">
+          </button>
+        </div>
+        <div class="row flip">
+          <div class="row-text">
+            <h3>The Journal. Days from your tapes, written down.</h3>
+            <p>tapesplit drafts short entries about the days on your tapes. Every paragraph cites the clips it came from, and quotes are verbatim, Russian included, with a translation alongside.</p>
+          </div>
+          <button class="window" type="button" data-zoom="journal-post" aria-label="Enlarge the Journal screenshot">
+            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Journal</span></span>
+            <img class="only-light" src="media/ui/journal-post-light.webp" alt="A Journal entry titled Filip's Ocean Questions" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/journal-post-dark.webp" alt="A Journal entry, dark mode" width="1600" height="1000" loading="lazy">
+          </button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <h3>Review. The guesses that are left.</h3>
+            <p>Strong guesses are accepted for you, under rules for each kind of fact. The rest wait here with their evidence and the moments they touch. Your corrections are kept apart and replayed after every rebuild.</p>
+          </div>
+          <button class="window" type="button" data-zoom="review" aria-label="Enlarge the Review screenshot">
+            <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Review</span></span>
+            <img class="only-light" src="media/ui/review-light.webp" alt="The review queue with duplicate people, speakers and places waiting for confirmation" width="1600" height="1000" loading="lazy">
+            <img class="only-dark" src="media/ui/review-dark.webp" alt="The review queue, dark mode" width="1600" height="1000" loading="lazy">
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="section" aria-labelledby="trust-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="trust-title">What it still gets wrong</h2>
+        <p>It's an alpha, and it's wrong in instructive ways. It once looked up “zoo” and landed in Guangzhou, China, and it put “Redwood Forest” in Melbourne, Australia. It decided a cable car in Davos had something to do with Madison, Wisconsin, because that's where we lived that summer. It hears “Eugene” as «Фьюджин». And when the transcriber got stuck on «Филя, посмотри на папу» (“Filya, look at Dad”) and wrote it 474 times in twelve minutes, 19 of those repeats went into the case that Dad is my dad.</p>
+        <p>So it's built to be checked. Every guess keeps its evidence, strong guesses are accepted only under rules for each kind of fact, and everything else waits in a review queue: 368 items for this archive.</p>
       </div>
       <div class="trust">
         <div><h3>Guesses look like guesses.</h3><p>Inferred facts read "appears to be…" and link to the transcript line, frame or face track they came from.</p></div>
@@ -588,11 +510,61 @@
     </div>
   </section>
 
-  <section class="section section-alt" id="specs" aria-labelledby="specs-title">
+<section class="section bento-section" id="more" aria-labelledby="more-title">
     <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Tech Specs</span>
-        <h2 id="specs-title">Run it on your tapes.</h2>
+      <div class="prose">
+        <h2 id="more-title">The rest of the work</h2>
+        <p>Most of what makes it useful is unglamorous.</p>
+      </div>
+      <div class="bento" id="bento">
+        <div class="tile tile-wide reveal">
+          <div class="tile-text">
+            <h3>Blank tape, skipped.</h3>
+            <p><b id="b-blank">8.3</b> of the <span id="b-hours">31.4</span> hours were static, black frames or a blue screen. tapesplit finds them from the picture itself and leaves them out.</p>
+          </div>
+          <div class="blank-art" id="blank-art" aria-hidden="true"></div>
+        </div>
+        <div class="tile reveal">
+          <div class="tv-art" aria-hidden="true"><span class="tv"><i></i></span><span class="dymo dymo-red">Not family</span></div>
+          <h3>Recorded TV, set aside.</h3>
+          <p>Tape 1 is an NBA game and a TV movie taped off NBC. tapesplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="find-art" aria-hidden="true"><span class="find-q">first day of school</span><span class="find-img" style="background-image:url(media/how/eugene-sep7.webp)"><i>Tape 18</i></span><span class="find-img" style="background-image:url(media/how/walk.webp)"><i>Tape 3</i></span><span class="find-img" style="background-image:url(media/how/whiteboard.webp)"><i>Sep 7, 2005</i></span></div>
+          <h3>Search in plain words.</h3>
+          <p>“First day of school” finds mine on Tape 18 and the copy of it on Tape 3. It searches summaries, transcripts, captions and text read off the screen.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="stat-art" aria-hidden="true"><b id="b-tracks">4,722</b><span>face tracks</span></div>
+          <h3>Faces, kept together.</h3>
+          <p>Tracks become people across tapes and years. You name a person once.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="queue-art" aria-hidden="true"><span class="q-row ok">Place · Eugene, Oregon</span><span class="q-row ok">Date · Sep 7, 2005</span><span class="q-row ask">Voice 1 · who is this?</span></div>
+          <h3>Asks only when it's unsure.</h3>
+          <p>Strong guesses clear per-type rules and are accepted for you. The rest, <b id="b-review">368</b> here, wait with their evidence.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="journal-art" id="journal-art" lang="ru" aria-hidden="true"></div>
+          <h3>The Journal writes the day down.</h3>
+          <p>tapesplit drafted this entry for September 7, 2005 in Russian, the language on the tape. Every paragraph cites the clips it came from.</p>
+        </div>
+        <div class="tile tile-wide reveal">
+          <div class="tile-text">
+            <h3>Cloud is optional, and capped.</h3>
+            <p>Every cloud batch is priced before it runs and skipped if it would go over your cap. With <code>--profile local</code>, nothing leaves your Mac.</p>
+          </div>
+          <div class="cost-art" aria-hidden="true"><span class="cost-big">$8</span><span class="cost-sub">for Gemini to watch all 31 hours</span><span class="cost-cap"><i style="width:80%"></i></span><span class="cost-sub">default cap: $10 per run with <code>--max-cloud-usd</code></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="section section-alt" id="specs" aria-labelledby="specs-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="specs-title">Try it on your tapes</h2>
+        <p>tapesplit is free for personal use. It runs on a Mac (Linux works too, minus the Apple Vision stages), and the cloud is optional: having Gemini watch all thirty-one hours cost me about eight dollars.</p>
       </div>
       <div class="specs">
         <div class="spec">
@@ -684,22 +656,28 @@ python3.12 -m venv .venv
     </div>
   </section>
 
-  <section class="section" aria-labelledby="faq-title">
+<section class="section" aria-labelledby="faq-title">
     <div class="wrap">
-      <div class="head">
-        <span class="eyebrow">Questions</span>
-        <h2 id="faq-title">Before you dig out the box.</h2>
+      <div class="prose">
+        <h2 id="faq-title">Questions</h2>
       </div>
       <div class="faq">
         <details><summary>Do my videos leave my computer?</summary><p>Only if you turn on a cloud stage. Gemini analysis uploads low-resolution proxies to a Cloud Storage bucket in your own Google Cloud project, and the Azure stages send individual frames and audio snippets. With <code>--profile local</code>, nothing leaves your machine.</p></details>
         <details><summary>How does it know when something was filmed?</summary><p>It reads the camcorder's burned-in date stamp off the frame, listens for dates said on tape, and uses the dated moments around a moment on the same tape. When those disagree, the date stays a guess for you to review.</p></details>
         <details><summary>How does it know where something was filmed?</summary><p>From signs and landmarks in the frame, places named on tape, and the trip a moment belongs to. Named places are geocoded; generic ones like "beach" borrow context from nearby moments and are marked as approximate.</p></details>
         <details><summary>Does it handle more than one language?</summary><p>Yes. The sample archive mixes Russian and English. Transcripts keep the original language, search works across both, and Journal quotes stay verbatim with a translation.</p></details>
-        <details><summary>Can I use TapeSplit commercially?</summary><p>Not without permission. TapeSplit is free for personal, family, educational and research use under the PolyForm Noncommercial License 1.0.0. For anything commercial, get in touch through <a href="https://phillipbindeman.com">phillipbindeman.com</a>.</p></details>
+        <details><summary>Can I use tapesplit commercially?</summary><p>Not without permission. tapesplit is free for personal, family, educational and research use under the PolyForm Noncommercial License 1.0.0. For anything commercial, get in touch through <a href="https://phillipbindeman.com">phillipbindeman.com</a>.</p></details>
         <details><summary>Is it finished?</summary><p>It's an alpha. The pipeline runs end to end on a real 31-hour archive, and the review queue exists because it still makes mistakes, like borrowing a place from the wrong trip. Issues and pull requests are welcome.</p></details>
       </div>
     </div>
   </section>
+
+    <div class="prose signoff">
+      <p>If you have a box of tapes somewhere, I'd love to hear what tapesplit finds in yours.</p>
+      <p class="hand sig">Phillip</p>
+    </div>
+  </article>
+
 </main>
 
 <footer class="footer">
@@ -710,7 +688,7 @@ python3.12 -m venv .venv
       <a href="https://github.com/bindeman/tapesplit/blob/main/LICENSE">License</a>
       <a href="https://phillipbindeman.com">phillipbindeman.com</a>
     </div>
-    <p>Copyright © 2026 Phillip Bindeman. TapeSplit is source-available under the PolyForm Noncommercial License 1.0.0; commercial use needs my written permission. The footage, stills and screenshots on this page come from my family's tapes and are not covered by that license. All rights reserved. Names other than mine are changed.</p>
+    <p>Copyright © 2026 Phillip Bindeman. tapesplit is source-available under the PolyForm Noncommercial License 1.0.0; commercial use needs my written permission. The footage, stills and screenshots on this page come from my family's tapes and are not covered by that license. All rights reserved. Names other than mine are changed.</p>
   </div>
 </footer>
 
