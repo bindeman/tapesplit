@@ -79,10 +79,10 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
 **Who.** Two voices, separated and lined up with their words: my dad asks me, in Russian, what I think of my first day, and I tell him I'm not scared. tapesplit suggests who's who; the names are mine.
 
 <p align="center">
-  <img src="site/media/readme/how-who.webp" alt="A video frame of Filip on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
+  <img src="site/media/readme/how-who.webp" alt="A video frame of me on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
 </p>
 
-**Family.** Nobody on the tapes says "this is my dad." They say мама and папа to me, usually with my name in the same breath. tapesplit listens for those words in both languages, works out who each one is about, and sketches the family as guesses: Dad at 0.84 from lines like «Дай папе йогурт, Филипп» ("Give Dad the yogurt, Filipp"), Grandma and Grandpa at 0.76 and 0.72. Every guess waits in the review queue until a person confirms it.
+**Relationships.** You know who's who from context: what people call each other, who turns up together, and where. tapesplit is learning to read the same clues, starting with family; friends, relatives and teachers are next. Nobody on the tapes says "this is my dad"; they say мама and папа to me, usually with my name in the same breath. tapesplit reads that context in both languages, works out who each word points to, and sketches the family as guesses: Dad at 0.84 from lines like «Дай папе йогурт, Филипп» ("Give Dad the yogurt, Phillip"), Grandma and Grandpa at 0.76 and 0.72. Every guess waits in the review queue until a person confirms it.
 
 <p align="center">
   <img src="site/media/readme/how-family.webp" alt="A family tree drawn on graph paper with illustrated avatars: Grandma and Grandpa joined to me by a dotted line labeled grandparents? 0.76 · 0.72, Mom by a solid line labeled mother ✓, and Dad, with a camcorder badge, by a dotted line labeled father? 0.84. Beside it, the three Russian lines behind Dad's guess and a Confirm All button" width="100%">

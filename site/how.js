@@ -145,7 +145,7 @@
   const eugene = H.sequence.find((s) => s.stamp.startsWith("SEP 7")) || H.sequence[0];
   const stampPic = $("#when-stamp");
   if (stampPic) {
-    stampPic.innerHTML = `<img src="${eugene.image}" alt="The first morning of school: Filip by the car, with the camcorder date stamp SEP 7 2005 in the corner" loading="lazy" width="960" height="720">${boxes(eugene.ocr)}`;
+    stampPic.innerHTML = `<img src="${eugene.image}" alt="The first morning of school: me by the car, with the camcorder date stamp SEP 7 2005 in the corner" loading="lazy" width="960" height="720">${boxes(eugene.ocr)}`;
     const wb = H.whiteboard;
     // One box around the date it read: the handwriting slopes, so the per-line boxes overlap.
     const dateParts = wb.ocr.filter((o) => !/learn names/i.test(o.text));
@@ -397,7 +397,7 @@
       { k: "grandpa", x: 400, y: 78, name: "Grandpa", sub: "«дедушка»", rel: "grandparents" },
       { k: "mom", x: 100, y: 250, name: "Mom", sub: "«мама»", rel: "mom" },
       { k: "dad", x: 500, y: 250, name: "Dad", sub: "«папа»", rel: "dad", cam: true },
-      { k: "phil", x: 300, y: 372, name: "me", sub: "Филя · Filip", rel: null },
+      { k: "phil", x: 300, y: 372, name: "me", sub: "Филя · Phillip", rel: null },
     ];
     const EDGES = [
       { rel: "mom", d: "M100 250 C 190 268, 240 326, 300 372", tag: [220, 307, -3] },
@@ -410,14 +410,14 @@
     const PRED = { father: "father of", mother: "mother of", grandparent: "grandparents of" };
     const STATUS = { needs_review: "Waiting for you", confirmed: "Confirmed", rejected: "Rejected" };
     const QUESTION = {
-      dad: "Is the man everyone calls папа Phil's father?",
-      grandparents: "Are the people called бабушка and дедушка Phil's grandparents?",
+      dad: "Is the man everyone calls папа Phillip's father?",
+      grandparents: "Are the people called бабушка and дедушка Phillip's grandparents?",
     };
     const decided = {};
     let sel = "dad";
     const status = (key) => decided[key] || REL[key].status;
     const KIN = /(пап[аеуы]|папой|мам[аеуы]|мамой|бабушк[аеиу]|дедушк[аеиу]|mother)/gi;
-    const NM = /(Филипп|Филя|Filip)/g;
+    const NM = /(Филипп|Филя|Phillip|Filip)/g;
     const hl = (s) => esc(s).replace(KIN, '<mark class="kin">$1</mark>').replace(NM, '<mark class="nm">$1</mark>');
     const tagText = (key) => {
       const r = REL[key], st = status(key);
