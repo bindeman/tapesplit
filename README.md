@@ -89,7 +89,7 @@ A local review app that feels like a photo library. Every card links to the seco
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/library-tape16-dark.webp">
-  <img alt="Library view: a grid of moments from tape 16 (arrival in Hawaii, sea turtles, the volcano crater, lava entering the ocean at night) with years and places" src="site/media/ui/library-tape16-light.webp">
+  <img alt="Library view: a strip of tape 16 above its moments as photo tiles (arrival in Hawaii, sea turtles, the volcano crater, lava entering the ocean at night) with years and places" src="site/media/ui/library-tape16-light.webp">
 </picture>
 
 <table>
@@ -97,7 +97,7 @@ A local review app that feels like a photo library. Every card links to the seco
     <td width="50%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="site/media/ui/event-davos-dark.webp">
-        <img alt="A moment opened: Cable Car Ride to Jakobshorn, dated 2002-08-22, with keyframes and place chips" src="site/media/ui/event-davos-light.webp">
+        <img alt="A moment opened: Cable Car Ride to Jakobshorn, dated Aug 22, 2002, with its scenes and colored date and place chips" src="site/media/ui/event-davos-light.webp">
       </picture>
       <p><b>A moment</b> plays from the right second, with its keyframes, people and places. This date came off the camcorder stamp in the frame.</p>
     </td>
