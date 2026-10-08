@@ -127,7 +127,7 @@
   // ------------------------------------------------------------ the two stamps
   const SEQ_ALT = [
     "Me and my mom by the car on a sunny lawn on my first day of first grade, with the date stamp SEP 7 2005",
-    "An empty room with the date stamp FEB 17 2006",
+    "A kid in a red shirt next to a wooden rocking chair, with the date stamp FEB 17 2006",
   ];
   const SEQ_STYLE = [["-2deg", "var(--washi-yellow)"], ["1.8deg", "var(--washi-pink)"]];
   const seq = $("#sequence");
@@ -147,7 +147,11 @@
   if (stampPic) {
     stampPic.innerHTML = `<img src="${eugene.image}" alt="The first morning of school: Filip by the car, with the camcorder date stamp SEP 7 2005 in the corner" loading="lazy" width="960" height="720">${boxes(eugene.ocr)}`;
     const wb = H.whiteboard;
-    $("#when-board").innerHTML = `<img src="${wb.image}" alt="A classroom whiteboard: Good Morning! Today is Wednesday, September 7, 2005. We will learn names today." loading="lazy" width="960" height="720">${boxes(wb.ocr)}`;
+    // One box around the date it read: the handwriting slopes, so the per-line boxes overlap.
+    const dateParts = wb.ocr.filter((o) => !/learn names/i.test(o.text));
+    const x0 = Math.min(...dateParts.map((o) => o.box[0])), y0 = Math.min(...dateParts.map((o) => o.box[1]));
+    const x1 = Math.max(...dateParts.map((o) => o.box[0] + o.box[2])), y1 = Math.max(...dateParts.map((o) => o.box[1] + o.box[3]));
+    $("#when-board").innerHTML = `<img src="${wb.image}" alt="A classroom whiteboard: Good Morning! Today is Wednesday, September 7, 2005. We will learn names today." loading="lazy" width="960" height="720">${boxes([{ box: [x0, y0, x1 - x0, y1 - y0] }])}`;
     document.querySelectorAll("#ch-when .reveal").forEach((el) => watch(el));
   }
 
