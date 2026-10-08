@@ -14,8 +14,9 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=VT323&display=swap">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="how.css">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -65,9 +66,9 @@
   <nav class="gn-bar" aria-label="Main">
     <a class="gn-home" href="#top"><svg aria-hidden="true"><use href="#ts-icon"/></svg>TapeSplit</a>
     <a class="gn-section" href="#moments">Moments</a>
+    <a class="gn-section" href="#inside">How It Works</a>
     <a class="gn-section" href="#examples">Examples</a>
     <a class="gn-section" href="#places">Places</a>
-    <a class="gn-section" href="#how">How It Works</a>
     <a class="gn-section" href="#specs">Tech Specs</a>
     <a class="gn-github" href="https://github.com/bindeman/tapesplit"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
   </nav>
@@ -225,6 +226,230 @@
     </div>
   </section>
 
+  <section class="section scrap" id="inside" aria-labelledby="inside-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">How it works</span>
+        <h2 id="inside-title">One morning, taken apart.</h2>
+        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in, there's a Wednesday in September 2005. Here's how TapeSplit worked out when it was, where, who's talking and what they're saying.</p>
+      </div>
+
+      <figure class="spread spread-tape">
+        <div class="tape18 reveal" id="tape18">
+          <div class="t18-head">
+            <span class="dymo">Tape 18</span>
+            <span class="t18-meta" id="t18-meta">tape-20.mp4</span>
+          </div>
+          <div class="t18-bar" id="t18-bar" aria-hidden="true"></div>
+          <div class="t18-axis" id="t18-axis" aria-hidden="true"></div>
+          <p class="hand t18-note" id="t18-note">this stretch&nbsp;↓</p>
+        </div>
+        <div class="sequence" id="sequence"></div>
+        <figcaption class="hand spread-caption">Moscow on September&nbsp;1. Eugene six days later. Then February. All on one tape.</figcaption>
+      </figure>
+
+      <article class="chapter" id="ch-when" aria-labelledby="when-title">
+        <header class="ch-head">
+          <span class="dymo dymo-red">When</span>
+          <h3 id="when-title">It reads the clock in the corner.</h3>
+          <p>For a few seconds after you press record, a camcorder burns the date into the picture. TapeSplit reads those stamps with Apple Vision. It also listens for dates said out loud and reads dates written in the frame. A date only counts if it fits the rest of the tape.</p>
+        </header>
+        <div class="when-grid">
+          <figure class="polaroid reveal" style="--r:-2.2deg;--tc:var(--washi-yellow)">
+            <div class="pic ocr" id="when-stamp"></div>
+            <figcaption>burned in by the camcorder</figcaption>
+          </figure>
+          <figure class="polaroid reveal" style="--r:1.8deg;--tc:var(--washi-mint)">
+            <div class="pic ocr" id="when-board"></div>
+            <figcaption>the teacher wrote it too</figcaption>
+          </figure>
+          <div class="when-read reveal">
+            <div class="glass read-card">
+              <span class="src">Date stamp · Apple Vision</span>
+              <span class="ocr-text" id="when-stamp-text">SEP · 7 2005</span>
+              <strong>September 7, 2005</strong>
+            </div>
+            <div class="glass read-card">
+              <span class="src">Whiteboard · cited by the video model</span>
+              <span class="ocr-text hand-text">“Today is Wednesday September&nbsp;7, 2005”</span>
+              <strong>Agrees</strong>
+            </div>
+            <div class="glass read-card">
+              <span class="src">Said six days earlier, in Moscow</span>
+              <span class="ocr-text" lang="ru">“Сегодня 1 сентября, я иду в школу…”</span>
+              <span class="gloss">“Today is September 1st. I'm going to the school…”</span>
+              <strong>September 1, 2005</strong>
+            </div>
+          </div>
+          <p class="hand when-note reveal"><svg viewBox="0 0 120 34" aria-hidden="true"><path d="M8 30 C 30 6, 52 4, 60 18 S 92 30, 112 6"/><path d="M104 5l8 1-3 7"/></svg>the camcorder and the teacher agree</p>
+        </div>
+        <div class="when-rules">
+          <div class="glass cw-card reveal">
+            <span class="src">Tape 18's dates all fall in</span>
+            <div class="cw-bar" id="cw-bar" aria-hidden="true"></div>
+            <p id="window-text">Each tape gets a window from its own stamps and spoken dates. A date outside it is flagged instead of trusted.</p>
+          </div>
+          <div class="glass ignore-card reveal">
+            <span class="src">What it won't count</span>
+            <ul id="ignored"></ul>
+          </div>
+        </div>
+        <p class="ch-stat" id="when-stat"></p>
+      </article>
+
+      <article class="chapter" id="ch-where" aria-labelledby="where-title">
+        <header class="ch-head">
+          <span class="dymo dymo-green">Where</span>
+          <h3 id="where-title">Which Maplewood?</h3>
+          <p>Mom says they're back in Eugene. The sign over the doors says Maplewood School. But there are Maplewood Schools all over the country, so TapeSplit doesn't trust the name alone. It weighs every clue against where the family lived that year.</p>
+        </header>
+        <div class="where-grid">
+          <div class="clues" id="clues"></div>
+          <div class="where-map reveal" id="where-map">
+            <svg class="us-map" id="us-map" role="img" aria-label="Map of the United States with three schools named Maplewood: Salt Lake City, Phoenix and Eugene. Eugene is kept."></svg>
+            <ol class="steps-mini" id="where-steps"></ol>
+          </div>
+        </div>
+        <div class="where-photos">
+          <figure class="polaroid small reveal" style="--r:-3deg;--tc:var(--washi-pink)">
+            <div class="pic"><img src="media/how/walk.webp" alt="Filip and his mom walking to school, seen from behind; he has a big backpack and a lunchbox" loading="lazy" width="960" height="720"></div>
+            <figcaption>on the way, 1:12:21</figcaption>
+          </figure>
+          <figure class="polaroid small reveal" style="--r:2.4deg;--tc:var(--washi-blue)">
+            <div class="pic"><img src="media/how/corner.webp" alt="A street corner with a stop sign; the street-name signs are blurred" loading="lazy" width="960" height="720"></div>
+            <figcaption>the street sign (blurred here)</figcaption>
+          </figure>
+          <p class="hand where-aside">School, street and teacher names are changed on this page, and nothing near home gets an exact pin.</p>
+        </div>
+      </article>
+
+      <article class="chapter" id="ch-who" aria-labelledby="who-title">
+        <header class="ch-head">
+          <span class="dymo dymo-blue">Who</span>
+          <h3 id="who-title">Two voices, one conversation.</h3>
+          <p>TapeSplit separates the voices on the soundtrack and lines each one up with its words. Here Mom is asking Filip about his first day, in Russian, for the grandparents back home. Putting names to voices is a suggestion you confirm in Review.</p>
+        </header>
+        <div class="who-player reveal" id="who-player">
+          <div class="who-video">
+            <video id="who-video" muted playsinline loop preload="none" poster="media/how/firstday-qa-poster.webp" aria-label="Filip on the lawn before school, holding his lunchbox (no sound)"></video>
+            <button class="who-play" id="who-play" type="button" aria-label="Play">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
+            </button>
+            <span class="who-tc" id="who-tc">1:11:03</span>
+          </div>
+          <div class="who-lanes" id="who-lanes">
+            <div class="lane-labels"><span class="lane-name" style="--vc:var(--voice-1)">Voice 1</span><span class="lane-name" style="--vc:var(--voice-2)">Voice 2</span></div>
+            <div class="lane-plot" id="lane-plot"></div>
+          </div>
+          <div class="who-lines-wrap"><ol class="who-lines" id="who-lines"></ol></div>
+          <p class="who-foot">Video without sound. Russian as transcribed; English added for this page.</p>
+        </div>
+        <div class="who-more">
+          <div class="glass faces-card reveal">
+            <span class="src">Faces, followed</span>
+            <div class="track-frames" id="track-frames"></div>
+            <p id="track-text">InsightFace follows a face through the shot. Each track is matched against faces from other tapes and grouped into a person; naming the group takes one click.</p>
+          </div>
+          <div class="glass names-card reveal">
+            <span class="src">One person, eight spellings</span>
+            <div class="names" id="names"></div>
+            <p>Mom calls him Филя; his teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they stay mentions, not people in the scene.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="chapter" id="ch-lang" aria-labelledby="lang-title">
+        <header class="ch-head">
+          <span class="dymo dymo-yellow">Language</span>
+          <h3 id="lang-title">Russian, English, and both in one breath.</h3>
+          <p>This family switches languages mid-sentence. TapeSplit keeps every line in the language it was spoken, then lets you search across both.</p>
+        </header>
+        <div class="lang-grid">
+          <div class="glass switch-card reveal" id="switch-card"></div>
+          <div class="search-demo reveal" id="search-demo">
+            <div class="search-field"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg><span id="search-q"></span><i class="caret"></i></div>
+            <ol class="search-hits" id="search-hits"></ol>
+            <p class="search-foot" id="search-foot"></p>
+          </div>
+        </div>
+        <p class="ch-stat" id="lang-stat"></p>
+      </article>
+
+      <p class="inside-next"><a href="#how">See all 21 stages of the pipeline ›</a></p>
+    </div>
+  </section>
+
+  <section class="section chrono" id="timeline" aria-labelledby="timeline-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Chronology</span>
+        <h2 id="timeline-title">Nineteen tapes, out of order. One timeline.</h2>
+        <p>Tapes get reused, rewound and recorded over. Tape 3 jumps from 2003 to 2006, and Tape 6 covers four years. TapeSplit dates each moment on its own, then lays the whole archive out in order.</p>
+      </div>
+      <div class="chrono-chart reveal" id="chrono-chart">
+        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid for a camcorder date stamp, hollow for a date said or written on screen.</desc></svg>
+        <div class="chrono-tip" id="chrono-tip" hidden></div>
+      </div>
+      <div class="chrono-legend">
+        <span><i class="lg-stamp"></i>Dated by the camcorder stamp</span>
+        <span><i class="lg-said"></i>Dated by something said or written</span>
+        <span><i class="lg-window"></i>Years the tape could cover</span>
+        <span><i class="lg-none"></i>No direct evidence yet</span>
+      </div>
+      <div class="chrono-facts" id="chrono-facts"></div>
+    </div>
+  </section>
+
+  <section class="section bento-section" id="more" aria-labelledby="more-title">
+    <div class="wrap">
+      <div class="head">
+        <span class="eyebrow">Everything else</span>
+        <h2 id="more-title">The rest of the work, done for you.</h2>
+      </div>
+      <div class="bento" id="bento">
+        <div class="tile tile-wide reveal">
+          <div class="tile-text">
+            <h3>Blank tape, skipped.</h3>
+            <p><b id="b-blank">8.3</b> of the <span id="b-hours">31.4</span> hours were static, black frames or a blue screen. TapeSplit finds them from the picture itself and leaves them out.</p>
+          </div>
+          <div class="blank-art" id="blank-art" aria-hidden="true"></div>
+        </div>
+        <div class="tile reveal">
+          <div class="tv-art" aria-hidden="true"><span class="tv"><i></i></span><span class="dymo dymo-red">Not family</span></div>
+          <h3>Recorded TV, set aside.</h3>
+          <p>Tape 1 is an NBA game and a TV movie taped off NBC; Tape 2 is Soviet cartoons. TapeSplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="find-art" aria-hidden="true"><span class="find-q">first day of school</span><span class="find-img" style="background-image:url(media/how/eugene-sep7.webp)"><i>Eugene</i></span><span class="find-img" style="background-image:url(media/how/moscow-sep1.webp)"><i>Moscow</i></span><span class="find-img" style="background-image:url(media/how/walk.webp)"><i>Tape 3</i></span></div>
+          <h3>Search in plain words.</h3>
+          <p>“First day of school” finds Filip's in Eugene, a copy of it on Tape 3, and the one in Moscow. It searches summaries, transcripts, captions and text read off the screen.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="stat-art" aria-hidden="true"><b id="b-tracks">4,722</b><span>face tracks</span></div>
+          <h3>Faces, kept together.</h3>
+          <p>Tracks become people across tapes and years. You name a person once.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="queue-art" aria-hidden="true"><span class="q-row ok">Place · Eugene, Oregon</span><span class="q-row ok">Date · Sep 7, 2005</span><span class="q-row ask">Voice 1 · who is this?</span></div>
+          <h3>Asks only when it's unsure.</h3>
+          <p>Strong guesses clear per-type rules and are accepted for you. The rest, <b id="b-review">368</b> here, wait with their evidence.</p>
+        </div>
+        <div class="tile reveal">
+          <div class="journal-art" id="journal-art" lang="ru" aria-hidden="true"></div>
+          <h3>The Journal writes the day down.</h3>
+          <p>TapeSplit drafted this entry for September 7, 2005 in Russian, the language on the tape. Every sentence links to the clip it came from.</p>
+        </div>
+        <div class="tile tile-wide reveal">
+          <div class="tile-text">
+            <h3>Cloud is optional, and capped.</h3>
+            <p>Every cloud batch is priced before it runs and skipped if it would go over your cap. With <code>--profile local</code>, nothing leaves your Mac.</p>
+          </div>
+          <div class="cost-art" aria-hidden="true"><span class="cost-big">$8</span><span class="cost-sub">for Gemini to watch all 31 hours</span><span class="cost-cap"><i style="width:80%"></i></span><span class="cost-sub">default cap: $10 per run with <code>--max-cloud-usd</code></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="section" id="examples" aria-labelledby="examples-title">
     <div class="wrap">
       <div class="head">
@@ -317,7 +542,7 @@
   <section class="section section-alt" id="how" aria-labelledby="how-title">
     <div class="wrap">
       <div class="head">
-        <span class="eyebrow">How it works</span>
+        <span class="eyebrow">The pipeline</span>
         <h2 id="how-title">Four passes over every tape.</h2>
         <p>One command runs the whole pipeline. Each stage checks what your Mac can do, skips with a reason when it can't, and picks up where it stopped if you run it again.</p>
       </div>
@@ -536,5 +761,7 @@ python3.12 -m venv .venv
 
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="how-data.js"></script>
+<script src="how.js"></script>
 </body>
 </html>

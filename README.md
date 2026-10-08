@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://bindeman.github.io/tapesplit/"><b>Website</b></a> ·
   <a href="#quickstart"><b>Quickstart</b></a> ·
-  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#one-morning-taken-apart"><b>How it works</b></a> ·
   <a href="#api-keys"><b>API keys</b></a> ·
   <a href="docs/"><b>Docs</b></a>
 </p>
@@ -39,6 +39,49 @@ The captions are scrapbook notes. The label tape is TapeSplit's: where each trip
 </p>
 
 Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minutes with no label. TapeSplit found 43 moments in it across a trip to Hawaii, a weekend on the Oregon coast and a spring at home, and skipped the blank tape, blue screens and static in between. The whole first archive was 19 tapes and 31 hours; it came back as 279 moments, 101 people and 244 places.
+
+## One morning, taken apart
+
+Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 in a Moscow courtyard, then SEP 7 2005 on a lawn in Eugene, Oregon, then FEB 17 2006. Here's what TapeSplit made of the Wednesday in the middle, Filip's first day of first grade.
+
+<p align="center">
+  <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above three polaroids from it: a Moscow courtyard stamped SEP 1 2005, a lawn in Eugene stamped SEP 7 2005, and an empty room stamped FEB 17 2006" width="100%">
+</p>
+
+**When.** For a few seconds after you press record, a camcorder burns the date into the picture. Apple Vision reads it, and the teacher's whiteboard says the same day. Dates that don't describe the moment are left out: a file's own date (the day it was digitized) and years mentioned in passing.
+
+<p align="center">
+  <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates TapeSplit took from them" width="100%">
+</p>
+
+**Where.** Mom says they're back in Eugene, and the sign over the doors says Maplewood School. That name alone matches schools in three states, so TapeSplit searched again near where the family lived that year, then had a blind verifier check the clip.
+
+<p align="center">
+  <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map with three Maplewood Schools; Salt Lake City and Phoenix are grayed out and Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
+</p>
+
+**Who.** Two voices, separated and lined up with their words. Mom asks, in Russian, what Filip thinks of his first day; he says he isn't scared. Names for voices are suggestions you confirm in Review.
+
+<p align="center">
+  <img src="site/media/readme/how-who.webp" alt="A video frame of Filip on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
+</p>
+
+**Language.** Russian and English, sometimes in one sentence. Every line stays in the language it was spoken, and search works across both: type "grandma and grandpa" and it finds «Скажи бабушкам, дедушкам».
+
+<p align="center">
+  <img src="site/media/readme/how-language.webp" alt="A sentence that switches from Russian to English, a Journal quote with TapeSplit's translation, and a search for grandma and grandpa that finds three Russian lines" width="100%">
+</p>
+
+### Nineteen tapes, one timeline
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/media/readme/timeline-dark.webp">
+  <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid for date stamps and hollow for dates said or written; Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
+</picture>
+
+Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. TapeSplit dates each moment on its own. 99 of the 279 got an exact day, 29 from a camcorder stamp and 75 from a date someone said or wrote; the rest borrow a month or year from the moments around them.
+
+<sub>School, street and teacher names are changed. The English under the Russian lines was added for this page, except the Journal's, which is TapeSplit's own.</sub>
 
 ## What you get
 
@@ -84,7 +127,7 @@ A local review app that feels like a photo library. Every card links to the seco
   </tr>
 </table>
 
-## How it works
+## Under the hood
 
 One command runs everything:
 

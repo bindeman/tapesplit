@@ -35,6 +35,7 @@ dist/
 
 # ...except the short website clips, which are published on purpose.
 !site/media/clips/*.mp4
+!site/media/how/*.mp4
 
 # Local-only scratch space, throwaway virtualenvs, and per-machine agent notes.
 CLAUDE.local.md
