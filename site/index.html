@@ -3,18 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <title>TapeSplit</title>
 <meta name="description" content="TapeSplit watches your digitized VHS and camcorder tapes, splits them into moments, and works out when, where and who. Local-first and free for personal use.">
 <meta property="og:title" content="TapeSplit">
 <meta property="og:description" content="Every moment on every tape. Found. Local-first home-video intelligence, free for personal use.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://bindeman.github.io/tapesplit/">
-<meta property="og:image" content="https://bindeman.github.io/tapesplit/media/og.jpg">
+<meta property="og:url" content="https://tapesplit.org/">
+<meta property="og:image" content="https://tapesplit.org/media/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=VT323&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Caveat:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=VT323&display=swap">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="how.css">
 </head>
@@ -24,165 +26,124 @@
 <!-- shared icon sprite: the app icon and map gradients -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
-    <linearGradient id="icBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f4f53"/><stop offset=".45" stop-color="#1c1c1f"/><stop offset="1" stop-color="#0b0b0c"/></linearGradient>
-    <linearGradient id="icGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <linearGradient id="icLabel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf8ea"/><stop offset="1" stop-color="#e3d8bb"/></linearGradient>
-    <linearGradient id="icWindow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43434a"/><stop offset="1" stop-color="#101012"/></linearGradient>
-    <radialGradient id="icReel" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b9b9c1"/></radialGradient>
-    <linearGradient id="icSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f97ff"/><stop offset="1" stop-color="#c3e4ff"/></linearGradient>
-    <linearGradient id="icPrintGloss" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <radialGradient id="icShadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000" stop-opacity=".32"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+    <linearGradient id="icBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#43434c"/><stop offset="1" stop-color="#17171c"/></linearGradient>
+    <linearGradient id="icSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f97ff"/><stop offset="1" stop-color="#bfe1ff"/></linearGradient>
     <radialGradient id="pinGrad" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ff9e92"/><stop offset=".45" stop-color="#e2281c"/><stop offset="1" stop-color="#9c1209"/></radialGradient>
     <linearGradient id="oceanGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--ocean-1)"/><stop offset="1" stop-color="var(--ocean-2)"/></linearGradient>
     <symbol id="ts-icon" viewBox="0 0 128 128">
-      <ellipse cx="64" cy="117" rx="50" ry="7" fill="url(#icShadow)"/>
-      <g transform="rotate(-8 60 58)">
-        <rect x="8" y="20" width="104" height="68" rx="8" fill="url(#icBody)" stroke="#000" stroke-opacity=".7"/>
-        <rect x="9" y="21" width="102" height="30" rx="7" fill="url(#icGloss)"/>
-        <rect x="21" y="28" width="78" height="23" rx="2.5" fill="url(#icLabel)"/>
-        <rect x="21" y="28" width="78" height="5.5" rx="1.5" fill="#e0302a"/>
-        <path d="M29 42.5h18M29 47h30" stroke="#9c9077" stroke-width="1.8" stroke-linecap="round"/>
-        <rect x="33" y="57" width="54" height="22" rx="5.5" fill="url(#icWindow)" stroke="#000" stroke-opacity=".75"/>
-        <circle cx="48" cy="68" r="11.5" fill="#4b2f1c"/>
-        <circle cx="48" cy="68" r="7" fill="url(#icReel)"/>
-        <circle cx="48" cy="68" r="2.4" fill="#2a2a2e"/>
-        <circle cx="72" cy="68" r="7" fill="url(#icReel)"/>
-        <circle cx="72" cy="68" r="2.4" fill="#2a2a2e"/>
-        <rect x="35" y="82" width="50" height="3.5" rx="1.75" fill="#000" opacity=".4"/>
-      </g>
-      <g transform="rotate(9 92 86)">
-        <rect x="64" y="62" width="52" height="44" rx="2" fill="#fff" stroke="#c3c3ca" stroke-width=".9"/>
-        <rect x="68.5" y="66.5" width="43" height="30" fill="url(#icSky)"/>
-        <path d="M68.5 89c6-6 12-8 18-4s10 2 14-1 8-2 11 1v11.5h-43z" fill="#3c9a3b"/>
-        <path d="M68.5 93c8-3 18-3 26 0s12 2 17-1v4.5h-43z" fill="#2d7c2d"/>
-        <circle cx="103.5" cy="74" r="4.2" fill="#ffd54a"/>
-        <rect x="64" y="62" width="52" height="44" rx="2" fill="url(#icPrintGloss)"/>
+      <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#icBg)"/>
+      <rect x="4.5" y="4.5" width="119" height="119" rx="27.5" fill="none" stroke="#fff" stroke-opacity=".14"/>
+      <rect x="17" y="30" width="72" height="50" rx="8" fill="#0d0d11" stroke="#fff" stroke-opacity=".12"/>
+      <rect x="24" y="36" width="58" height="21" rx="3.5" fill="#f7efdc"/>
+      <rect x="24" y="36" width="58" height="5.5" rx="2" fill="#e2392f"/>
+      <path d="M30 48h20M30 52.5h32" stroke="#b3a585" stroke-width="2" stroke-linecap="round"/>
+      <rect x="33" y="62" width="40" height="13" rx="6.5" fill="#050507"/>
+      <circle cx="44" cy="68.5" r="4.4" fill="#ececf1"/>
+      <circle cx="62" cy="68.5" r="4.4" fill="#ececf1"/>
+      <g transform="rotate(9 86 80)">
+        <rect x="62" y="58" width="46" height="42" rx="3" fill="#fff"/>
+        <rect x="66" y="62" width="38" height="25" rx="1" fill="url(#icSky)"/>
+        <path d="M66 81c5-5 10-6.5 15-3.5s8.5 2 12-.8 7.5-2 11 1V87H66z" fill="#33a046"/>
+        <circle cx="97" cy="68" r="3.6" fill="#ffd54a"/>
       </g>
     </symbol>
   </defs>
 </svg>
 
-<header class="wrap globalnav">
-  <nav class="gn-bar" aria-label="Main">
-    <a class="gn-home" href="#top"><svg aria-hidden="true"><use href="#ts-icon"/></svg>TapeSplit</a>
-    <a class="gn-section" href="#moments">Moments</a>
-    <a class="gn-section" href="#inside">How It Works</a>
-    <a class="gn-section" href="#examples">Examples</a>
-    <a class="gn-section" href="#places">Places</a>
-    <a class="gn-section" href="#specs">Tech Specs</a>
-    <a class="gn-github" href="https://github.com/bindeman/tapesplit"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
-  </nav>
-</header>
+<nav class="lnav" aria-label="TapeSplit">
+  <div class="lnav-inner">
+    <a class="lnav-brand" href="#top"><svg aria-hidden="true"><use href="#ts-icon"/></svg><span>TapeSplit</span></a>
+    <div class="lnav-links">
+      <a href="#why">Why</a>
+      <a href="#moments">Moments</a>
+      <a href="#inside">How It Works</a>
+      <a href="#examples">Examples</a>
+      <a href="#specs">Tech Specs</a>
+      <a class="lnav-get" href="#specs">Get</a>
+    </div>
+  </div>
+</nav>
 
 <main id="main">
-  <div class="wrap" id="top">
-    <div class="product-header">
-      <div class="ph-brand">
-        <svg aria-hidden="true"><use href="#ts-icon"/></svg>
-        <div>
-          <h1 class="ph-name">TapeSplit</h1>
-          <p class="ph-tagline">Your family's tapes, finally organized.</p>
-        </div>
-      </div>
-      <div class="ph-badges">
-        <span class="ph-badge">Free for personal use</span>
-        <span class="ph-badge">Runs on your Mac</span>
-      </div>
-    </div>
-
-    <section class="hero" aria-labelledby="hero-title">
-      <h2 id="hero-title">Every moment on every tape.<br><strong>Found.</strong></h2>
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="wrap hero-copy">
+      <p class="hero-app"><svg aria-hidden="true"><use href="#ts-icon"/></svg>TapeSplit</p>
+      <h1 id="hero-title">Every moment on every tape. <span class="grad">Found.</span></h1>
       <p class="hero-sub">TapeSplit watches your digitized VHS and camcorder tapes for you. It splits each one into moments, works out when and where they happened and who was there, and leaves only the uncertain guesses for you to check.</p>
       <div class="hero-cta">
-        <a class="aqua" href="#specs">Get TapeSplit</a>
+        <a class="btn" href="#specs">Get TapeSplit</a>
         <a class="textlink" href="#moments">Watch it split a tape</a>
       </div>
-      <div class="stage">
-        <button class="imac" type="button" data-zoom="library-tape16" aria-label="Enlarge the Library screenshot" style="border:0;padding:0;background:none;cursor:zoom-in;display:block">
-          <span class="imac-display">
-            <span class="imac-screen">
-              <img class="only-light" src="media/ui/library-tape16-light.webp" alt="TapeSplit's Library: a strip of tape 16 above its moments as photo tiles, from arriving in Hawaii to lava entering the ocean at night" width="1600" height="1000">
-              <img class="only-dark" src="media/ui/library-tape16-dark.webp" alt="TapeSplit's Library in dark mode" width="1600" height="1000">
-            </span>
-            <span class="imac-glass-bottom"></span>
-          </span>
-          <span class="imac-chin"></span>
-          <span class="imac-neck"></span>
-          <span class="imac-foot"></span>
-        </button>
-      </div>
-      <p class="fineprint">The first archive: 19 tapes and 31 hours from 1997 to 2007, turned into 279 moments, 101 people and 244 places.</p>
-    </section>
+      <p class="hero-meta">Free for personal use · Runs on your Mac · Your tapes stay home</p>
+    </div>
+    <div class="hero-stage">
+      <button class="window hero-window" type="button" data-zoom="library-tape16" aria-label="Enlarge the Library screenshot">
+        <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>TapeSplit</span></span>
+        <img class="only-light" src="media/ui/library-tape16-light.webp" alt="TapeSplit's Library: a strip of tape 16 above its moments as photo tiles, from arriving in Hawaii to lava entering the ocean at night" width="1600" height="1000">
+        <img class="only-dark" src="media/ui/library-tape16-dark.webp" alt="TapeSplit's Library in dark mode" width="1600" height="1000">
+      </button>
+      <figure class="polaroid hero-pol p1" style="--r:-7deg;--tc:var(--washi-yellow)" aria-hidden="true"><div class="pic"><img src="media/clips/lava.webp" alt="" width="480" height="360"></div><figcaption>lava meets the Pacific</figcaption></figure>
+      <figure class="polaroid hero-pol p2" style="--r:5deg;--tc:var(--washi-pink)" aria-hidden="true"><div class="pic"><img src="media/clips/weather.webp" alt="" width="480" height="360"></div><figcaption>my weather report</figcaption></figure>
+      <figure class="polaroid hero-pol p3" style="--r:-3deg;--tc:var(--washi-mint)" aria-hidden="true"><div class="pic"><img src="media/clips/bears.webp" alt="" width="480" height="360"></div><figcaption>brown bears, fishing</figcaption></figure>
+    </div>
+    <p class="fineprint hero-fine">The first archive: 19 tapes and 31 hours from 1997 to 2007, turned into 279 moments, 101 people and 244 places.</p>
+  </section>
 
-    <section class="features" aria-label="What TapeSplit does">
-      <div class="feature">
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="fmBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4a4f"/><stop offset="1" stop-color="#121214"/></linearGradient>
-            <linearGradient id="fmImg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6db8ff"/><stop offset="1" stop-color="#ffd59a"/></linearGradient>
-            <radialGradient id="fmRec" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ff9e92"/><stop offset=".5" stop-color="#e2281c"/><stop offset="1" stop-color="#9c1209"/></radialGradient>
-          </defs>
-          <rect x="5" y="12" width="52" height="40" rx="6" fill="url(#fmBody)"/>
-          <g fill="#e9e9ec" opacity=".9"><rect x="9" y="15" width="4" height="3" rx=".8"/><rect x="17" y="15" width="4" height="3" rx=".8"/><rect x="25" y="15" width="4" height="3" rx=".8"/><rect x="33" y="15" width="4" height="3" rx=".8"/><rect x="41" y="15" width="4" height="3" rx=".8"/><rect x="49" y="15" width="4" height="3" rx=".8"/><rect x="9" y="46" width="4" height="3" rx=".8"/><rect x="17" y="46" width="4" height="3" rx=".8"/><rect x="25" y="46" width="4" height="3" rx=".8"/><rect x="33" y="46" width="4" height="3" rx=".8"/></g>
-          <rect x="10" y="21" width="42" height="22" rx="2" fill="url(#fmImg)"/>
-          <path d="M10 43l12-12 7 7 7-9 16 14z" fill="#2f7d4f"/>
-          <circle cx="48" cy="48" r="11" fill="url(#fmRec)" stroke="#7d0d06" stroke-width=".8"/>
-          <path d="M45.5 43.5v9l7.5-4.5z" fill="#fff"/>
-        </svg>
-        <h3>Moments</h3>
-        <p>Every tape split into the moments on it, with blank tape and static left out.</p>
-        <a href="#moments">See a tape split ›</a>
+  <section class="features wrap" aria-label="What TapeSplit does">
+    <a class="feature" href="#moments">
+      <span class="f-icon" style="--f1:#ff6b5e;--f2:#e2392f"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></svg></span>
+      <h3>Moments</h3>
+      <p>Every tape split into the moments on it, with blank tape and static left out.</p>
+      <span class="f-more">See a tape split</span>
+    </a>
+    <a class="feature" href="#places">
+      <span class="f-icon" style="--f1:#5fd47e;--f2:#2a9a4c"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
+      <h3>Places</h3>
+      <p>Signs, landmarks and conversations put each trip on the map.</p>
+      <span class="f-more">Open the map</span>
+    </a>
+    <a class="feature" href="#app">
+      <span class="f-icon" style="--f1:#ffb340;--f2:#e2862a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10.5A3.5 3.5 0 0 1 19 8v11.5H8.5A3.5 3.5 0 0 1 5 16z"/><path d="M5 16a3.5 3.5 0 0 1 3.5-3.5H19M9 8h6"/></svg></span>
+      <h3>The Journal</h3>
+      <p>Days from the tapes, drafted into entries that cite the clips they use.</p>
+      <span class="f-more">Read an entry</span>
+    </a>
+    <a class="feature" href="#app">
+      <span class="f-icon" style="--f1:#5aa9ff;--f2:#0a6ce0"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8 12.3l2.7 2.7L16 9.6"/></svg></span>
+      <h3>Review</h3>
+      <p>Strong guesses are accepted for you. The rest wait, with the clip one click away.</p>
+      <span class="f-more">See the queue</span>
+    </a>
+  </section>
+
+  <section class="section scrap why" id="why" aria-labelledby="why-title">
+    <div class="wrap why-grid">
+      <div class="why-note">
+        <span class="eyebrow">Why I made this</span>
+        <h2 id="why-title">These are my family's tapes.</h2>
+        <p>I'm Phillip, the kid in these clips. My family's nineteen tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks what I want to tell them. I say I don't know.</p>
+        <p>When the tapes came back from the digitizer, they were thirty-one hours of video with no labels. Nobody was ever going to sit through all of it to find the moments that matter. So I built something that would: TapeSplit watches the tapes, splits them into moments, works out when and where each one happened and who's in it, and leaves the guesses it isn't sure about for us to check.</p>
+        <p class="hand why-sig">Phillip</p>
       </div>
-      <div class="feature">
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="plMap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e4f0fb"/><stop offset="1" stop-color="#b9d6f0"/></linearGradient>
-            <radialGradient id="plPin" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ff9e92"/><stop offset=".5" stop-color="#e2281c"/><stop offset="1" stop-color="#9c1209"/></radialGradient>
-          </defs>
-          <path d="M6 18l17-6 18 6 17-6v36l-17 6-18-6-17 6z" fill="url(#plMap)" stroke="#7d98b3" stroke-width=".8"/>
-          <path d="M23 12v36M41 18v36" stroke="#8eaac4" stroke-width=".8"/>
-          <path d="M9 30c5-4 9-2 12 1s5 6 2 9-9 3-14 1zM44 34c4-3 9-2 11 2s-1 8-5 8-8-5-6-10z" fill="#9fcf8a"/>
-          <path d="M36 40V24" stroke="#5b5b60" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="36" cy="22" r="9" fill="url(#plPin)" stroke="#7d0d06" stroke-width=".8"/>
-          <ellipse cx="33.5" cy="19" rx="3" ry="2" fill="#fff" opacity=".7"/>
-        </svg>
-        <h3>Places</h3>
-        <p>Signs, landmarks and conversations put each trip on the map.</p>
-        <a href="#places">Open the map ›</a>
+      <div class="why-photos">
+        <figure class="polaroid why-now" style="--r:2.5deg;--tc:var(--washi-blue)">
+          <div class="pic"><img src="media/why/me-now.webp" alt="Phillip today, smiling in front of a mountain range" width="460" height="460" loading="lazy"></div>
+          <figcaption>me, now</figcaption>
+        </figure>
+        <figure class="polaroid why-then" style="--r:-5deg;--tc:var(--washi-yellow)">
+          <div class="pic"><video class="why-clip" src="media/why/2006.mp4" poster="media/why/2006.webp" muted loop playsinline preload="none" aria-label="Me at six, waving from a rocky summit (no sound)"></video></div>
+          <figcaption>me, 2006</figcaption>
+        </figure>
       </div>
-      <div class="feature">
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="jnCover" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b47744"/><stop offset="1" stop-color="#6b3c1b"/></linearGradient>
-          </defs>
-          <rect x="15" y="8" width="38" height="49" rx="3" fill="#f4eedf" stroke="#c8bba0" stroke-width=".8"/>
-          <rect x="11" y="6" width="38" height="50" rx="4" fill="url(#jnCover)" stroke="#4e2a12" stroke-width=".8"/>
-          <rect x="11" y="6" width="7" height="50" rx="3" fill="#000" opacity=".22"/>
-          <rect x="21" y="10" width="24" height="42" rx="2" fill="none" stroke="#e9c79a" stroke-width=".9" stroke-dasharray="2 2"/>
-          <rect x="24" y="19" width="18" height="10" rx="1.5" fill="#f6ead0"/>
-          <path d="M27 23h12M27 26h8" stroke="#a7865c" stroke-width="1.2" stroke-linecap="round"/>
-          <path d="M40 56v6l2.5-2 2.5 2v-6z" fill="#d23224"/>
-        </svg>
-        <h3>The Journal</h3>
-        <p>Days from the tapes, drafted into entries that cite every clip they use.</p>
-        <a href="#app">Read an entry ›</a>
-      </div>
-      <div class="feature">
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="rvBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cc6ff"/><stop offset="1" stop-color="#1366dd"/></linearGradient>
-            <linearGradient id="rvGloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-          </defs>
-          <rect x="8" y="8" width="48" height="48" rx="12" fill="url(#rvBody)" stroke="#0b4fb3" stroke-width=".8"/>
-          <path d="M10 20c0-6 4-10 10-10h24c6 0 10 4 10 10v6c-12 4-32 4-44 0z" fill="url(#rvGloss)"/>
-          <path d="M20 33l8 8 16-17" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <h3>Review</h3>
-        <p>Strong guesses are accepted for you. The rest wait, with the clip one click away.</p>
-        <a href="#app">See the queue ›</a>
-      </div>
-    </section>
-  </div>
+    </div>
+    <div class="wrap why-strip">
+      <figure class="polaroid small" style="--r:-2deg;--tc:var(--washi-mint)"><div class="pic"><video class="why-clip" src="media/why/2001.mp4" poster="media/why/2001.webp" muted loop playsinline preload="none" aria-label="A toddler in a sun hat standing up on a picnic blanket (no sound)"></video></div><figcaption>Devil's Lake, May 2001</figcaption></figure>
+      <figure class="polaroid small" style="--r:1.5deg;--tc:var(--washi-pink)"><div class="pic"><video class="why-clip" src="media/why/2002.mp4" poster="media/why/2002.webp" muted loop playsinline preload="none" aria-label="A two-year-old eating a bagel (no sound)"></video></div><figcaption>a bagel, April 2002</figcaption></figure>
+      <figure class="polaroid small" style="--r:-1deg;--tc:var(--washi-yellow)"><div class="pic"><video class="why-clip" src="media/why/2005.mp4" poster="media/why/2005.webp" muted loop playsinline preload="none" aria-label="Me with a backpack and lunchbox on my first day of school (no sound)"></video></div><figcaption>first day of school, 2005</figcaption></figure>
+      <figure class="polaroid small" style="--r:2deg;--tc:var(--washi-blue)"><div class="pic"><video class="why-clip" src="media/why/2007.mp4" poster="media/why/2007.webp" muted loop playsinline preload="none" aria-label="Me at seven, leaning into the camera (no sound)"></video></div><figcaption>2007</figcaption></figure>
+    </div>
+  </section>
 
   <section class="section theater" id="moments" aria-labelledby="moments-title">
     <div class="wrap">
@@ -231,7 +192,12 @@
       <div class="head">
         <span class="eyebrow">How it works</span>
         <h2 id="inside-title">One morning, taken apart.</h2>
-        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in, there's a Wednesday in September 2005. Here's how TapeSplit worked out when it was, where, who's talking and what they're saying.</p>
+        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in is a Wednesday in September 2005, my first day of first grade. Here's how TapeSplit worked out when it was, where, who's talking and what they're saying.</p>
+        <div class="tr-toggle" role="group" aria-label="Translate the Russian into">
+          <span>Translate the Russian into</span>
+          <button type="button" data-tr="en" aria-pressed="true">English</button>
+          <button type="button" data-tr="fr" aria-pressed="false" lang="fr">Français</button>
+        </div>
       </div>
 
       <figure class="spread spread-tape">
@@ -278,7 +244,7 @@
             <div class="glass read-card">
               <span class="src">Said six days earlier, in Moscow</span>
               <span class="ocr-text" lang="ru">“Сегодня 1 сентября, я иду в школу…”</span>
-              <span class="gloss">“Today is September 1st. I'm going to the school…”</span>
+              <span class="gloss"><span class="t-en">“Today is September 1st. I'm going to the school…”</span><span class="t-fr" lang="fr">« Aujourd'hui, c'est le 1er septembre. Je vais à l'école… »</span></span>
               <strong>September 1, 2005</strong>
             </div>
           </div>
@@ -302,7 +268,7 @@
         <header class="ch-head">
           <span class="dymo dymo-green">Where</span>
           <h3 id="where-title">Which Maplewood?</h3>
-          <p>Mom says they're back in Eugene. The sign over the doors says Maplewood School. But there are Maplewood Schools all over the country, so TapeSplit doesn't trust the name alone. It weighs every clue against where the family lived that year.</p>
+          <p>My dad says we're back in Eugene. The sign over the doors says Maplewood School. But there are Maplewood Schools all over the country, so TapeSplit doesn't trust the name alone. It weighs every clue against where we lived that year.</p>
         </header>
         <div class="where-grid">
           <div class="clues" id="clues"></div>
@@ -313,14 +279,14 @@
         </div>
         <div class="where-photos">
           <figure class="polaroid small reveal" style="--r:-3deg;--tc:var(--washi-pink)">
-            <div class="pic"><img src="media/how/walk.webp" alt="Filip and his mom walking to school, seen from behind; he has a big backpack and a lunchbox" loading="lazy" width="960" height="720"></div>
+            <div class="pic"><img src="media/how/walk.webp" alt="Me and my mom walking to school, seen from behind; I have a big backpack and a lunchbox" loading="lazy" width="960" height="720"></div>
             <figcaption>on the way, 1:12:21</figcaption>
           </figure>
           <figure class="polaroid small reveal" style="--r:2.4deg;--tc:var(--washi-blue)">
-            <div class="pic"><img src="media/how/corner.webp" alt="A street corner with a stop sign; the street-name signs are blurred" loading="lazy" width="960" height="720"></div>
-            <figcaption>the street sign (blurred here)</figcaption>
+            <div class="pic"><img src="media/how/corner.webp" alt="A street corner with a stop sign under the street signs for Onyx and 22nd" loading="lazy" width="960" height="720"></div>
+            <figcaption>Onyx &amp; 22nd</figcaption>
           </figure>
-          <p class="hand where-aside">School, street and teacher names are changed on this page, and nothing near home gets an exact pin.</p>
+          <p class="hand where-aside">The school and teacher names are changed on this page, and nothing near home gets an exact pin.</p>
         </div>
       </article>
 
@@ -328,22 +294,22 @@
         <header class="ch-head">
           <span class="dymo dymo-blue">Who</span>
           <h3 id="who-title">Two voices, one conversation.</h3>
-          <p>TapeSplit separates the voices on the soundtrack and lines each one up with its words. Here Mom is asking Filip about his first day, in Russian, for the grandparents back home. Putting names to voices is a suggestion you confirm in Review.</p>
+          <p>TapeSplit separates the voices on the soundtrack and lines each one up with its words. This is my dad asking me about my first day, in Russian, for my grandparents back in Moscow. TapeSplit suggests who's who; the names are mine.</p>
         </header>
         <div class="who-player reveal" id="who-player">
           <div class="who-video">
-            <video id="who-video" muted playsinline loop preload="none" poster="media/how/firstday-qa-poster.webp" aria-label="Filip on the lawn before school, holding his lunchbox (no sound)"></video>
+            <video id="who-video" muted playsinline loop preload="none" poster="media/how/firstday-qa-poster.webp" aria-label="Me on the lawn before school, holding my lunchbox (no sound)"></video>
             <button class="who-play" id="who-play" type="button" aria-label="Play">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z"/><path class="i-pause" d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>
             </button>
             <span class="who-tc" id="who-tc">1:11:03</span>
           </div>
           <div class="who-lanes" id="who-lanes">
-            <div class="lane-labels"><span class="lane-name" style="--vc:var(--voice-1)">Voice 1</span><span class="lane-name" style="--vc:var(--voice-2)">Voice 2</span></div>
+            <div class="lane-labels"><span class="lane-name" style="--vc:var(--voice-1)">Dad</span><span class="lane-name" style="--vc:var(--voice-2)">Phil</span></div>
             <div class="lane-plot" id="lane-plot"></div>
           </div>
           <div class="who-lines-wrap"><ol class="who-lines" id="who-lines"></ol></div>
-          <p class="who-foot">Video without sound. Russian as transcribed; English added for this page.</p>
+          <p class="who-foot">Video without sound. Russian as transcribed; translations added for this page.</p>
         </div>
         <div class="who-more">
           <div class="glass faces-card reveal">
@@ -354,7 +320,7 @@
           <div class="glass names-card reveal">
             <span class="src">One person, eight spellings</span>
             <div class="names" id="names"></div>
-            <p>Mom calls him Филя; his teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
+            <p>At home I'm Филя; my teacher writes Philip. TapeSplit merges the spellings across both alphabets into one person. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
           </div>
         </div>
       </article>
@@ -363,7 +329,12 @@
         <header class="ch-head">
           <span class="dymo dymo-yellow">Language</span>
           <h3 id="lang-title">Russian, English, and both in one breath.</h3>
-          <p>This family switches languages mid-sentence. TapeSplit keeps every line in the language it was spoken, then lets you search across both.</p>
+          <p>My family switches languages mid-sentence. TapeSplit keeps every line in the language it was spoken, then lets you search across both.</p>
+          <div class="tr-toggle" role="group" aria-label="Translate the Russian into">
+            <span>Translate the Russian into</span>
+            <button type="button" data-tr="en" aria-pressed="true">English</button>
+            <button type="button" data-tr="fr" aria-pressed="false" lang="fr">Français</button>
+          </div>
         </header>
         <div class="lang-grid">
           <div class="glass switch-card reveal" id="switch-card"></div>
@@ -418,7 +389,7 @@
         <div class="tile reveal">
           <div class="tv-art" aria-hidden="true"><span class="tv"><i></i></span><span class="dymo dymo-red">Not family</span></div>
           <h3>Recorded TV, set aside.</h3>
-          <p>Tape 1 is an NBA game and a TV movie taped off NBC; Tape 2 is Soviet cartoons. TapeSplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
+          <p>Tape 1 is an NBA game and a TV movie taped off NBC. TapeSplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
         </div>
         <div class="tile reveal">
           <div class="find-art" aria-hidden="true"><span class="find-q">first day of school</span><span class="find-img" style="background-image:url(media/how/eugene-sep7.webp)"><i>Eugene</i></span><span class="find-img" style="background-image:url(media/how/moscow-sep1.webp)"><i>Moscow</i></span><span class="find-img" style="background-image:url(media/how/walk.webp)"><i>Tape 3</i></span></div>

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://bindeman.github.io/tapesplit/"><b>Website</b></a> ·
+  <a href="https://tapesplit.org/"><b>Website</b></a> ·
   <a href="#quickstart"><b>Quickstart</b></a> ·
   <a href="#one-morning-taken-apart"><b>How it works</b></a> ·
   <a href="#api-keys"><b>API keys</b></a> ·
@@ -20,6 +20,16 @@
 **TapeSplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
 
 > Every picture on this page is a real frame from my family's tapes (1997–2007), labeled by TapeSplit. Names other than mine are changed.
+
+## Why I made this
+
+<p align="center">
+  <img src="site/media/readme/why.webp" alt="A handwritten-style note titled These are my family's tapes, next to a polaroid of me today in the mountains and one of me at six on a rocky summit, above four more polaroids of me in 2001, 2002, 2005 and 2007" width="100%">
+</p>
+
+I'm Phillip, the kid in these clips. My family's nineteen tapes cover 1997 to 2007: Madison, then Eugene, and trips to Hawaiʻi, Alaska, Davos and Moscow. Much of it is narrated in Russian, some of it straight to my grandparents in Moscow. On my first day of school, my dad asks what I want to tell them. I say I don't know.
+
+When the tapes came back from the digitizer, they were thirty-one hours of video with no labels. Nobody was ever going to sit through all of it to find the moments that matter. So I built something that would.
 
 ## From the tapes
 
@@ -42,7 +52,7 @@ Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minute
 
 ## One morning, taken apart
 
-Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 in a Moscow courtyard, then SEP 7 2005 on a lawn in Eugene, Oregon, then FEB 17 2006. Here's what TapeSplit made of the Wednesday in the middle, Filip's first day of first grade.
+Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 in a Moscow courtyard, then SEP 7 2005 on a lawn in Eugene, Oregon, then FEB 17 2006. Here's what TapeSplit made of the Wednesday in the middle, my first day of first grade.
 
 <p align="center">
   <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above three polaroids from it: a Moscow courtyard stamped SEP 1 2005, a lawn in Eugene stamped SEP 7 2005, and an empty room stamped FEB 17 2006" width="100%">
@@ -54,13 +64,13 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
   <img src="site/media/readme/how-when.webp" alt="Two polaroids with yellow boxes where text was read: the date stamp SEP 7 2005 and a whiteboard saying Today is Wednesday, September 7, 2005, next to cards with the dates TapeSplit took from them" width="100%">
 </p>
 
-**Where.** Mom says they're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere this family lived, so TapeSplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
+**Where.** My dad says we're back in Eugene, and the sign over the doors says Maplewood School. A search for that name alone picked a school in Florida, with others in Utah and Arizona. None of those is anywhere we lived, so TapeSplit flagged the match and searched again near home, and a separate verifier agreed the school belongs in Eugene.
 
 <p align="center">
   <img src="site/media/readme/how-where.webp" alt="Clue cards (two lines said on tape, two signs read off the screen) next to a map of the United States: the first search's Maplewood Schools in Florida, Utah and Arizona are grayed out, and the one found near home in Eugene, Oregon is kept, with confidence rising from 0.45 to 0.99" width="100%">
 </p>
 
-**Who.** Two voices, separated and lined up with their words. Mom asks, in Russian, what Filip thinks of his first day; he says he isn't scared. Names for voices are suggestions you confirm in Review.
+**Who.** Two voices, separated and lined up with their words: my dad asks me, in Russian, what I think of my first day, and I tell him I'm not scared. TapeSplit suggests who's who; the names are mine.
 
 <p align="center">
   <img src="site/media/readme/how-who.webp" alt="A video frame of Filip on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
@@ -81,7 +91,7 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 1 2005 
 
 Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. TapeSplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
 
-<sub>School, street and teacher names are changed. The English under the Russian lines was added for this page, except the Journal's, which is TapeSplit's own.</sub>
+<sub>The school and teacher names are changed. The English under the Russian lines was added for this page, except the Journal's, which is TapeSplit's own. On the website you can switch those translations to French.</sub>
 
 ## What you get
 

@@ -71,7 +71,7 @@ speaker-ai = [
 ]
 
 [project.urls]
-Homepage = "https://bindeman.github.io/tapesplit/"
+Homepage = "https://tapesplit.org/"
 Repository = "https://github.com/bindeman/tapesplit"
 Issues = "https://github.com/bindeman/tapesplit/issues"
 Documentation = "https://github.com/bindeman/tapesplit/tree/main/docs"
