@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="80%"><stop offset="0" stop-color="#e7ecf3"/><stop offset="1" stop-color="#b3c0d4"/></radialGradient>
+    <radialGradient id="skin" cx="44%" cy="38%" r="70%"><stop offset="0" stop-color="#eebf98"/><stop offset="1" stop-color="#cf9168"/></radialGradient>
+    <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7a5a3e"/><stop offset="1" stop-color="#4d3624"/></linearGradient>
+    <clipPath id="c"><circle cx="64" cy="64" r="64"/></clipPath>
+  </defs>
+  <g clip-path="url(#c)">
+    <rect width="128" height="128" fill="url(#bg)"/>
+    <path d="M8 132 C10 108 32 96 64 96 C96 96 118 108 120 132 Z" fill="#34495e"/>
+    <path d="M48 98 C52 108 58 112 64 112 C70 112 76 108 80 98" stroke="#4a6380" stroke-width="5" fill="none"/>
+    <path d="M58 104 L58 118 M70 104 L70 118" stroke="#e8edf3" stroke-width="2" stroke-linecap="round"/>
+    <path d="M55 80 L55 99 C59 103 69 103 73 99 L73 80 Z" fill="#c88b66"/>
+    <ellipse cx="38" cy="62" rx="5.5" ry="7.5" fill="#d69d78"/>
+    <ellipse cx="90" cy="62" rx="5.5" ry="7.5" fill="#d69d78"/>
+    <ellipse cx="64" cy="58.5" rx="25.5" ry="30" fill="url(#skin)"/>
+    <path d="M37 57 C35 35 48 25 65 25 C83 25 94 37 91 57 C89 49 85 44 79 42 C71 39 60 38 51 41 C45 44 40 49 37 57 Z" fill="url(#hair)"/>
+    <path d="M39 66 C40 84 51 92 64 92 C77 92 88 84 89 66 C86 77 78 82 64 82 C50 82 42 77 39 66 Z" fill="url(#hair)" opacity=".9"/>
+    <path d="M46 54 Q52 51 58 53.5" stroke="#4d3624" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M70 53.5 Q76 51 82 54" stroke="#4d3624" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="52.5" cy="62.5" rx="3.1" ry="3.7" fill="#2b2220"/>
+    <ellipse cx="75.5" cy="62.5" rx="3.1" ry="3.7" fill="#2b2220"/>
+    <circle cx="53.6" cy="61.1" r="1.1" fill="#fff"/>
+    <circle cx="76.6" cy="61.1" r="1.1" fill="#fff"/>
+    <path d="M62.2 69 Q64 72 66 69.4" stroke="#cf8a66" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <ellipse cx="46" cy="72" rx="5" ry="3" fill="#ff7f7a" opacity=".28"/>
+    <ellipse cx="82" cy="72" rx="5" ry="3" fill="#ff7f7a" opacity=".28"/>
+    <path d="M56 77.5 Q64 83.5 72 77.5" stroke="#8c3b2e" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

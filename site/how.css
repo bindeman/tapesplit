@@ -3031,6 +3031,113 @@ button.fam-node:focus-visible .fam-av {
   rotate: -2deg;
 }
 
+/* A few friends, in place boxes under me (Madison, Eugene) */
+.family-board.with-friends {
+  aspect-ratio: 600 / 760;
+}
+
+.with-friends .fam-cap {
+  top: 3%;
+  bottom: auto;
+}
+
+.fam-place {
+  position: absolute;
+  border: 2px dashed rgba(91, 84, 70, 0.38);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.fam-place-label {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 50%;
+  rotate: -1.5deg;
+  padding: 3px 10px 4px;
+  border-radius: 3px;
+  background: var(--washi-yellow);
+  font-family: var(--font-hand);
+  font-weight: 700;
+  font-size: clamp(15px, 3.4cqw, 21px);
+  line-height: 1;
+  white-space: nowrap;
+  color: #2c2b3d;
+}
+
+.fam-place:nth-child(2) .fam-place-label,
+.fam-place + .fam-place .fam-place-label {
+  rotate: 1.5deg;
+  background: var(--washi-mint);
+}
+
+.fam-place-label i {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.82em;
+  color: #5b5446;
+}
+
+.fam-lines path.friend {
+  stroke-width: 1.8;
+}
+
+.fam-lines path.friend.guess {
+  stroke-dasharray: 1 6;
+  stroke-width: 2.4;
+}
+
+.fam-friend {
+  --av: clamp(36px, 10.5cqw, 62px);
+}
+
+.fam-friend .fam-av {
+  border-width: 3px;
+}
+
+.fam-friend .fam-name {
+  margin-top: 4px;
+  font-size: clamp(15px, 3.4cqw, 20px);
+}
+
+.fam-ftag {
+  margin-top: 4px;
+  padding: 3px 6px 2px;
+  border-radius: 3px;
+  font-family: var(--font-label);
+  font-size: clamp(7.5px, 1.75cqw, 10.5px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #fff;
+  background: #222225;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background 0.25s ease;
+}
+
+.fam-friend.on .fam-ftag { background: #c8322b; }
+.fam-friend[data-status="confirmed"] .fam-ftag { background: #2c7a4b; }
+.fam-friend[data-status="rejected"] .fam-ftag { background: #8e8e93; }
+
+@container (max-width: 440px) {
+  .with-friends .fam-cap {
+    display: none;
+  }
+
+  .fam-ftag {
+    padding: 2px 4px 1px;
+    letter-spacing: 0.02em;
+  }
+}
+
+.fc-facts {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
 .reveal-on .family-board .fam-node,
 .reveal-on .family-board .fam-tag {
   opacity: 0;
@@ -3064,8 +3171,9 @@ button.fam-node:focus-visible .fam-av {
 }
 
 .fc-tabs button {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3363,303 +3471,6 @@ mark.nm {
   color: var(--ink-2);
 }
 
-/* ---------------------------------------------------------------- friends, teachers, everyone else */
-
-.friends {
-  margin-top: clamp(40px, 6vw, 64px);
-}
-
-.friends-head {
-  max-width: 44em;
-  margin: 0 auto 22px;
-  display: grid;
-  gap: 10px;
-  text-align: center;
-}
-
-.friends-head h4 {
-  margin: 0;
-  font-size: clamp(22px, 2.6vw, 28px);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  color: var(--paper-ink);
-}
-
-.friends-head p {
-  margin: 0;
-  font-size: 16.5px;
-  line-height: 1.55;
-}
-
-.friends-cols {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-.fr-col {
-  --c: #22a39f;
-  display: grid;
-  gap: 10px;
-  padding: 16px 16px 14px;
-  border-radius: 18px;
-  background: var(--glass);
-  border: 1px solid var(--glass-edge);
-  box-shadow: var(--glass-shadow);
-  color: var(--ink);
-}
-
-.fr-col[data-col="Eugene"] { --c: #e0a526; }
-.fr-col[data-col="Trips"] { --c: var(--stamp); }
-
-.fr-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--tile-edge);
-}
-
-.fr-head h5 {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.fr-head h5::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--c);
-}
-
-.fr-head span {
-  margin-left: auto;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
-.fr-sub {
-  margin: 4px 0 0;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.fr-guesses,
-.fr-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.fr-guess {
-  --k: #22a39f;
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 14px;
-  background: var(--card);
-  border: 1px solid var(--tile-edge);
-}
-
-.fr-guess.k-family { --k: #d99a1e; }
-.fr-guess.k-teacher { --k: #7b3f8f; }
-.fr-guess.k-honorific { --k: #e5673d; }
-
-.fr-top {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.fr-mono {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--k);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.fr-who {
-  display: grid;
-  min-width: 0;
-}
-
-.fr-who b {
-  font-size: 15.5px;
-}
-
-.fr-q {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-.fr-q i {
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-3);
-}
-
-.fr-when {
-  align-self: start;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
-.fr-quote {
-  margin: 0;
-  padding: 8px 10px;
-  border-left: 3px solid var(--k);
-  border-radius: 4px 8px 8px 4px;
-  background: color-mix(in srgb, var(--k) 7%, transparent);
-}
-
-.fr-quote p {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.fr-quote .gl {
-  display: block;
-  margin-top: 2px;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--ink-2);
-}
-
-.fr-quote .where {
-  display: block;
-  margin-top: 4px;
-  font: 500 11.5px var(--font-label);
-  color: var(--ink-3);
-}
-
-mark.rel {
-  color: inherit;
-  border-radius: 3px;
-  padding: 0 2px;
-  background: color-mix(in srgb, var(--k) 18%, transparent);
-  box-shadow: inset 0 -2px 0 var(--k);
-}
-
-.fr-ties {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  font-size: 12.5px;
-  color: var(--ink-3);
-}
-
-.fr-status {
-  margin-left: auto;
-  font-weight: 600;
-  color: #a35c00;
-}
-
-.fr-status.s-confirmed {
-  color: #1c7a36;
-}
-
-.fr-with {
-  display: inline-flex;
-  align-items: center;
-}
-
-.fr-with img {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--card);
-}
-
-.fr-with img + img {
-  margin-left: -5px;
-}
-
-.fr-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 1px 10px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--card) 70%, transparent);
-}
-
-.fr-name {
-  font-size: 14.5px;
-  font-weight: 600;
-}
-
-.fr-list .fr-with {
-  grid-row: span 2;
-}
-
-.fr-meta {
-  grid-column: 1;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--ink-3);
-}
-
-.fr-more summary {
-  cursor: pointer;
-  width: fit-content;
-  padding: 2px 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-.fr-more[open] summary {
-  margin-bottom: 8px;
-}
-
-.friends-foot {
-  margin: 16px auto 0;
-  max-width: 44em;
-  text-align: center;
-  font-size: 13.5px;
-  color: var(--paper-ink-2);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .fr-status { color: #ffb340; }
-  :root:not([data-theme="light"]) .fr-status.s-confirmed { color: #4cd964; }
-}
-
-:root[data-theme="dark"] .fr-status { color: #ffb340; }
-:root[data-theme="dark"] .fr-status.s-confirmed { color: #4cd964; }
-
-@media (max-width: 1000px) {
-  .friends-cols {
-    grid-template-columns: minmax(0, 1fr);
-    max-width: 640px;
-    margin: 0 auto;
-  }
-}
-
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .fc-status.s-needs_review { color: #ffb340; }
   :root:not([data-theme="light"]) .fc-status.s-confirmed { color: #4cd964; }
@@ -3691,6 +3502,10 @@ mark.rel {
 @media (max-width: 560px) {
   .family-board {
     aspect-ratio: 1 / 1;
+  }
+
+  .family-board.with-friends {
+    aspect-ratio: 600 / 860;
   }
 }
 

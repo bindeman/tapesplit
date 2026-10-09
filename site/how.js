@@ -383,15 +383,22 @@
   }
   document.querySelectorAll("#ch-who .who-more .reveal").forEach((el) => watch(el));
 
-  // ------------------------------------------------------------ family
+  // ------------------------------------------------------------ family, and a few friends
   const F = H.family;
   const board = $("#family-board");
   const fcard = $("#family-card");
   if (F && board && fcard) {
     const AV = (k) => `media/how/avatars/${k}.svg`;
     const REL = Object.fromEntries(F.relations.map((r) => [r.key, r]));
-    // Board coordinates are 600 × 480; the SVG stretches with the board, so the
-    // nodes (placed in %) and the lines stay together at any aspect ratio.
+    // A few people from outside the family, grouped under me by where they turn up.
+    const FRIENDS = (H.friends && H.friends.featured) || [];
+    const FR = Object.fromEntries(FRIENDS.map((f) => [`f:${f.key}`, f]));
+    const isF = (key) => key.startsWith("f:");
+    // Board coordinates are 600 wide (and 760 tall with the friends); the SVG stretches with
+    // the board, so the nodes (placed in %) and the lines stay together at any aspect ratio.
+    const BW = 600, BH = FRIENDS.length ? 760 : 480;
+    const px = (x) => ((x / BW) * 100).toFixed(2), py = (y) => ((y / BH) * 100).toFixed(2);
+    if (FRIENDS.length) board.classList.add("with-friends");
     const NODES = [
       { k: "grandma", x: 200, y: 78, name: "Grandma", sub: "«бабушка»", rel: "grandparents" },
       { k: "grandpa", x: 400, y: 78, name: "Grandpa", sub: "«дедушка»", rel: "grandparents" },
@@ -406,6 +413,24 @@
       { rel: "grandparents", d: "M400 186 C 397 200, 350 205, 300 205", tag: null },
       { rel: "grandparents", d: "M300 205 L 300 372", tag: [300, 205, -1.5] },
     ];
+    // Two place boxes under me, three people in each. A friend of Mom's or Dad's sits on the
+    // outside, under that parent; everyone else hangs off my side of the tree.
+    const PLACES = [{ g: "Madison", x: 16 }, { g: "Eugene", x: 310 }];
+    const BOX = { y: 488, w: 274, h: 236 }, FY = 584;
+    const ANCHOR = { mom: [66, 286], dad: [534, 286], meL: [254, 386], meR: [346, 386] };
+    FRIENDS.forEach((f) => {
+      const box = PLACES.find((p) => p.g === f.group);
+      const slot = FRIENDS.filter((o) => o.group === f.group).indexOf(f);
+      f.x = box.x + (BOX.w * (slot + 0.5)) / 3;
+      const [ax, ay] = ANCHOR[f.to === "me" ? (f.x < 300 ? "meL" : "meR") : f.to];
+      const ty = FY - 36;
+      f.d = `M${ax} ${ay} C ${ax} ${ay + (ty - ay) * 0.55}, ${f.x} ${ty - (ty - ay) * 0.5}, ${f.x.toFixed(1)} ${ty}`;
+    });
+    const years = (g) => {
+      const ys = FRIENDS.filter((f) => f.group === g).flatMap((f) => [f.from, f.until]).filter(Boolean).map((d) => d.slice(0, 4)).sort();
+      return ys.length ? (ys[0] === ys[ys.length - 1] ? ys[0] : `${ys[0]}–${ys[ys.length - 1]}`) : "";
+    };
+    const TO = { me: ["phil", "me"], mom: ["mom", "Mom"], dad: ["dad", "Dad"] };
     const NAME = { dad: "Dad", mom: "Mom", grandparents: "Grandparents" };
     const PRED = { father: "father of", mother: "mother of", grandparent: "grandparents of" };
     const STATUS = { needs_review: "Waiting for you", confirmed: "Confirmed", rejected: "Rejected" };
@@ -415,9 +440,10 @@
     };
     const decided = {};
     let sel = "dad";
-    const status = (key) => decided[key] || REL[key].status;
-    const KIN = /(пап[аеуы]|папой|мам[аеуы]|мамой|бабушк[аеиу]|дедушк[аеиу]|mother)/gi;
-    const NM = /(Филипп|Филя|Phillip|Filip)/g;
+    let lastFriend = FRIENDS.length ? `f:${FRIENDS[0].key}` : null;
+    const status = (key) => decided[key] || (isF(key) ? FR[key].status : REL[key].status);
+    const KIN = /(пап[аеуы]|папой|мам[аеуы]|мамой|бабушк[аеиу]|дедушк[аеиу]|mother|подруга|детский садик)/gi;
+    const NM = /(Филипп\p{L}*|Филя|Phillip|Filip)/gu;
     const hl = (s) => esc(s).replace(KIN, '<mark class="kin">$1</mark>').replace(NM, '<mark class="nm">$1</mark>');
     const tagText = (key) => {
       const r = REL[key], st = status(key);
@@ -429,21 +455,61 @@
     const tickIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
     const lines = $("#fam-lines");
-    lines.innerHTML = EDGES.map((e) => `<path data-rel="${e.rel}" d="${e.d}"/>`).join("");
-    board.insertAdjacentHTML("beforeend", NODES.map((n, i) => {
-      const tagName = n.rel ? "button" : "div";
-      const attrs = n.rel ? ` type="button" data-rel="${n.rel}" aria-controls="family-card" aria-label="${esc(n.name)}: show the evidence"` : "";
-      return `<${tagName} class="fam-node fam-${n.k}"${attrs} style="--x:${(n.x / 6).toFixed(2)};--y:${(n.y / 4.8).toFixed(2)};--i:${i}">
-        <span class="fam-av"><img src="${AV(n.k)}" alt="" width="96" height="96"></span>
-        ${n.cam ? `<span class="fam-badge cam" title="behind the camera">${camIcon}</span>` : ""}
-        ${n.k === "mom" ? `<span class="fam-badge ok" title="confirmed">${tickIcon}</span>` : ""}
-        <span class="fam-name">${esc(n.name)}</span><span class="fam-sub">${esc(n.sub)}</span>
-      </${tagName}>`;
-    }).join("") + EDGES.filter((e) => e.tag).map((e) => `<button type="button" class="fam-tag" data-rel="${e.rel}" aria-controls="family-card" style="--x:${(e.tag[0] / 6).toFixed(2)};--y:${(e.tag[1] / 4.8).toFixed(2)};--dr:${e.tag[2]}deg"></button>`).join(""));
+    lines.setAttribute("viewBox", `0 0 ${BW} ${BH}`);
+    lines.innerHTML = EDGES.map((e) => `<path data-rel="${e.rel}" d="${e.d}"/>`).join("")
+      + FRIENDS.map((f) => `<path class="friend" data-rel="f:${f.key}" d="${f.d}"/>`).join("");
+    board.insertAdjacentHTML("beforeend", (FRIENDS.length ? PLACES.map((p) => `<div class="fam-place" style="left:${px(p.x)}%;top:${py(BOX.y)}%;width:${px(BOX.w)}%;height:${py(BOX.h)}%"><span class="fam-place-label">${esc(p.g)} <i>${years(p.g)}</i></span></div>`).join("") : "")
+      + NODES.map((n, i) => {
+        const tagName = n.rel ? "button" : "div";
+        const attrs = n.rel ? ` type="button" data-rel="${n.rel}" aria-controls="family-card" aria-label="${esc(n.name)}: show the evidence"` : "";
+        return `<${tagName} class="fam-node fam-${n.k}"${attrs} style="--x:${px(n.x)};--y:${py(n.y)};--i:${i}">
+          <span class="fam-av"><img src="${AV(n.k)}" alt="" width="96" height="96"></span>
+          ${n.cam ? `<span class="fam-badge cam" title="behind the camera">${camIcon}</span>` : ""}
+          ${n.k === "mom" ? `<span class="fam-badge ok" title="confirmed">${tickIcon}</span>` : ""}
+          <span class="fam-name">${esc(n.name)}</span><span class="fam-sub">${esc(n.sub)}</span>
+        </${tagName}>`;
+      }).join("")
+      + EDGES.filter((e) => e.tag).map((e) => `<button type="button" class="fam-tag" data-rel="${e.rel}" aria-controls="family-card" style="--x:${px(e.tag[0])};--y:${py(e.tag[1])};--dr:${e.tag[2]}deg"></button>`).join("")
+      + FRIENDS.map((f, i) => `<button type="button" class="fam-node fam-friend" data-rel="f:${f.key}" aria-controls="family-card" aria-label="${esc(f.name)}, ${esc(f.tag)}: show the evidence" style="--x:${px(f.x)};--y:${py(FY)};--i:${6 + i}">
+          <span class="fam-av"><img src="${AV(f.key)}" alt="" width="64" height="64"></span>
+          <span class="fam-name">${esc(f.name)}</span><span class="fam-ftag">${esc(f.tag)}</span>
+        </button>`).join(""));
 
     const conf = (label, v, st) => `<div class="row ${st}"><span>${esc(label)}</span><span class="bar"><i style="--v:${v}"></i></span><b>${v.toFixed(2)}</b></div>`;
     const lineItem = (l) => `<li><p class="ru" lang="ru">${hl(l.ru)}</p><span class="gl">${quote(esc(l.en))}</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
+    const momentItem = (f, m) => `<li class="sum"><p class="en-sum">${esc(m.title)}</p><span class="where">The video model names ${esc(f.name)} · Tape ${m.tape}${m.date ? ` · ${esc(nice(m.date))}` : ""}</span></li>`;
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const ym = (iso) => `${MON[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+    const span = (a, b) => !a ? "no date yet" : ym(a) === ym(b || a) ? ym(a) : `${ym(a)} – ${ym(b)}`;
+    const tabs = () => `<div class="fc-tabs" role="tablist" aria-label="Relationships">${Object.keys(NAME).map((k) => `<button type="button" role="tab" data-rel="${k}" aria-selected="${k === sel}">${REL[k].who.map((w) => `<img src="${AV(w)}" alt="" width="20" height="20">`).join("")}${NAME[k]}</button>`).join("")}${lastFriend ? `<button type="button" role="tab" data-rel="friends" aria-selected="${isF(sel)}"><img src="${AV(FR[lastFriend].key)}" alt="" width="20" height="20">Friends</button>` : ""}</div>`;
+    const reviewBlock = (key, question, n) => {
+      const st = status(key);
+      if (!isF(key) && REL[key].status === "confirmed") {
+        return `<p class="fc-q">Confirmed in review.</p><p class="fc-note">Corrections live in their own file and are replayed after every rebuild.</p>`;
+      }
+      if (decided[key]) {
+        return `<p class="fc-q">${st === "confirmed" ? "Confirmed." : "Rejected."} In the app, that answer is saved with your corrections and replayed after every rebuild.</p>
+          <div class="fc-actions"><button type="button" class="fc-btn" data-act="undo">Undo</button></div>`;
+      }
+      return `<p class="fc-q">${esc(question)}</p>
+        <div class="fc-actions"><button type="button" class="fc-btn ok" data-act="confirm">${n > 1 ? "Confirm All" : "Confirm"}</button><button type="button" class="fc-btn no" data-act="reject">${n > 1 ? "Reject All" : "Reject"}</button></div>
+        ${n > 1 ? `<p class="fc-note">This decision applies to ${n} supporting relationship observations.</p>` : ""}`;
+    };
+    const friendCard = () => {
+      const f = FR[sel], st = status(sel), [toAv, toName] = TO[f.to];
+      const list = (f.lines || []).map(lineItem).join("") + (f.moments || []).map((m) => momentItem(f, m)).join("");
+      const facts = `${f.group}, ${span(f.from, f.until)} · ${f.count} moment${f.count === 1 ? "" : "s"}${f.with_me ? `, ${f.with_me === f.count ? (f.count === 1 ? "with me" : "all with me") : `${f.with_me} with me`}` : ""}`;
+      fcard.innerHTML = `${tabs()}
+        <div class="fc-head"><span class="fc-pair"><img src="${AV(f.key)}" alt="${esc(f.name)}" width="34" height="34"><span class="fc-pred">${esc(f.tag)} of</span><img src="${AV(toAv)}" alt="${esc(toName)}" width="34" height="34"></span><span class="fc-status s-${st}">${STATUS[st]}</span></div>
+        <p class="fc-text">${esc(f.why)}</p>
+        <p class="fc-facts">${esc(facts)}</p>
+        <ol class="fc-lines">${list}</ol>
+        ${f.lines ? `<p class="fc-legend"><mark class="kin">relationship word</mark> <mark class="nm">name</mark> · translations added for this page</p>` : ""}
+        ${f.confidence != null ? `<div class="fc-conf">${conf(f.name, f.confidence, st)}</div>` : ""}
+        <div class="fc-review"><span class="src">${f.kind === "guess" ? "In the review queue" : "If tapesplit asked"}</span>${reviewBlock(sel, f.question, 1)}</div>`;
+    };
     const renderCard = () => {
+      if (isF(sel)) return friendCard();
       const r = REL[sel], st = status(sel);
       let text = "", confs = "";
       if (sel === "dad") {
@@ -461,33 +527,26 @@
         const sum = esc(r.summary.text).replace("[Mom]", '<span class="redact" title="name hidden on this page">Mom</span>').replace(/(mother)/, '<mark class="kin">$1</mark>').replace(/(Filip)/, '<mark class="nm">$1</mark>');
         list += `<li class="sum"><p class="en-sum">${sum}</p><span class="where">The video model's summary · Tape ${r.summary.tape} · ${esc(r.summary.clock)}</span></li>`;
       }
-      let review;
-      if (REL[sel].status === "confirmed") {
-        review = `<p class="fc-q">Confirmed in review.</p><p class="fc-note">Corrections live in their own file and are replayed after every rebuild.</p>`;
-      } else if (decided[sel]) {
-        review = `<p class="fc-q">${st === "confirmed" ? "Confirmed." : "Rejected."} In the app, that answer is saved with your corrections and replayed after every rebuild.</p>
-          <div class="fc-actions"><button type="button" class="fc-btn" data-act="undo">Undo</button></div>`;
-      } else {
-        const n = r.observations;
-        review = `<p class="fc-q">${esc(QUESTION[sel])}</p>
-          <div class="fc-actions"><button type="button" class="fc-btn ok" data-act="confirm">${n > 1 ? "Confirm All" : "Confirm"}</button><button type="button" class="fc-btn no" data-act="reject">${n > 1 ? "Reject All" : "Reject"}</button></div>
-          <p class="fc-note">This decision applies to ${n} supporting relationship observations.</p>`;
-      }
-      fcard.innerHTML = `
-        <div class="fc-tabs" role="tablist" aria-label="Relationships">${Object.keys(NAME).map((k) => `<button type="button" role="tab" data-rel="${k}" aria-selected="${k === sel}">${REL[k].who.map((w) => `<img src="${AV(w)}" alt="" width="20" height="20">`).join("")}${NAME[k]}</button>`).join("")}</div>
+      fcard.innerHTML = `${tabs()}
         <div class="fc-head"><span class="fc-pair">${r.who.map((w) => `<img src="${AV(w)}" alt="${w === "grandma" ? "Grandma" : w === "grandpa" ? "Grandpa" : NAME[sel]}" width="34" height="34">`).join("")}<span class="fc-pred">${PRED[r.predicate]}</span><img src="${AV("phil")}" alt="me" width="34" height="34"></span><span class="fc-status s-${st}">${STATUS[st]}</span></div>
         <p class="fc-text">${text}</p>
         <ol class="fc-lines">${list}</ol>
         <p class="fc-legend"><mark class="kin">family word</mark> <mark class="nm">name</mark> · translations added for this page</p>
         <div class="fc-conf">${confs}</div>
-        <div class="fc-review"><span class="src">In the review queue</span>${review}</div>`;
+        <div class="fc-review"><span class="src">In the review queue</span>${reviewBlock(sel, QUESTION[sel], r.observations)}</div>`;
+    };
+    const lineClass = (key) => {
+      const st = status(key);
+      return `${st === "confirmed" ? "confirmed" : st === "rejected" ? "rejected" : "guess"}${key === sel ? " on" : " dim"}`;
     };
     const paint = () => {
       lines.querySelectorAll("path").forEach((p) => {
-        const key = p.dataset.rel, st = status(key);
-        p.setAttribute("class", `${st === "confirmed" ? "confirmed" : st === "rejected" ? "rejected" : "guess"}${key === sel ? " on" : " dim"}`);
+        p.setAttribute("class", `${p.classList.contains("friend") ? "friend " : ""}${lineClass(p.dataset.rel)}`);
       });
-      board.querySelectorAll(".fam-node[data-rel]").forEach((n) => n.classList.toggle("on", n.dataset.rel === sel));
+      board.querySelectorAll(".fam-node[data-rel]").forEach((n) => {
+        n.classList.toggle("on", n.dataset.rel === sel);
+        if (isF(n.dataset.rel)) n.dataset.status = status(n.dataset.rel);
+      });
       board.querySelectorAll(".fam-tag").forEach((t) => {
         const key = t.dataset.rel;
         t.textContent = tagText(key);
@@ -496,7 +555,12 @@
       });
       renderCard();
     };
-    const select = (key) => { sel = key; paint(); };
+    const select = (key) => {
+      if (key === "friends") key = lastFriend;
+      if (isF(key)) lastFriend = key;
+      sel = key;
+      paint();
+    };
     board.addEventListener("click", (ev) => {
       const el = ev.target.closest("[data-rel]");
       if (el) select(el.dataset.rel);
@@ -515,8 +579,9 @@
     fcard.addEventListener("keydown", (ev) => {
       const tab = ev.target.closest(".fc-tabs [role=tab]");
       if (!tab || (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft")) return;
-      const keys = Object.keys(NAME);
-      const next = keys[(keys.indexOf(sel) + (ev.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
+      const keys = [...Object.keys(NAME), ...(lastFriend ? ["friends"] : [])];
+      const here = isF(sel) ? "friends" : sel;
+      const next = keys[(keys.indexOf(here) + (ev.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length];
       select(next);
       fcard.querySelector(`.fc-tabs [data-rel="${next}"]`).focus();
     });
@@ -532,70 +597,7 @@
       if (el && v != null) el.textContent = num(v);
     }
     const fs = $("#family-stat");
-    if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.`;
-  }
-
-  // ------------------------------------------------------------ friends, teachers, everyone else
-  const FR = H.friends;
-  const fcols = $("#friends-cols");
-  if (FR && fcols) {
-    const AV = (k) => `media/how/avatars/${k}.svg`;
-    const WITH = { me: "phil", Mom: "mom", Dad: "dad", "my brother": "brother", Grandma: "grandma" };
-    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const ym = (iso) => [MON[Number(iso.slice(5, 7)) - 1], iso.slice(0, 4)];
-    const when = (a, b) => {
-      if (!a) return "no date yet";
-      const [m1, y1] = ym(a), [m2, y2] = ym(b || a);
-      if (y1 === y2) return m1 === m2 ? `${m1} ${y1}` : `${m1} – ${m2} ${y1}`;
-      return `${m1} ${y1} – ${m2} ${y2}`;
-    };
-    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-    const faces = (list) => list.length ? `<span class="fr-with">${list.map((w) => `<img src="${AV(WITH[w])}" alt="${esc(w)}" title="${esc(w)}" width="22" height="22">`).join("")}</span>` : "";
-    const REL_WORD = /(подруга|друг|учительница|директриса|дяде|[Тт]ётя|friend|детский садик)/g;
-    const ME = /(Филиппом|Филипп)/g;
-    const mark = (s) => esc(s).replace(REL_WORD, '<mark class="rel">$1</mark>').replace(ME, '<mark class="nm">$1</mark>');
-    const era = (name) => H.archive.eras.find((e) => e.label.startsWith(name));
-    const years = H.archive.trips.map((t) => t.from.slice(0, 4));
-    const COLS = [
-      { key: "Madison", title: "Madison", sub: era("Madison") ? `home, ${era("Madison").from}–${era("Madison").to}` : "home" },
-      { key: "Eugene", title: "Eugene", sub: era("Eugene") ? `home, ${era("Eugene").from}–${era("Eugene").to}` : "home" },
-      { key: "Trips", title: "On trips", sub: `${plural(H.archive.trips.length, "trip")}, ${years[0]}–${years[years.length - 1]}` },
-    ];
-    const placeOf = (p) => p.column === "Trips" ? (p.trips.length ? p.trips.join(" and ") : "a trip") : p.trips.length ? `also ${p.trips.join(", ")}` : "";
-    const guess = (n) => {
-      const q = n.quote;
-      const said = q.ru ? `<p class="ru" lang="ru">«${mark(q.ru)}»</p><span class="gl">${quote(esc(q.en))}</span>` : `<p class="en">${quote(mark(q.en))}</p>`;
-      const where = placeOf(n);
-      return `<li class="fr-guess k-${n.kind}">
-        <div class="fr-top"><span class="fr-mono" aria-hidden="true">${esc(n.name.replace(/^(Uncle|Aunt) /, "")[0])}</span>
-          <span class="fr-who"><b>${esc(n.name)}</b><span class="fr-q">${esc(n.guess)} <i>${n.confidence.toFixed(2)}</i></span></span>
-          <span class="fr-when">${when(n.from, n.to)}</span></div>
-        <blockquote class="fr-quote">${said}<span class="where">Tape ${q.tape} · ${esc(q.clock)}</span></blockquote>
-        <div class="fr-ties">${faces(n.with)}<span>${plural(n.moments, "moment")}${where ? ` · ${esc(where)}` : ""}</span><span class="fr-status s-${n.status}">${n.status === "confirmed" ? "confirmed" : "waiting for review"}</span></div>
-      </li>`;
-    };
-    const seen = (t) => {
-      const where = t.column === "Trips" ? t.trips.join(" and ") : t.role || placeOf(t);
-      const us = t.with_me ? (t.with_me === t.moments ? (t.moments === 1 ? ", with me" : ", all with me") : `, ${t.with_me} with me`)
-        : t.to && t.to < "2000" ? ", before I was born" : "";
-      return `<li><span class="fr-name">${esc(t.name)}</span>${faces(t.with)}
-        <span class="fr-meta">${when(t.from, t.to)}${where ? ` · ${esc(where)}` : ""} · ${plural(t.moments, "moment")}${us}</span></li>`;
-    };
-    const LIMIT = 6;
-    fcols.innerHTML = COLS.map((c) => {
-      const named = FR.named.filter((n) => n.column === c.key).sort((a, b) => (a.from || "9999").localeCompare(b.from || "9999"));
-      const others = FR.together.filter((t) => t.column === c.key);
-      const rest = others.slice(LIMIT);
-      return `<section class="fr-col reveal" data-col="${c.key}"><header class="fr-head"><h5>${esc(c.title)}</h5><span>${esc(c.sub)}</span></header>
-        ${named.length ? `<p class="fr-sub">Named on tape</p><ol class="fr-guesses">${named.map(guess).join("")}</ol>` : ""}
-        ${others.length ? `<p class="fr-sub">${c.key === "Trips" ? "Only seen on trips" : "Turns up with us"}</p><ul class="fr-list">${others.slice(0, LIMIT).map(seen).join("")}</ul>` : ""}
-        ${rest.length ? `<details class="fr-more"><summary>${rest.length} more</summary><ul class="fr-list">${rest.map(seen).join("")}</ul></details>` : ""}
-      </section>`;
-    }).join("");
-    fcols.querySelectorAll(".reveal").forEach((el, i) => {
-      el.style.transitionDelay = `${i * 90}ms`;
-      watch(el);
-    });
+    if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.${FRIENDS.length ? " The friends on the board are examples with made-up names: Zhenya’s and Fedya’s labels are tapesplit’s guesses, the other four are mine." : ""}`;
   }
 
   // ------------------------------------------------------------ language
