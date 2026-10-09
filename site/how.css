@@ -789,8 +789,11 @@
   overflow-wrap: anywhere;
 }
 
-.clue-text[lang="ru"] {
-  font-style: italic;
+.clue-orig {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
 }
 
 .sign-text {
@@ -1304,12 +1307,12 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.who-lines .ru {
+.who-lines .en {
   font-size: 15px;
   line-height: 1.35;
 }
 
-.who-lines .en {
+.who-lines .ru {
   display: block;
   font-size: 13px;
   color: #a5a5ab;
@@ -2320,7 +2323,7 @@
   font-weight: 600;
 }
 
-.lm-ru {
+.lm-said {
   font-weight: 500;
 }
 
@@ -3273,7 +3276,7 @@ button.fam-node:focus-visible .fam-av {
   background: rgba(120, 120, 128, 0.09);
 }
 
-.fc-lines .ru,
+.fc-lines .en-line,
 .fc-lines .en-sum {
   font-size: 17px;
   font-weight: 500;
@@ -3287,9 +3290,15 @@ button.fam-node:focus-visible .fam-av {
   font-weight: 400;
 }
 
-.fc-lines .gl {
-  font-size: 14px;
-  color: var(--ink-2);
+.fc-lines .orig {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.fc-lines .orig mark {
+  padding: 0 1px;
+  box-shadow: none;
 }
 
 .fc-lines .where {
@@ -3642,4 +3651,10 @@ mark.nm {
   text-transform: uppercase;
   color: var(--vc);
   margin-bottom: 2px;
+}
+
+/* An original line, set small after its English in running text */
+.orig-inline {
+  font-size: 0.82em;
+  color: var(--ink-3);
 }

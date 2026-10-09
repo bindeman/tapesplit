@@ -183,7 +183,7 @@
     clues.innerHTML = H.where.clues.map((c, i) => {
       const speech = c.kind === "speech";
       const body = speech
-        ? `<span class="clue-text" lang="ru">“${esc(c.ru)}”</span><span class="clue-note">${quote(esc(c.en))}</span>`
+        ? `<span class="clue-text">${quote(esc(c.en))}</span><span class="clue-orig" lang="ru">«${esc(c.ru)}»</span>`
         : `<span class="sign-text">${esc(c.text)}</span><span class="clue-note">${esc(c.note)}</span>`;
       return `<div class="glass clue ${speech ? "speech" : "sign"} reveal" style="transition-delay:${i * 90}ms">
         <span class="clue-icon">${speech ? ICON_SPEECH : ICON_SIGN}</span>
@@ -295,7 +295,7 @@
     const bars = [...plot.querySelectorAll(".wv")].map((el) => [el, Number(el.dataset.t)]);
     const head = $("#who-head");
     const lines = $("#who-lines");
-    lines.innerHTML = V.segments.map((s, i) => `<li data-i="${i}" style="--vc:var(--voice-${s.voice})"><span><span class="who-name">${esc(V.names[s.voice])}</span><span class="ru" lang="ru">${esc(s.ru)}</span><span class="en">${esc(s.en)}</span></span></li>`).join("");
+    lines.innerHTML = V.segments.map((s, i) => `<li data-i="${i}" style="--vc:var(--voice-${s.voice})"><span><span class="who-name">${esc(V.names[s.voice])}</span><span class="en">${esc(s.en)}</span><span class="ru" lang="ru">${esc(s.ru)}</span></span></li>`).join("");
     const lineEls = [...lines.children];
     const tc = $("#who-tc");
     let last = -1;
@@ -445,6 +445,8 @@
     const KIN = /(пап[аеуы]|папой|мам[аеуы]|мамой|бабушк[аеиу]|дедушк[аеиу]|mother|подруга|детский садик)/gi;
     const NM = /(Филипп\p{L}*|Филя|Phillip|Filip)/gu;
     const hl = (s) => esc(s).replace(KIN, '<mark class="kin">$1</mark>').replace(NM, '<mark class="nm">$1</mark>');
+    const KIN_EN = /\b(Dad|Mom|Grandma|Grandpa|friend|kindergarten)\b/g;
+    const hlEn = (s) => esc(s).replace(KIN_EN, '<mark class="kin">$1</mark>').replace(/\b(Phillip)\b/g, '<mark class="nm">$1</mark>');
     const tagText = (key) => {
       const r = REL[key], st = status(key);
       if (st === "rejected") return `${r.predicate} ✕`;
@@ -476,7 +478,7 @@
         </button>`).join(""));
 
     const conf = (label, v, st) => `<div class="row ${st}"><span>${esc(label)}</span><span class="bar"><i style="--v:${v}"></i></span><b>${v.toFixed(2)}</b></div>`;
-    const lineItem = (l) => `<li><p class="ru" lang="ru">${hl(l.ru)}</p><span class="gl">${quote(esc(l.en))}</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
+    const lineItem = (l) => `<li><p class="en-line">${hlEn(l.en)}</p><span class="orig" lang="ru">«${hl(l.ru)}»</span><span class="where">Tape ${l.tape} · ${esc(l.clock)}</span></li>`;
     const momentItem = (f, m) => `<li class="sum"><p class="en-sum">${esc(m.title)}</p><span class="where">The video model names ${esc(f.name)} · Tape ${m.tape}${m.date ? ` · ${esc(nice(m.date))}` : ""}</span></li>`;
     const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const ym = (iso) => `${MON[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
@@ -504,7 +506,7 @@
         <p class="fc-text">${esc(f.why)}</p>
         <p class="fc-facts">${esc(facts)}</p>
         <ol class="fc-lines">${list}</ol>
-        ${f.lines ? `<p class="fc-legend"><mark class="kin">relationship word</mark> <mark class="nm">name</mark> · translations added for this page</p>` : ""}
+        ${f.lines ? `<p class="fc-legend"><mark class="kin">relationship word</mark> <mark class="nm">name</mark> · English added for this page; the small line is what it heard</p>` : ""}
         ${f.confidence != null ? `<div class="fc-conf">${conf(f.name, f.confidence, st)}</div>` : ""}
         <div class="fc-review"><span class="src">${f.kind === "guess" ? "In the review queue" : "If tapesplit asked"}</span>${reviewBlock(sel, f.question, 1)}</div>`;
     };
@@ -531,7 +533,7 @@
         <div class="fc-head"><span class="fc-pair">${r.who.map((w) => `<img src="${AV(w)}" alt="${w === "grandma" ? "Grandma" : w === "grandpa" ? "Grandpa" : NAME[sel]}" width="34" height="34">`).join("")}<span class="fc-pred">${PRED[r.predicate]}</span><img src="${AV("phil")}" alt="me" width="34" height="34"></span><span class="fc-status s-${st}">${STATUS[st]}</span></div>
         <p class="fc-text">${text}</p>
         <ol class="fc-lines">${list}</ol>
-        <p class="fc-legend"><mark class="kin">family word</mark> <mark class="nm">name</mark> · translations added for this page</p>
+        <p class="fc-legend"><mark class="kin">family word</mark> <mark class="nm">name</mark> · English added for this page; the small line is what it heard</p>
         <div class="fc-conf">${confs}</div>
         <div class="fc-review"><span class="src">In the review queue</span>${reviewBlock(sel, QUESTION[sel], r.observations)}</div>`;
     };
@@ -596,8 +598,10 @@
       const el = document.getElementById(id);
       if (el && v != null) el.textContent = num(v);
     }
+    const guessed = FRIENDS.filter((f) => f.kind === "guess").map((f) => f.name);
+    const WORDS = ["none", "one", "two", "three", "four", "five", "six"];
     const fs = $("#family-stat");
-    if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.${FRIENDS.length ? " The friends on the board are examples with made-up names: Zhenya’s and Fedya’s labels are tapesplit’s guesses, the other four are mine." : ""}`;
+    if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.${FRIENDS.length ? ` The friends on the board are examples with made-up names: ${guessed.map((n) => `${n}’s`).join(" and ")} labels are tapesplit’s guesses, the other ${WORDS[FRIENDS.length - guessed.length] || FRIENDS.length - guessed.length} are mine.` : ""}`;
   }
 
   // ------------------------------------------------------------ language
@@ -661,8 +665,8 @@
     const voteItem = (v) => `<li class="lm-step vote ${esc(v.verdict)}"><b>Checked</b>
         <span class="lm-r">${VERDICT[v.verdict] || esc(v.verdict)}</span> <span class="lm-conf">${v.confidence.toFixed(2)}</span>
         <span class="lm-sub">“${esc(v.reasoning)}”</span></li>`;
-    const saidItem = (s) => `<li class="lm-step heard"><b>Heard</b><span class="lm-ru" lang="ru">«${esc(s.ru)}»</span>
-        <span class="lm-sub">“${esc(s.en)}” · Tape ${s.tape} · ${esc(s.clock)}</span></li>`;
+    const saidItem = (s) => `<li class="lm-step heard"><b>Heard</b><span class="lm-said">${quote(esc(s.en))}</span>
+        <span class="lm-sub"><span lang="ru">«${esc(s.ru)}»</span> · Tape ${s.tape} · ${esc(s.clock)}</span></li>`;
     lmGrid.innerHTML = LM.cards.map((c) => {
       const steps = [];
       if (c.ocr) steps.push(`<li class="lm-step read"><b>Read</b><span class="lm-sign">${esc(c.ocr.text)}</span>
