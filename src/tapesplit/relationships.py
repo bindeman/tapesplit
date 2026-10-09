@@ -208,7 +208,7 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
     candidates = [_candidate_from_bucket(index, bucket) for index, bucket in enumerate(relationship_buckets.values(), start=1)]
     # People outside the family, scoped to the moments they turn up in.
     social = build_social_candidates(
-        transcripts=transcripts,
+        transcripts=transcripts + _speaker_lines(project, visibility),
         events=events,
         person_entities=person_entities,
         kinship_candidates=candidates,
@@ -216,6 +216,8 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
         era_contexts=read_jsonl(project / "era_contexts.jsonl"),
         event_for_segment=_event_for_segment,
         contains_term=_contains_term,
+        place_groups=read_jsonl(project / "place_groups.jsonl"),
+        geo_contexts=read_jsonl(project / "geo_contexts.jsonl"),
         context_seconds=context_seconds,
     )
     candidates += [{"id": f"relationship_candidate_{index:06d}", **candidate}
@@ -237,6 +239,20 @@ def build_relationship_candidates(project_dir: Path, *, context_seconds: float =
         },
         "by_predicate": _count_by(candidates, "predicate"),
     }
+
+
+def _speaker_lines(project: Path, visibility: Any) -> list[dict[str, Any]]:
+    """The diarized cloud transcript, which often hears names the local transcript misses."""
+    lines = []
+    for row in read_jsonl(project / "speaker_segments.jsonl"):
+        if visibility.excluded_row(row):
+            continue
+        text = str((row.get("metadata") or {}).get("transcript_text") or "").strip()
+        if text:
+            lines.append({"id": row.get("id"), "evidence_id": row.get("id"), "source_video_id": row.get("source_video_id"),
+                          "start_s": row.get("start_s"), "end_s": row.get("end_s"), "text": text,
+                          "observation_source": "speaker_segments"})
+    return sorted(lines, key=lambda row: _number_or_large(row.get("start_s")))
 
 
 def _candidate_from_bucket(index: int, bucket: dict[str, Any]) -> dict[str, Any]:
