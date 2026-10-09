@@ -92,18 +92,18 @@
           <div class="out-grid">
             <article class="glass out-card">
               <span class="src">Organized</span>
-              <b class="out-n"><span data-stat="moments">279</span> moments</b>
+              <b class="out-n"><span data-stat="moments">286</span> moments</b>
               <div class="out-thumbs" id="out-thumbs"></div>
             </article>
             <article class="glass out-card">
               <span class="src">In order</span>
               <b class="out-n">1997–2007</b>
               <svg class="out-chrono" id="out-chrono" aria-hidden="true"></svg>
-              <span class="out-cap"><span data-stat="dated_day">99</span> dated to the day</span>
+              <span class="out-cap"><span data-stat="dated_day">100</span> dated to the day</span>
             </article>
             <article class="glass out-card">
               <span class="src">Located</span>
-              <b class="out-n"><span data-stat="places">244</span> places</b>
+              <b class="out-n"><span data-stat="places">238</span> places</b>
               <svg class="out-map" id="out-map" aria-hidden="true"></svg>
               <span class="out-cap">from signs, speech and the video model</span>
             </article>
@@ -326,7 +326,7 @@
         <header class="ch-head">
           <span class="dymo dymo-plum">Relationships</span>
           <h3 id="family-title">You know who’s who from context. So does tapesplit.</h3>
-          <p>Nobody on a home video says “this is my dad.” You work it out from context: what people call each other, who turns up in the same moments, and where they turn up, at home in Madison, in Eugene or on a trip. tapesplit is learning to read the same clues. Family comes first: it listens for мама and папа in both languages, works out who each word points to, and sketches the family as guesses that wait for a person to confirm them. Friends, relatives and teachers are next.</p>
+          <p>Nobody on a home video says “this is my dad.” You work it out from context: what people call each other, who turns up in the same moments, and where they turn up, at home in Madison, in Eugene or on a trip. tapesplit is learning to read the same clues. Family comes first: it listens for мама and папа in both languages, works out who each word points to, and sketches the family as guesses that wait for a person to confirm them. Then it does the same for friends and teachers, and keeps track of everyone else who turns up.</p>
         </header>
         <div class="family-grid">
           <figure class="family-board reveal" id="family-board">
@@ -341,6 +341,14 @@
           <li class="reveal"><b>It counts what agrees.</b><span>One line makes a 0.72 guess, and each line that agrees adds a little, up to 0.84. A summary that says it outright starts at 0.86.</span></li>
           <li class="reveal"><b>Then it asks.</b><span>Every guess becomes a question in the review queue, next to the lines that raised it. Which side of the family a grandparent is on is left to you.</span></li>
         </ol>
+        <div class="friends" id="friends">
+          <div class="friends-head">
+            <h4>Friends, teachers and everyone who turns up</h4>
+            <p>Outside the family, the clue is a word next to a name: друг or подруга, учительница, a child’s дядя or тётя. Every moment that person turns up in adds a date and a place, at home in Madison, in Eugene or on a trip, and who from the family was there. People nobody introduces still get that much: when, where and with whom.</p>
+          </div>
+          <div class="friends-cols" id="friends-cols"></div>
+          <p class="friends-foot">Every name here is a stand-in, swapped into tapesplit’s transcripts for this page, and the translations are added for it.</p>
+        </div>
         <p class="ch-stat" id="family-stat"></p>
       </article>
 
@@ -428,10 +436,10 @@
     <div class="wrap">
       <div class="prose">
         <h2 id="timeline-title">Nineteen tapes, one timeline</h2>
-        <p>Tapes get reused, rewound and recorded over. Tape 3 jumps from 2003 to 2006, and Tape 6 covers four years. So tapesplit dates every moment on its own, then lays the whole archive out in order.</p>
+        <p>Tapes get reused, rewound and recorded over, and their numbers say nothing about when: Tape 3 is from 2005, Tape 15 from 2001, and Tape 6 covers four years. So tapesplit dates every moment on its own, then lays the whole archive out in order. Above the tapes go the places: where we lived, and the trips it found from the places in each moment, back to Dad’s tapes from before I was born.</p>
       </div>
       <div class="chrono-chart reveal" id="chrono-chart">
-        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid where an on-screen date stamp read by Apple Vision confirms the date, hollow where the date came from what was seen or heard in the moment.</desc></svg>
+        <svg id="chrono-svg" role="img" aria-labelledby="chrono-desc"><desc id="chrono-desc">Each of the 19 tapes as a row from 1996 to 2009. A bar shows the years a tape could have been filmed, and dots show the moments dated to the day: solid where an on-screen date stamp read by Apple Vision confirms the date, hollow where the date came from what was seen or heard in the moment. Above the rows, a Home layer shows the years in Madison and in Eugene, and a Trips layer shows each trip tapesplit found, from Chicago in 1997 to Hawaii in 2007. The years before 2000, Dad's tapes from before I was born, are shaded.</desc></svg>
         <div class="chrono-tip" id="chrono-tip" hidden></div>
       </div>
       <div class="chrono-legend">
@@ -439,6 +447,7 @@
         <span><i class="lg-said"></i>Seen or heard in the moment</span>
         <span><i class="lg-window"></i>Years the tape could cover</span>
         <span><i class="lg-none"></i>No direct evidence yet</span>
+        <span><i class="lg-trip"></i>A trip, from the places in its moments</span>
       </div>
       <div class="chrono-facts" id="chrono-facts"></div>
     </div>
@@ -556,8 +565,8 @@
     <div class="wrap">
       <div class="prose">
         <h2 id="trust-title">What it still gets wrong</h2>
-        <p>It's an alpha, and it's wrong in instructive ways. It once looked up “zoo” and landed in Guangzhou, China, and it put “Redwood Forest” in Melbourne, Australia. After a rebuild renumbered its places, a correction meant for Madison, Wisconsin landed on a cable car in Davos. It hears “Eugene” as «Фьюджин». And when the transcriber got stuck on «Филя, посмотри на папу» (“Phillip, look at Dad”) and wrote it 474 times in twelve minutes, 19 of those repeats went into the case that Dad is my dad.</p>
-        <p>So it's built to be checked. Every guess keeps its evidence, strong guesses are accepted only under rules for each kind of fact, and everything else waits in a review queue: 368 items for this archive.</p>
+        <p>It's an alpha, and it's wrong in instructive ways. It once looked up “zoo” and landed in Guangzhou, China, and it put “Redwood Forest” in Melbourne, Australia. After a rebuild renumbered its places, a correction meant for Madison, Wisconsin landed on a cable car in Davos. It hears “Eugene” as «Фьюджин». And when the transcriber got stuck on «Филя, посмотри на папу» (“Phillip, look at Dad”) and wrote it <span id="b-loop">474</span> times in twelve minutes, <span id="b-loop-case">68</span> of those repeats went into the case that Dad is my dad.</p>
+        <p>So it's built to be checked. Every guess keeps its evidence, strong guesses are accepted only under rules for each kind of fact, and everything else waits in a review queue: <span data-stat="review_items">356</span> items for this archive.</p>
       </div>
       <div class="trust">
         <div><h3>Guesses look like guesses.</h3><p>Inferred facts read "appears to be…" and link to the transcript line, frame or face track they came from.</p></div>
@@ -587,7 +596,7 @@
         <div class="tile reveal">
           <div class="tv-art" aria-hidden="true"><span class="tv"><i></i></span><span class="dymo dymo-red">Not family</span></div>
           <h3>Recorded TV, set aside.</h3>
-          <p>Tape 1 is an NBA game and a TV movie taped off NBC. tapesplit marks <b id="b-unrelated">54</b> stretches like these as unrelated and keeps them out of the archive.</p>
+          <p>Tape 1 is an NBA game and a TV movie taped off NBC. tapesplit marks <b id="b-unrelated">53</b> stretches like these as unrelated and keeps them out of the archive.</p>
         </div>
         <div class="tile reveal">
           <div class="find-art" aria-hidden="true"><span class="find-q">first day of school</span><span class="find-img" style="background-image:url(media/how/eugene-sep7.webp)"><i>Tape 18</i></span><span class="find-img" style="background-image:url(media/how/walk.webp)"><i>Tape 3</i></span><span class="find-img" style="background-image:url(media/how/whiteboard.webp)"><i>Sep 7, 2005</i></span></div>
@@ -602,7 +611,7 @@
         <div class="tile reveal">
           <div class="queue-art" aria-hidden="true"><span class="q-row ok">Place · Eugene, Oregon</span><span class="q-row ok">Date · Sep 7, 2005</span><span class="q-row ask">Voice 1 · who is this?</span></div>
           <h3>Asks only when it's unsure.</h3>
-          <p>Strong guesses clear per-type rules and are accepted for you. The rest, <b id="b-review">368</b> here, wait with their evidence.</p>
+          <p>Strong guesses clear per-type rules and are accepted for you. The rest, <b id="b-review">356</b> here, wait with their evidence.</p>
         </div>
         <div class="tile reveal">
           <div class="journal-art" id="journal-art" lang="ru" aria-hidden="true"></div>

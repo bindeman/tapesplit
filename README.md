@@ -22,7 +22,7 @@
 **tapesplit turns a box of digitized VHS and camcorder tapes into a family archive you can browse, search and trust.** It watches every hour of footage, splits each tape into moments, and works out when each moment happened, where, and who was there. Anything it isn't sure about waits in a review queue. It runs on your Mac; cloud models are optional and capped at a dollar amount you set.
 
 <p align="center">
-  <img src="site/media/readme/how-inout.webp" alt="In: a box of VHS tapes with no labels. tapesplit watches every minute. Out: 279 moments, each titled and dated; a timeline from 1997 to 2007 with 99 moments dated to the day; 244 places on a map; and 101 people, with a family tree" width="100%">
+  <img src="site/media/readme/how-inout.webp" alt="In: a box of VHS tapes with no labels. tapesplit watches every minute. Out: 286 moments, each titled and dated; a timeline from 1997 to 2007 with 100 moments dated to the day; 238 places on a map; and 101 people, with a family tree" width="100%">
 </p>
 
 > Every photo on this page is a real frame from my family's tapes (1997–2007), labeled by tapesplit; the faces in the family tree are drawn. People's names other than mine are changed.
@@ -82,7 +82,13 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
   <img src="site/media/readme/how-who.webp" alt="A video frame of me on the lawn beside two lanes of waveform, one per voice, and the Russian transcript with English beside each line" width="100%">
 </p>
 
-**Relationships.** You know who's who from context: what people call each other, who turns up together, and where. tapesplit is learning to read the same clues, starting with family; friends, relatives and teachers are next. Nobody on the tapes says "this is my dad"; they say мама and папа to me, usually with my name in the same breath. tapesplit reads that context in both languages, works out who each word points to, and sketches the family as guesses: Dad at 0.84 from lines like «Дай папе йогурт, Филипп» ("Give Dad the yogurt, Phillip"), Grandma and Grandpa at 0.76 and 0.72. Every guess waits in the review queue until a person confirms it.
+**Relationships.** You know who's who from context: what people call each other, who turns up together, and where. tapesplit is learning to read the same clues, starting with family, then friends and teachers. Nobody on the tapes says "this is my dad"; they say мама and папа to me, usually with my name in the same breath. tapesplit reads that context in both languages, works out who each word points to, and sketches the family as guesses: Dad at 0.84 from lines like «Дай папе йогурт, Филипп» ("Give Dad the yogurt, Phillip"), Grandma and Grandpa at 0.76 and 0.72. Every guess waits in the review queue until a person confirms it.
+
+Outside the family the clue is a word next to a name: друг or подруга, учительница, a child's дядя or тётя. Each guess gets a date range and a place from every moment that person turns up in, at home in Madison, in Eugene or on a trip, and who from the family was there. «Федя ходит с Филиппом в детский садик» ("Fedya goes to kindergarten with Phillip") makes Fedya a classmate guess from Madison in late 2004. People nobody introduces still get when, where and with whom.
+
+<p align="center">
+  <img src="site/media/readme/how-friends.webp" alt="Three columns, Madison, Eugene and On trips. Each lists the guesses named on tape, like Fedya, my friend or classmate? 0.72, with the Russian line and its translation, and below them everyone else who turns up, with a date range, how many moments and the faces of the family members who were there" width="100%">
+</p>
 
 <p align="center">
   <img src="site/media/readme/how-family.webp" alt="A family tree drawn on graph paper with illustrated avatars: Grandma and Grandpa joined to me by a dotted line labeled grandparents? 0.76 · 0.72, Mom by a solid line labeled mother ✓, and Dad, with a camcorder badge, by a dotted line labeled father? 0.84. Beside it, the three Russian lines behind Dad's guess and a Confirm All button" width="100%">
@@ -98,12 +104,12 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/media/readme/timeline-dark.webp">
-  <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid where an on-screen date stamp confirms the date and hollow where it came from what was seen or heard; Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
+  <img alt="All 19 tapes as rows from 1996 to 2009: bars for the years each tape could cover and dots for moments dated to the day, solid where an on-screen date stamp confirms the date and hollow where it came from what was seen or heard. Above them, a Home layer (Madison, then Eugene) and a Trips layer from Chicago in 1997 to Hawaii in 2007; the years before 2000 are shaded as Dad's tapes from before I was born, and Tape 18 is highlighted at the first day of school" src="site/media/readme/timeline-light.webp">
 </picture>
 
-Tapes get reused and recorded over, so tape order isn't time order: Tape 3 jumps from 2003 to 2006. tapesplit dates each moment on its own. 99 of the 279 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 75 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them.
+Tapes get reused and recorded over, so tape order isn't time order: Tape 3 is from 2005 and Tape 15 from 2001. tapesplit dates each moment on its own. 100 of the 286 got an exact day: 29 confirmed by a camcorder stamp that Apple Vision read, and 76 from what the video model saw or heard in the moment. The rest borrow a month or year from the moments around them. Above the tapes go the places: where we lived, and 13 trips found from the places in each moment, back to Dad's tapes from before I was born.
 
-<sub>The teacher's name is changed, and the faces in the family tree are illustrated stand-ins. The English under the Russian lines was added for this page, except the Journal's, which is tapesplit's own.</sub>
+<sub>Teachers' and friends' names are changed, and the faces in the family tree are illustrated stand-ins. The English under the Russian lines was added for this page, except the Journal's, which is tapesplit's own.</sub>
 
 ## What you get
 

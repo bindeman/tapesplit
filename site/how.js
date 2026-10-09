@@ -527,8 +527,75 @@
       el.style.transitionDelay = `${i * 90}ms`;
       watch(el);
     });
+    for (const [id, v] of [["b-loop", F.loop.count], ["b-loop-case", F.loop.in_case]]) {
+      const el = document.getElementById(id);
+      if (el && v != null) el.textContent = num(v);
+    }
     const fs = $("#family-stat");
     if (fs) fs.innerHTML = `Across the archive: <b>${F.totals.candidates}</b> relationship guesses so far, <b>${F.totals.confirmed}</b> confirmed in review and <b>${F.totals.waiting}</b> waiting.`;
+  }
+
+  // ------------------------------------------------------------ friends, teachers, everyone else
+  const FR = H.friends;
+  const fcols = $("#friends-cols");
+  if (FR && fcols) {
+    const AV = (k) => `media/how/avatars/${k}.svg`;
+    const WITH = { me: "phil", Mom: "mom", Dad: "dad", "my brother": "brother", Grandma: "grandma" };
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const ym = (iso) => [MON[Number(iso.slice(5, 7)) - 1], iso.slice(0, 4)];
+    const when = (a, b) => {
+      if (!a) return "no date yet";
+      const [m1, y1] = ym(a), [m2, y2] = ym(b || a);
+      if (y1 === y2) return m1 === m2 ? `${m1} ${y1}` : `${m1} – ${m2} ${y1}`;
+      return `${m1} ${y1} – ${m2} ${y2}`;
+    };
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const faces = (list) => list.length ? `<span class="fr-with">${list.map((w) => `<img src="${AV(WITH[w])}" alt="${esc(w)}" title="${esc(w)}" width="22" height="22">`).join("")}</span>` : "";
+    const REL_WORD = /(подруга|друг|учительница|директриса|дяде|[Тт]ётя|friend|детский садик)/g;
+    const ME = /(Филиппом|Филипп)/g;
+    const mark = (s) => esc(s).replace(REL_WORD, '<mark class="rel">$1</mark>').replace(ME, '<mark class="nm">$1</mark>');
+    const era = (name) => H.archive.eras.find((e) => e.label.startsWith(name));
+    const years = H.archive.trips.map((t) => t.from.slice(0, 4));
+    const COLS = [
+      { key: "Madison", title: "Madison", sub: era("Madison") ? `home, ${era("Madison").from}–${era("Madison").to}` : "home" },
+      { key: "Eugene", title: "Eugene", sub: era("Eugene") ? `home, ${era("Eugene").from}–${era("Eugene").to}` : "home" },
+      { key: "Trips", title: "On trips", sub: `${plural(H.archive.trips.length, "trip")}, ${years[0]}–${years[years.length - 1]}` },
+    ];
+    const placeOf = (p) => p.column === "Trips" ? (p.trips.length ? p.trips.join(" and ") : "a trip") : p.trips.length ? `also ${p.trips.join(", ")}` : "";
+    const guess = (n) => {
+      const q = n.quote;
+      const said = q.ru ? `<p class="ru" lang="ru">«${mark(q.ru)}»</p><span class="gl">${quote(esc(q.en))}</span>` : `<p class="en">${quote(mark(q.en))}</p>`;
+      const where = placeOf(n);
+      return `<li class="fr-guess k-${n.kind}">
+        <div class="fr-top"><span class="fr-mono" aria-hidden="true">${esc(n.name.replace(/^(Uncle|Aunt) /, "")[0])}</span>
+          <span class="fr-who"><b>${esc(n.name)}</b><span class="fr-q">${esc(n.guess)} <i>${n.confidence.toFixed(2)}</i></span></span>
+          <span class="fr-when">${when(n.from, n.to)}</span></div>
+        <blockquote class="fr-quote">${said}<span class="where">Tape ${q.tape} · ${esc(q.clock)}</span></blockquote>
+        <div class="fr-ties">${faces(n.with)}<span>${plural(n.moments, "moment")}${where ? ` · ${esc(where)}` : ""}</span><span class="fr-status s-${n.status}">${n.status === "confirmed" ? "confirmed" : "waiting for review"}</span></div>
+      </li>`;
+    };
+    const seen = (t) => {
+      const where = t.column === "Trips" ? t.trips.join(" and ") : t.role || placeOf(t);
+      const us = t.with_me ? (t.with_me === t.moments ? (t.moments === 1 ? ", with me" : ", all with me") : `, ${t.with_me} with me`)
+        : t.to && t.to < "2000" ? ", before I was born" : "";
+      return `<li><span class="fr-name">${esc(t.name)}</span>${faces(t.with)}
+        <span class="fr-meta">${when(t.from, t.to)}${where ? ` · ${esc(where)}` : ""} · ${plural(t.moments, "moment")}${us}</span></li>`;
+    };
+    const LIMIT = 6;
+    fcols.innerHTML = COLS.map((c) => {
+      const named = FR.named.filter((n) => n.column === c.key).sort((a, b) => (a.from || "9999").localeCompare(b.from || "9999"));
+      const others = FR.together.filter((t) => t.column === c.key);
+      const rest = others.slice(LIMIT);
+      return `<section class="fr-col reveal" data-col="${c.key}"><header class="fr-head"><h5>${esc(c.title)}</h5><span>${esc(c.sub)}</span></header>
+        ${named.length ? `<p class="fr-sub">Named on tape</p><ol class="fr-guesses">${named.map(guess).join("")}</ol>` : ""}
+        ${others.length ? `<p class="fr-sub">${c.key === "Trips" ? "Only seen on trips" : "Turns up with us"}</p><ul class="fr-list">${others.slice(0, LIMIT).map(seen).join("")}</ul>` : ""}
+        ${rest.length ? `<details class="fr-more"><summary>${rest.length} more</summary><ul class="fr-list">${rest.map(seen).join("")}</ul></details>` : ""}
+      </section>`;
+    }).join("");
+    fcols.querySelectorAll(".reveal").forEach((el, i) => {
+      el.style.transitionDelay = `${i * 90}ms`;
+      watch(el);
+    });
   }
 
   // ------------------------------------------------------------ language
@@ -625,11 +692,27 @@
   const chart = $("#chrono-svg");
   if (chart) {
     const tapes = H.archive.tapes;
-    const left = 64, right = 18, top = 46, rowH = 22;
+    const left = 64, right = 18, rowH = 22;
     const W = 1000;
     const Y0 = 1996, Y1 = 2010;
     const plotW = W - left - right;
     const X = (year) => left + ((year - Y0) / (Y1 - Y0)) * plotW;
+    const fy = (iso) => {
+      const [y, m, d] = iso.split("-").map(Number);
+      return y + ((m - 1) * 30.44 + (d || 15)) / 365.25;
+    };
+    // Trips get stacked label lanes so nearby trips don't overprint each other.
+    const trips = (H.archive.trips || []).map((t) => ({ ...t, x0: X(fy(t.from)), x1: X(fy(t.to)) }));
+    const laneEnds = [];
+    for (const t of trips) {
+      const width = 8 + t.label.length * 6.4;
+      let lane = laneEnds.findIndex((end) => end < t.x0 - 4);
+      if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+      laneEnds[lane] = t.x0 + width;
+      t.lane = lane;
+    }
+    const tripTop = 40, laneH = 15;
+    const top = tripTop + Math.max(1, laneEnds.length) * laneH + 22;
     const rowsBottom = top + tapes.length * rowH;
     const HGT = rowsBottom + 30;
     chart.setAttribute("viewBox", `0 0 ${W} ${HGT}`);
@@ -638,12 +721,32 @@
       html += `<line class="grid" x1="${X(y)}" x2="${X(y)}" y1="${top - 6}" y2="${rowsBottom}"/>`;
       if (y < Y1) html += `<text class="yr" x="${X(y + 0.5)}" y="${rowsBottom + 18}">${y}</text>`;
     }
+    // Layer 1: where we lived. tapesplit's residence eras, and the years it hasn't placed.
+    html += `<text class="layer-label" x="${left - 10}" y="22">Home</text>`;
+    const firstEra = Math.min(...H.archive.eras.map((e) => e.from));
+    html += `<g class="era era-before"><rect x="${X(Y0)}" y="6" width="${X(firstEra) - X(Y0)}" height="24"/><text x="${X(Y0) + 8}" y="22">Before Madison · not placed yet</text></g>`;
     H.archive.eras.forEach((e, i) => {
       const a = X(e.from), b = X(e.to + 1);
       html += `<g class="era era-${i + 1}"><rect x="${a}" y="6" width="${b - a}" height="24"/>`;
       for (const c of e.conflict || []) html += `<rect class="conflict" x="${X(c)}" y="6" width="${X(c + 1) - X(c)}" height="24"/>`;
       html += `<text x="${a + 8}" y="22">${esc(e.label)}</text></g>`;
     });
+    // Layer 2: trips, from dated moments away from home and the places tapesplit found in them.
+    // Each trip drops a faint column through the tape rows, so its moments line up under it.
+    html += `<text class="layer-label" x="${left - 10}" y="${tripTop + 11}">Trips</text>`;
+    trips.forEach((t, i) => {
+      const y = tripTop + t.lane * laneH;
+      const w = Math.max(5, t.x1 - t.x0);
+      html += `<rect class="trip-col" data-trip="${i}" x="${(t.x0 + w / 2 - Math.max(4, w) / 2).toFixed(1)}" y="${y + 10}" width="${Math.max(4, w).toFixed(1)}" height="${(rowsBottom - y - 10).toFixed(1)}"/>`;
+      html += `<g class="trip" tabindex="0" data-trip="${i}" data-tip="${esc(t.label)}|${esc(nice(t.from))}${t.to !== t.from ? " to " + esc(nice(t.to)) : ""} · ${t.moments} moment${t.moments === 1 ? "" : "s"}">`
+        + `<rect x="${t.x0.toFixed(1)}" y="${y + 3}" width="${w.toFixed(1)}" height="7" rx="3.5"/>`
+        + `<text x="${(t.x0 + w + 4).toFixed(1)}" y="${y + 10}">${esc(t.label)}</text></g>`;
+    });
+    // The years before I was born: Dad's tapes.
+    const born = 2000;
+    html += `<rect class="before-me" x="${X(Y0)}" y="${top - 6}" width="${X(born) - X(Y0)}" height="${rowsBottom - top + 6}" rx="6"/>`;
+    html += `<line class="born" x1="${X(born)}" x2="${X(born)}" y1="${top - 14}" y2="${rowsBottom}"/>`;
+    html += `<text class="note" x="${X(born) - 8}" y="${top - 10}" text-anchor="end">Dad's tapes, before I was born</text>`;
     let k = 0;
     tapes.forEach((t, r) => {
       const cy = top + r * rowH + rowH / 2;
@@ -657,7 +760,7 @@
       for (const [iso, kind] of t.dates) {
         const [y, m, d] = iso.split("-").map(Number);
         const frac = (new Date(Date.UTC(y, m - 1, d)) - Date.UTC(y, 0, 1)) / (365.25 * 864e5);
-        html += `<circle class="d ${kind}" tabindex="0" style="--i:${k}" cx="${X(y + frac).toFixed(1)}" cy="${cy}" r="${kind === "stamp" ? 4.6 : 4}" data-tip="Tape ${t.tape} · ${nice(iso)}|${kind === "stamp" ? "Confirmed by an on-screen date stamp" : "Seen or heard in the moment"}"><title>Tape ${t.tape}, ${nice(iso)}: ${kind === "stamp" ? "confirmed by an on-screen date stamp" : "seen or heard in the moment"}</title></circle>`;
+        html += `<circle class="d ${kind}" tabindex="0" data-iso="${iso}" style="--i:${k}" cx="${X(y + frac).toFixed(1)}" cy="${cy}" r="${kind === "stamp" ? 4.6 : 4}" data-tip="Tape ${t.tape} · ${nice(iso)}|${kind === "stamp" ? "Confirmed by an on-screen date stamp" : "Seen or heard in the moment"}"><title>Tape ${t.tape}, ${nice(iso)}: ${kind === "stamp" ? "confirmed by an on-screen date stamp" : "seen or heard in the moment"}</title></circle>`;
         k += 1;
       }
       html += `</g>`;
@@ -680,11 +783,24 @@
       tip.style.top = `${r.top - c.top}px`;
       tip.hidden = false;
     };
-    chart.querySelectorAll(".d").forEach((el) => {
+    chart.querySelectorAll(".d, .trip").forEach((el) => {
       el.addEventListener("pointerenter", () => show(el));
       el.addEventListener("focus", () => show(el));
       el.addEventListener("pointerleave", () => { tip.hidden = true; });
       el.addEventListener("blur", () => { tip.hidden = true; });
+    });
+    // Pointing at a trip lights up its column and the moments dated inside it.
+    const light = (i, on) => {
+      const t = trips[i];
+      chart.querySelector(`.trip-col[data-trip="${i}"]`).classList.toggle("hot", on);
+      chart.querySelectorAll(".d").forEach((d) => {
+        if (d.dataset.iso >= t.from && d.dataset.iso <= t.to) d.classList.toggle("hot", on);
+      });
+    };
+    chart.querySelectorAll(".trip").forEach((el) => {
+      const i = Number(el.dataset.trip);
+      for (const ev of ["pointerenter", "focus"]) el.addEventListener(ev, () => light(i, true));
+      for (const ev of ["pointerleave", "blur"]) el.addEventListener(ev, () => light(i, false));
     });
     watch(box);
     const facts = [
