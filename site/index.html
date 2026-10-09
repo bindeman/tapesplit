@@ -75,12 +75,17 @@
         <div class="cover-in">
           <span class="dymo cover-tag">In</span>
           <div class="vhs-stack" aria-hidden="true">
+            <canvas class="vhs-3d"></canvas>
             <div class="vhs" style="--r:-7deg;--dx:-6%;--dy:30%"><span class="vhs-label"></span><span class="vhs-win"><i></i><i></i></span></div>
             <div class="vhs" style="--r:5deg;--dx:7%;--dy:12%"><span class="vhs-label">?</span><span class="vhs-win"><i></i><i></i></span></div>
             <div class="vhs" style="--r:-2deg;--dx:0%;--dy:-6%"><span class="vhs-label">??</span><span class="vhs-win"><i></i><i></i></span></div>
           </div>
           <p class="hand cover-note">a box of VHS tapes</p>
-          <p class="cover-sub"><span data-stat="hours">31.4</span> hours. No labels, no dates.</p>
+          <ul class="cover-facts">
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 6v4.2l2.8 1.8"/></svg><b><span data-stat="hours">31.4</span> hours</b></li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 9.4V4.2c0-.4.3-.7.7-.7h5.2l7.1 7.1-5.9 5.9z"/><circle cx="7" cy="7" r="1.2"/><path d="M3 17L17 3"/></svg>No labels</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="12" rx="1.6"/><path d="M3.5 8.2h13M7 3v3M13 3v3M3 17L17 3"/></svg>No dates</li>
+          </ul>
         </div>
         <div class="cover-arrow" aria-hidden="true">
           <span class="cover-chip"><img src="favicon.svg" alt="" width="22" height="22">tapesplit</span>
@@ -111,7 +116,7 @@
               <span class="src">Related</span>
               <b class="out-n"><span data-stat="people">101</span> people</b>
               <div class="out-tree" id="out-tree" aria-hidden="true"></div>
-              <span class="out-cap">who's who, from мама, папа and бабушка</span>
+              <span class="out-cap">who's who: mom, grandma, neighbor, friend</span>
             </article>
           </div>
         </div>
@@ -343,7 +348,7 @@
         <header class="ch-head">
           <span class="dymo dymo-plum">Relationships</span>
           <h3 id="family-title">You know who’s who from context. So does tapesplit.</h3>
-          <p>Nobody on a home video says “this is my dad.” You work it out from context: what people call each other, who turns up in the same moments, and where they turn up, at home in Madison, in Eugene or on a trip. tapesplit is learning to read the same clues. Family comes first: it listens for мама and папа in both languages, works out who each word points to, and sketches the family as guesses that wait for a person to confirm them. Then it does the same for friends and teachers, grouped by where they turn up.</p>
+          <p>Nobody on a home video says “this is my dad.” You work it out from context: what people call each other, who turns up in the same moments, and where they turn up, at home in Madison, in Eugene or on a trip. tapesplit is learning to read the same clues. Family comes first: it listens for words like mom and dad in both languages, works out who each word points to, and sketches the family as guesses that wait for a person to confirm them. Then it does the same for friends and teachers, grouped by where they turn up.</p>
         </header>
         <div class="family-grid">
           <figure class="family-board reveal" id="family-board">
@@ -353,8 +358,8 @@
           <div class="glass family-card reveal" id="family-card"></div>
         </div>
         <ol class="family-steps">
-          <li class="reveal"><b>It listens for family words.</b><span>мама, маму, маме, mom, mommy… Russian changes the ending, so «папе», “to Dad”, counts the same as «папа».</span></li>
-          <li class="reveal"><b>It finds who they're about.</b><span>It looks eight seconds either side for a name it already knows, like Филя. With no name, a moment about one person points to them.</span></li>
+          <li class="reveal"><b>It listens for family words.</b><span>Mom, mommy, dad, grandma… in English and in Russian, where a word’s ending changes with the sentence, so “to Dad” still counts as Dad.</span></li>
+          <li class="reveal"><b>It finds who they're about.</b><span>It looks eight seconds either side for a name it already knows, like Phillip. With no name, a moment about one person points to them.</span></li>
           <li class="reveal"><b>It counts what agrees.</b><span>One line makes a 0.72 guess, and each line that agrees adds a little, up to 0.84. A summary that says it outright starts at 0.86.</span></li>
           <li class="reveal"><b>Then it asks.</b><span>Every guess becomes a question in the review queue, next to the lines that raised it. Which side of the family a grandparent is on is left to you.</span></li>
         </ol>
@@ -770,5 +775,6 @@ cd tapesplit
 <script src="app.js"></script>
 <script src="how-data.js"></script>
 <script src="how.js"></script>
+<script type="module" src="tapes3d.js"></script>
 </body>
 </html>

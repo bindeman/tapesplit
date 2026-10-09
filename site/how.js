@@ -408,11 +408,11 @@
     const px = (x) => ((x / BW) * 100).toFixed(2), py = (y) => ((y / BH) * 100).toFixed(2);
     if (FRIENDS.length) board.classList.add("with-friends");
     const NODES = [
-      { k: "grandma", x: 200, y: 78, name: "Grandma", sub: "«бабушка»", rel: "grandparents" },
-      { k: "grandpa", x: 400, y: 78, name: "Grandpa", sub: "«дедушка»", rel: "grandparents" },
-      { k: "mom", x: 100, y: 250, name: "Mom", sub: "«мама»", rel: "mom" },
-      { k: "dad", x: 500, y: 250, name: "Dad", sub: "«папа»", rel: "dad", cam: true },
-      { k: "phil", x: 300, y: 372, name: "me", sub: "Филя · Phillip", rel: null },
+      { k: "grandma", x: 200, y: 78, name: "Grandma", sub: "", rel: "grandparents" },
+      { k: "grandpa", x: 400, y: 78, name: "Grandpa", sub: "", rel: "grandparents" },
+      { k: "mom", x: 100, y: 250, name: "Mom", sub: "", rel: "mom" },
+      { k: "dad", x: 500, y: 250, name: "Dad", sub: "", rel: "dad", cam: true },
+      { k: "phil", x: 300, y: 372, name: "me", sub: "Phillip", rel: null },
     ];
     const EDGES = [
       { rel: "mom", d: "M100 250 C 190 268, 240 326, 300 372", tag: [220, 307, -3] },
@@ -443,8 +443,8 @@
     const PRED = { father: "father of", mother: "mother of", grandparent: "grandparents of" };
     const STATUS = { needs_review: "Waiting for you", confirmed: "Confirmed", rejected: "Rejected" };
     const QUESTION = {
-      dad: "Is the man everyone calls папа Phillip's father?",
-      grandparents: "Are the people called бабушка and дедушка Phillip's grandparents?",
+      dad: "Is the man everyone calls Dad Phillip's father?",
+      grandparents: "Are the people called Grandma and Grandpa Phillip's grandparents?",
     };
     const decided = {};
     let sel = "dad";
@@ -523,7 +523,7 @@
       const r = REL[sel], st = status(sel);
       let text = "", confs = "";
       if (sel === "dad") {
-        text = "Nobody on the tapes ever says his name. To everyone he's папа, often from behind the camera, so tapesplit keeps him as an unnamed father until someone names him.";
+        text = "Nobody on the tapes ever says his name. To everyone he's Dad, often from behind the camera, so tapesplit keeps him as an unnamed father until someone names him.";
         confs = conf("Dad", r.confidence, st);
       } else if (sel === "mom") {
         text = `The family words alone made a ${r.guess.toFixed(2)} guess. Then a summary from the video model said it outright, which starts at ${r.confidence.toFixed(2)}, and it was confirmed in review.`;

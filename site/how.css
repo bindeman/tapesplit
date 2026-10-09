@@ -2573,10 +2573,62 @@
   rotate: -2deg;
 }
 
-.cover-sub {
-  margin-top: 4px;
+.cover-facts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
   font-size: 14px;
   color: var(--paper-ink-2);
+}
+
+.cover-facts li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cover-facts b {
+  color: var(--paper-ink);
+  font-weight: 600;
+}
+
+.cover-facts svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The tapes in 3D (tapes3d.js) replace the drawn ones once WebGL has a frame. */
+.vhs-3d {
+  position: absolute;
+  z-index: 2;
+  left: -24%;
+  top: -22%;
+  width: 148%;
+  height: 140%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+.vhs-stack.is-3d .vhs-3d {
+  opacity: 1;
+}
+
+.vhs-stack .vhs {
+  transition: opacity 0.4s ease;
+}
+
+.vhs-stack.is-3d .vhs {
+  opacity: 0;
 }
 
 .cover-arrow {
@@ -2817,7 +2869,7 @@
   .cover-in .cover-tag { grid-area: tag; }
   .cover-in .vhs-stack { grid-area: stack; width: 100%; max-width: 190px; justify-self: end; }
   .cover-in .cover-note { grid-area: note; align-self: end; margin: 0; }
-  .cover-in .cover-sub { grid-area: sub; align-self: start; }
+  .cover-in .cover-facts { grid-area: sub; align-self: start; }
 
   .cover-arrow {
     grid-auto-flow: column;
