@@ -339,6 +339,38 @@ h3 {
   text-decoration: none;
 }
 
+/* GitHub's own look: the mark and the name in a dark pill */
+.site-links a.gh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-block: -5px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  background: #24292f;
+  color: #fff;
+  font-weight: 600;
+}
+
+.site-links a.gh-link:hover {
+  background: #32383f;
+  color: #fff;
+}
+
+.gh-mark {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+:root[data-theme="dark"] .site-links a.gh-link { background: #f0f3f6; color: #1f2328; }
+:root[data-theme="dark"] .site-links a.gh-link:hover { background: #fff; color: #1f2328; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .site-links a.gh-link { background: #f0f3f6; color: #1f2328; }
+  :root:not([data-theme="light"]) .site-links a.gh-link:hover { background: #fff; color: #1f2328; }
+}
+
 @media (max-width: 600px) {
   .site-links a:not(:last-child) {
     display: none;
@@ -534,6 +566,7 @@ h3 {
 
 .signoff .sig {
   margin-top: 10px;
+  margin-left: -0.12em; /* the script P starts right of the text's left edge */
   font-size: 44px;
   color: var(--ink);
   transform: rotate(-3deg);
@@ -1464,10 +1497,20 @@ h3 {
   height: 11px;
 }
 
-.window-bar span {
-  flex: 1;
-  text-align: center;
-  margin-right: 52px;
+/* The title sits in the middle of the whole bar, as on a Mac, not in the space after the lights */
+.window-bar {
+  position: relative;
+}
+
+.window-bar > span:not(.lights) {
+  position: absolute;
+  inset: 0 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .window img {
@@ -1506,6 +1549,11 @@ h3 {
 
 .section-alt .step {
   background: var(--card);
+}
+
+/* Under the hood sits on white between two gray sections, so its cards go gray */
+#how .step {
+  background: var(--bg-alt);
 }
 
 .step-icon {

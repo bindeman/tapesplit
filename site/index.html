@@ -53,7 +53,7 @@
       <a href="#moments">The tapes</a>
       <a href="#inside">How it works</a>
       <a href="#specs">Try it</a>
-      <a href="https://github.com/bindeman/tapesplit">GitHub</a>
+      <a class="gh-link" href="https://github.com/bindeman/tapesplit"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
     </nav>
   </div>
 </header>
@@ -192,7 +192,7 @@
       <div class="head">
         <span class="eyebrow">How it works</span>
         <h2 id="inside-title">One morning, taken apart.</h2>
-        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in is a Wednesday in September 2005, my first day of first grade. Here's how tapesplit worked out when it was, where, who's talking, who's family and what they're saying.</p>
+        <p>Tape 18 came back from the digitizer as <span class="file">tape-20.mp4</span>: two hours and no label. An hour in is a Wednesday in September 2005, my first day of first grade. Here's how tapesplit worked out when it was, where, who's talking, what they're saying and who's family. Most of the talking is in Russian, so the English comes first here, with the Russian as it was said in small type.</p>
       </div>
 
       <figure class="spread spread-tape">
@@ -256,8 +256,8 @@
       <article class="chapter" id="ch-where" aria-labelledby="where-title">
         <header class="ch-head">
           <span class="dymo dymo-green">Where</span>
-          <h3 id="where-title">Which Edison?</h3>
-          <p>My dad says we're back in Eugene. The sign over the doors says Edison School. But there are Edison Schools all over the country, so tapesplit doesn't trust the name alone. It weighs every clue against where we lived that year.</p>
+          <h3 id="where-title">Which Edison? The one near home.</h3>
+          <p>My dad says we're back in Eugene, and the sign over the doors says Edison School. There are Edison Schools all over the country, so tapesplit doesn't trust the name alone: it checks each match against where we lived that year, and keeps the one in Eugene.</p>
         </header>
         <div class="where-grid">
           <div class="clues" id="clues"></div>
@@ -312,7 +312,7 @@
           <div class="glass faces-card reveal">
             <span class="src">Faces, followed</span>
             <div class="track-frames" id="track-frames"></div>
-            <p id="track-text">InsightFace follows a face through the shot. Each track is matched against faces from other tapes and grouped into a person; naming the group takes one click.</p>
+            <p id="track-text">tapesplit follows a face through the shot. Each track is matched against faces from other tapes and grouped into a person; naming the group takes one click.</p>
           </div>
           <div class="glass names-card reveal">
             <span class="src">One person, eight spellings</span>
@@ -320,6 +320,23 @@
             <p>At home I'm Филя; on tape I'm also Филипп, Filip and Philip. tapesplit merges the spellings across both alphabets into one person, Phillip. “Grandma” and “Grandpa” are only spoken to here, so they're kept as mentions, not confirmed people.</p>
           </div>
         </div>
+      </article>
+
+      <article class="chapter" id="ch-lang" aria-labelledby="lang-title">
+        <header class="ch-head">
+          <span class="dymo dymo-yellow">Language</span>
+          <h3 id="lang-title">Multilingual, even mid-sentence.</h3>
+          <p>My family switches languages mid-sentence. tapesplit keeps every line in the language it was spoken, then lets you search across both.</p>
+        </header>
+        <div class="lang-grid">
+          <div class="glass switch-card reveal" id="switch-card"></div>
+          <div class="search-demo reveal" id="search-demo">
+            <div class="search-field"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg><span id="search-q"></span><i class="caret"></i></div>
+            <ol class="search-hits" id="search-hits"></ol>
+            <p class="search-foot" id="search-foot"></p>
+          </div>
+        </div>
+        <p class="ch-stat" id="lang-stat"></p>
       </article>
 
       <article class="chapter" id="ch-family" aria-labelledby="family-title">
@@ -344,83 +361,7 @@
         <p class="ch-stat" id="family-stat"></p>
       </article>
 
-      <article class="chapter" id="ch-lang" aria-labelledby="lang-title">
-        <header class="ch-head">
-          <span class="dymo dymo-yellow">Language</span>
-          <h3 id="lang-title">Multilingual, even mid-sentence.</h3>
-          <p>My family switches languages mid-sentence. tapesplit keeps every line in the language it was spoken, then lets you search across both.</p>
-        </header>
-        <div class="lang-grid">
-          <div class="glass switch-card reveal" id="switch-card"></div>
-          <div class="search-demo reveal" id="search-demo">
-            <div class="search-field"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg><span id="search-q"></span><i class="caret"></i></div>
-            <ol class="search-hits" id="search-hits"></ol>
-            <p class="search-foot" id="search-foot"></p>
-          </div>
-        </div>
-        <p class="ch-stat" id="lang-stat"></p>
-      </article>
-
       <p class="inside-next"><a href="#how">See all 21 stages of the pipeline ›</a></p>
-    </div>
-  </section>
-
-<section class="section section-alt" id="how" aria-labelledby="how-title">
-    <div class="wrap">
-      <div class="prose">
-        <h2 id="how-title">Under the hood</h2>
-        <p>One command runs the whole thing. It makes four passes over every tape, checks what my Mac can do at each stage, skips with a reason when it can't, and picks up where it stopped if I run it again.</p>
-      </div>
-      <div class="steps">
-        <article class="step">
-          <span class="step-icon" style="--s1:#ff7a6e;--s2:#d42a1e">1</span>
-          <h3>Watch</h3>
-          <span class="where">On your Mac</span>
-          <ul>
-            <li><strong>Scene cuts</strong> from ffmpeg, with blank tape and static thrown out.</li>
-            <li><strong>Every word transcribed</strong> by whisper.cpp, in any language.</li>
-            <li><strong>Voices separated</strong> with pyannote.</li>
-            <li><strong>Text in the frame read</strong> by Apple Vision, including date stamps.</li>
-            <li><strong>Faces followed</strong> through each shot with InsightFace.</li>
-          </ul>
-        </article>
-        <article class="step">
-          <span class="step-icon" style="--s1:#7cc6ff;--s2:#1366dd">2</span>
-          <h3>Understand</h3>
-          <span class="where">Cloud, optional</span>
-          <ul>
-            <li><strong>Gemini watches each tape</strong> in chunks and proposes moments with timestamps.</li>
-            <li><strong>Priced before it runs</strong> and capped by <code>--max-cloud-usd</code>.</li>
-            <li><strong>Optional.</strong> Without it, local signals still build a timeline.</li>
-          </ul>
-        </article>
-        <article class="step">
-          <span class="step-icon" style="--s1:#8fdc7a;--s2:#2f9a2c">3</span>
-          <h3>Reconcile</h3>
-          <span class="where">On your Mac</span>
-          <ul>
-            <li><strong>Every signal becomes a claim</strong> that keeps its evidence.</li>
-            <li><strong>Moments are dated</strong> from stamps, speech and the moments around them.</li>
-            <li><strong>Names are reconciled.</strong> Mom, Katya and Катя become one person.</li>
-            <li><strong>A blind verifier</strong> re-checks a sample against the clips.</li>
-          </ul>
-        </article>
-        <article class="step">
-          <span class="step-icon" style="--s1:#ffd26a;--s2:#e09a12">4</span>
-          <h3>Review</h3>
-          <span class="where">You, a few minutes</span>
-          <ul>
-            <li><strong>Strong guesses are accepted</strong> under per-type safety rules.</li>
-            <li><strong>The rest wait in a queue</strong> with the evidence.</li>
-            <li><strong>Your fixes stick</strong> and replay after every rebuild.</li>
-          </ul>
-        </article>
-      </div>
-      <div class="command">
-        <code>$ tapesplit auto ~/Tapes</code>
-        <p>That's the whole pipeline: 21 stages, resumable and cost-capped. <code>tapesplit doctor</code> shows which stages your Mac can run.</p>
-      </div>
-      <p class="stage-list">ingest → exif → non-content → scenes → transcribe → diarize → gemini → core-build → visuals → ocr → captions → visual-embed → visual-similarity → faces → face-tracks → face-cluster → reground → finalize → apply-suggestions → semantic-embed → verify</p>
     </div>
   </section>
 
@@ -534,7 +475,7 @@
           </div>
           <button class="window" type="button" data-zoom="journal-post" aria-label="Enlarge the Journal screenshot">
             <span class="window-bar"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>Journal</span></span>
-            <img class="only-light" src="media/ui/journal-post-light.webp" alt="A Journal entry titled Filip's Ocean Questions" width="1600" height="1000" loading="lazy">
+            <img class="only-light" src="media/ui/journal-post-light.webp" alt="A Journal entry titled Phillip's Ocean Questions" width="1600" height="1000" loading="lazy">
             <img class="only-dark" src="media/ui/journal-post-dark.webp" alt="A Journal entry, dark mode" width="1600" height="1000" loading="lazy">
           </button>
         </div>
@@ -621,6 +562,65 @@
     </div>
   </section>
 
+<section class="section" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="prose">
+        <h2 id="how-title">Under the hood</h2>
+        <p>One command runs the whole thing. It makes four passes over every tape, checks what my Mac can do at each stage, skips with a reason when it can't, and picks up where it stopped if I run it again.</p>
+      </div>
+      <div class="steps">
+        <article class="step">
+          <span class="step-icon" style="--s1:#ff7a6e;--s2:#d42a1e">1</span>
+          <h3>Watch</h3>
+          <span class="where">On your Mac</span>
+          <ul>
+            <li><strong>Scene cuts</strong> from ffmpeg, with blank tape and static thrown out.</li>
+            <li><strong>Every word transcribed</strong> by whisper.cpp, in any language.</li>
+            <li><strong>Voices separated</strong> with pyannote.</li>
+            <li><strong>Text in the frame read</strong> by Apple Vision, including date stamps.</li>
+            <li><strong>Faces followed</strong> through each shot.</li>
+          </ul>
+        </article>
+        <article class="step">
+          <span class="step-icon" style="--s1:#7cc6ff;--s2:#1366dd">2</span>
+          <h3>Understand</h3>
+          <span class="where">Cloud, optional</span>
+          <ul>
+            <li><strong>Gemini watches each tape</strong> in chunks and proposes moments with timestamps.</li>
+            <li><strong>Priced before it runs</strong> and capped by <code>--max-cloud-usd</code>.</li>
+            <li><strong>Optional.</strong> Without it, local signals still build a timeline.</li>
+          </ul>
+        </article>
+        <article class="step">
+          <span class="step-icon" style="--s1:#8fdc7a;--s2:#2f9a2c">3</span>
+          <h3>Reconcile</h3>
+          <span class="where">On your Mac</span>
+          <ul>
+            <li><strong>Every signal becomes a claim</strong> that keeps its evidence.</li>
+            <li><strong>Moments are dated</strong> from stamps, speech and the moments around them.</li>
+            <li><strong>Names are reconciled.</strong> Mom, Katya and Катя become one person.</li>
+            <li><strong>A blind verifier</strong> re-checks a sample against the clips.</li>
+          </ul>
+        </article>
+        <article class="step">
+          <span class="step-icon" style="--s1:#ffd26a;--s2:#e09a12">4</span>
+          <h3>Review</h3>
+          <span class="where">You, a few minutes</span>
+          <ul>
+            <li><strong>Strong guesses are accepted</strong> under per-type safety rules.</li>
+            <li><strong>The rest wait in a queue</strong> with the evidence.</li>
+            <li><strong>Your fixes stick</strong> and replay after every rebuild.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="command">
+        <code>$ tapesplit auto ~/Tapes</code>
+        <p>That's the whole pipeline: 21 stages, resumable and cost-capped. <code>tapesplit doctor</code> shows which stages your Mac can run.</p>
+      </div>
+      <p class="stage-list">ingest → exif → non-content → scenes → transcribe → diarize → gemini → core-build → visuals → ocr → captions → visual-embed → visual-similarity → faces → face-tracks → face-cluster → reground → finalize → apply-suggestions → semantic-embed → verify</p>
+    </div>
+  </section>
+
 <section class="section section-alt" id="specs" aria-labelledby="specs-title">
     <div class="wrap">
       <div class="prose">
@@ -633,8 +633,9 @@
           <div class="spec-body">
             <ul>
               <li>A Mac with Apple silicon (best tested), or Linux without the Apple Vision stages</li>
-              <li>Python 3.11 or newer and ffmpeg</li>
+              <li>Python 3.11 or newer, ffmpeg and whisper.cpp</li>
               <li>Node 20 or newer for the review app</li>
+              <li><code>setup.sh</code> installs whichever of these are missing</li>
               <li>Tapes as video files: MP4, MOV, MKV, AVI, DV, MPEG, VOB or M2TS</li>
             </ul>
           </div>
@@ -644,16 +645,11 @@
           <div class="spec-body">
             <div class="terminal">
               <div class="terminal-bar"><span>Terminal</span><button class="copy-button" type="button" data-copy="#install-cmds">Copy</button></div>
-<pre id="install-cmds"><span class="c"># install</span>
-brew install ffmpeg whisper-cpp
+<pre id="install-cmds"><span class="c"># install on macOS or Linux; it ends by</span>
+<span class="c"># showing what this machine can run</span>
 git clone https://github.com/bindeman/tapesplit
 cd tapesplit
-python3.12 -m venv .venv
-.venv/bin/pip install -e \
-  '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
-
-<span class="c"># check what this Mac can run</span>
-.venv/bin/tapesplit doctor
+./scripts/setup.sh
 
 <span class="c"># tapes in, archive out</span>
 .venv/bin/tapesplit auto ~/Tapes
@@ -671,7 +667,7 @@ python3.12 -m venv .venv
               <li>Transcription with whisper.cpp, in the language that was spoken</li>
               <li>Speaker diarization with pyannote, or SpeechBrain without a token</li>
               <li>On-screen text and date stamps with Apple Vision</li>
-              <li>Face tracks and clustering with InsightFace on ONNX Runtime</li>
+              <li>Face tracks and clustering by tapesplit, on ONNX Runtime</li>
               <li>Search with SQLite full-text and multilingual vectors</li>
               <li>The review app, served only to your own machine</li>
             </ul>

@@ -375,11 +375,19 @@
   const tf = $("#track-frames");
   if (tf) {
     tf.innerHTML = H.faces.frames.map((f) => `<div class="tf" style="background-image:url(${f.image})"><span class="box face on" style="--x:${f.box[0]};--y:${f.box[1]};--w:${f.box[2]};--h:${f.box[3]}"></span><span class="t">${clock(f.t)}</span></div>`).join("");
-    $("#track-text").textContent = `One face track: ${H.faces.track_frames} frames over ${H.faces.span} seconds. InsightFace follows a face through the shot, then tracks are matched against faces on other tapes and grouped into a person. Naming the group takes one click.`;
+    $("#track-text").textContent = `One face track: ${H.faces.track_frames} frames over ${H.faces.span} seconds. tapesplit follows a face through the shot, then tracks are matched against faces on other tapes and grouped into a person. Naming the group takes one click.`;
   }
   const names = $("#names");
   if (names) {
-    names.innerHTML = H.language.names.map((n, i) => `<span class="${/[А-Яа-яЁё]/.test(n) ? "cy" : ""}" style="--i:${i}">${esc(n)}</span>`).join("");
+    // Phillip in the middle, each spelling on a ring around him.
+    const list = H.language.names;
+    const at = list.map((_, i) => {
+      const a = -Math.PI / 2 + (i / list.length) * 2 * Math.PI;
+      return [50 + 38 * Math.cos(a), 50 + 40 * Math.sin(a)];
+    });
+    names.innerHTML = `<svg class="names-spokes" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${at.map(([x, y]) => `<line x1="50" y1="50" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`).join("")}</svg>`
+      + `<span class="names-hub"><img src="media/how/avatars/phil.svg" alt="" width="30" height="30">Phillip</span>`
+      + list.map((n, i) => `<span class="name${/[А-Яа-яЁё]/.test(n) ? " cy" : ""}" lang="${/[А-Яа-яЁё]/.test(n) ? "ru" : "en"}" style="--i:${i};left:${at[i][0].toFixed(1)}%;top:${at[i][1].toFixed(1)}%">${esc(n)}</span>`).join("");
   }
   document.querySelectorAll("#ch-who .who-more .reveal").forEach((el) => watch(el));
 
@@ -526,7 +534,7 @@
       }
       let list = r.lines.map(lineItem).join("");
       if (r.summary) {
-        const sum = esc(r.summary.text).replace("[Mom]", '<span class="redact" title="name hidden on this page">Mom</span>').replace(/(mother)/, '<mark class="kin">$1</mark>').replace(/(Filip)/, '<mark class="nm">$1</mark>');
+        const sum = esc(r.summary.text).replace("[Mom]", '<span class="redact" title="name hidden on this page">Mom</span>').replace(/(mother)/, '<mark class="kin">$1</mark>').replace(/(Phillip)/, '<mark class="nm">$1</mark>');
         list += `<li class="sum"><p class="en-sum">${sum}</p><span class="where">The video model's summary · Tape ${r.summary.tape} · ${esc(r.summary.clock)}</span></li>`;
       }
       fcard.innerHTML = `${tabs()}
@@ -730,7 +738,7 @@
     // Layer 1: where we lived. tapesplit's residence eras, and the years it hasn't placed.
     html += `<text class="layer-label" x="${left - 10}" y="22">Home</text>`;
     const firstEra = Math.min(...H.archive.eras.map((e) => e.from));
-    html += `<g class="era era-before"><rect x="${X(Y0)}" y="6" width="${X(firstEra) - X(Y0)}" height="24"/><text x="${X(Y0) + 8}" y="22">Before Madison · not placed yet</text></g>`;
+    html += `<g class="era era-before"><rect x="${X(Y0)}" y="6" width="${X(firstEra) - X(Y0)}" height="24"/><text x="${X(Y0) + 8}" y="22">Before Madison · home unknown</text></g>`;
     H.archive.eras.forEach((e, i) => {
       const a = X(e.from), b = X(e.to + 1);
       html += `<g class="era era-${i + 1}"><rect x="${a}" y="6" width="${b - a}" height="24"/>`;

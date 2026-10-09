@@ -99,7 +99,7 @@
     return `<h2 id="lb-title">${esc(m.title)}</h2>
       <p class="lb-sub">Tape ${m.tape.tape} · ${esc(m.tape.start)}–${esc(m.tape.end)} · ${esc(m.tape.length)}</p>
       <dl>${rows.join("")}</dl>
-      <p class="lb-note">tapesplit's output for this moment, unedited except for names: everyone but Filip has a stand-in name.</p>`;
+      <p class="lb-note">tapesplit's output for this moment, unedited except for names: I'm Phillip throughout, and everyone else has a stand-in name.</p>`;
   }
 
   function showMedia(item, which) {

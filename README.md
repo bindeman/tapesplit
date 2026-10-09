@@ -61,7 +61,7 @@ Tape 16 came back from the digitizer as `tape-18.mp4`: two hours and four minute
 Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 on a lawn in Eugene, Oregon: my first day of first grade. The very next scene is five months later. Here's what tapesplit made of that Wednesday.
 
 <p align="center">
-  <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above two polaroids from it: a lawn in Eugene stamped SEP 7 2005 and the next scene, an empty room stamped FEB 17 2006" width="100%">
+  <img src="site/media/readme/how-tape18.webp" alt="Tape 18 as a strip of moments with one stretch an hour in highlighted, above two polaroids from it: a lawn in Eugene stamped SEP 7 2005 and the next scene, me by a rocking chair, stamped FEB 17 2006" width="100%">
 </p>
 
 **When.** For a few seconds after you press record, a camcorder burns the date into the picture. The video model read this one as SEP 7 2005 (Apple Vision found it too, in two pieces), and the teacher's whiteboard says the same day. Dates that don't describe the moment are left out: a file's own date (the day it was digitized) and years mentioned in passing.
@@ -82,16 +82,16 @@ Tape 18 has no label either. An hour in, the camcorder's clock reads SEP 7 2005 
   <img src="site/media/readme/how-who.webp" alt="A video frame of me on the lawn beside two lanes of waveform, one per voice, and the transcript in English, with the Russian as it was said under each line" width="100%">
 </p>
 
-**Relationships.** You know who's who from context: what people call each other, who turns up together, and where. tapesplit is learning to read the same clues, starting with family, then friends and teachers. Nobody on the tapes says "this is my dad"; they say мама and папа to me, usually with my name in the same breath. tapesplit reads that context in both languages, works out who each word points to, and sketches the family as guesses: Dad at 0.84 from lines like "Give Dad the yogurt, Phillip" («Дай папе йогурт, Филипп»), Grandma and Grandpa at 0.76 and 0.72. Friends and teachers get the same treatment, grouped by where they turn up: "Max goes to kindergarten with Phillip" («Макс ходит с Филиппом в детский садик») makes Max a classmate in Madison. Every guess waits in the review queue until a person confirms it.
-
-<p align="center">
-  <img src="site/media/readme/how-family.webp" alt="A family tree drawn on graph paper with illustrated avatars: Grandma and Grandpa joined to me by a dotted line labeled grandparents? 0.76 · 0.72, Mom by a solid line labeled mother ✓, and Dad, with a camcorder badge, by a dotted line labeled father? 0.84. Under me, two dashed boxes of friends: Madison (Zhenya, friend, tied to Mom; Max, classmate; Owen, neighbor) and Eugene (Emily, teacher; Zoe, classmate; Dan, friend, tied to Dad). Beside it, the three lines behind Dad's guess, in English with the Russian under each, and a Confirm All button" width="100%">
-</p>
-
 **Multilingual.** Russian and English, sometimes in one sentence. Every line stays in the language it was spoken, and search works across both: type "grandma and grandpa" and it finds «Скажи бабушкам, дедушкам».
 
 <p align="center">
   <img src="site/media/readme/how-language.webp" alt="A sentence that switches from Russian to English, the Journal's quote of it with tapesplit's own translation, and a search for grandma and grandpa that finds three Russian lines" width="100%">
+</p>
+
+**Relationships.** You know who's who from context: what people call each other, who turns up together, and where. tapesplit is learning to read the same clues, starting with family, then friends and teachers. Nobody on the tapes says "this is my dad"; they say мама and папа to me, usually with my name in the same breath. tapesplit reads that context in both languages, works out who each word points to, and sketches the family as guesses: Dad at 0.84 from lines like "Give Dad the yogurt, Phillip" («Дай папе йогурт, Филипп»), Grandma and Grandpa at 0.76 and 0.72. Friends and teachers get the same treatment, grouped by where they turn up: "Max goes to kindergarten with Phillip" («Макс ходит с Филиппом в детский садик») makes Max a classmate in Madison. Every guess waits in the review queue until a person confirms it.
+
+<p align="center">
+  <img src="site/media/readme/how-family.webp" alt="A family tree drawn on graph paper with illustrated avatars: Grandma and Grandpa joined to me by a dotted line labeled grandparents? 0.76 · 0.72, Mom by a solid line labeled mother ✓, and Dad, with a camcorder badge, by a dotted line labeled father? 0.84. Under me, two dashed boxes of friends: Madison (Zhenya, friend, tied to Mom; Max, classmate; Owen, neighbor) and Eugene (Emily, teacher; Zoe, classmate; Dan, friend, tied to Dad). Beside it, the three lines behind Dad's guess, in English with the Russian under each, and a Confirm All button" width="100%">
 </p>
 
 ### Nineteen tapes, one timeline
@@ -164,7 +164,7 @@ flowchart TB
   tapes["Digitized tapes · mp4, mov, avi, dv…"]
   subgraph watch["1 · Watch, on your Mac"]
     direction LR
-    w1["Scene cuts and<br/>blank-tape removal"] ~~~ w2["Transcripts<br/>whisper.cpp"] ~~~ w3["Speakers<br/>pyannote"] ~~~ w4["On-screen text<br/>and date stamps<br/>Apple Vision"] ~~~ w5["Face tracks<br/>InsightFace"]
+    w1["Scene cuts and<br/>blank-tape removal"] ~~~ w2["Transcripts<br/>whisper.cpp"] ~~~ w3["Speakers<br/>pyannote"] ~~~ w4["On-screen text<br/>and date stamps<br/>Apple Vision"] ~~~ w5["Face tracks<br/>tapesplit"]
   end
   understand["2 · Understand · Gemini watches each tape in chunks · optional, cost-capped"]
   subgraph reconcile["3 · Reconcile, on your Mac"]
@@ -180,7 +180,7 @@ flowchart TB
 
 | Pass | What happens |
 | --- | --- |
-| **Watch** | ffmpeg finds scene cuts and throws out blank tape, blue screen and static. whisper.cpp transcribes every word in whatever language was spoken. pyannote separates the voices. Apple Vision reads text in the frame, including the camcorder's burned-in date. InsightFace follows each face through the shot, and tracks are clustered into people. |
+| **Watch** | ffmpeg finds scene cuts and throws out blank tape, blue screen and static. whisper.cpp transcribes every word in whatever language was spoken. pyannote separates the voices. Apple Vision reads text in the frame, including the camcorder's burned-in date. tapesplit follows each face through the shot and clusters the tracks into people. |
 | **Understand** | Gemini on Vertex AI watches each tape in chunks and proposes events with timestamps: what happened, who is there, where and when. Long tapes are chunked, and each chunk is told its own duration so timestamps can't drift. Every batch is estimated first and skipped if it would exceed `--max-cloud-usd`. Without Gemini, tapesplit still builds a timeline from local signals. |
 | **Reconcile** | Every signal becomes a claim that keeps its source: a transcript line, a frame, a face track. Events are stitched across chunks and dated from stamps, speech and context. Names are reconciled, so Mom, Katya and Катя become one person, while home in 2003 and home in 2006 stay two places. A blind verifier re-checks a sample of claims against the clips. |
 | **Review** | Strong guesses are accepted automatically under per-type confidence floors; a relationship also needs both people resolved and agreeing evidence. Everything else waits in the review queue. Corrections live in their own file and are replayed after every rebuild. |
@@ -196,23 +196,29 @@ The full stage list, state handling and safety policy are in [docs/AUTOMATION.md
 
 ## Quickstart
 
-You need Python 3.11+ and ffmpeg. Apple Silicon Macs are the best-tested setup; Linux runs everything except the Apple Vision stages, which fall back to OpenCV.
+Apple Silicon Macs are the best-tested setup; Linux runs everything except the Apple Vision stages, which fall back to OpenCV. One script sets up either:
 
 ```bash
-brew install ffmpeg whisper-cpp        # on Linux: your package manager, and build whisper.cpp
 git clone https://github.com/bindeman/tapesplit
 cd tapesplit
-python3.12 -m venv .venv
-.venv/bin/pip install -e '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'
-cp .env.example .env                   # every key in it is optional
+./scripts/setup.sh                     # installs what's missing, then runs tapesplit doctor
 
-.venv/bin/tapesplit doctor                 # what this machine can run, stage by stage
 .venv/bin/tapesplit auto ~/Tapes --plan    # what would run, without running it
 .venv/bin/tapesplit auto ~/Tapes           # tapes in, archive out (~/Tapes.tapesplit)
 .venv/bin/tapesplit ui ~/Tapes.tapesplit   # browse and review
 ```
 
-For transcription, point `WHISPER_CPP_MODEL` in `.env` at a whisper.cpp model such as [`ggml-large-v3-turbo.bin`](https://huggingface.co/ggerganov/whisper.cpp/tree/main). The review app needs Node 20 or newer; `tapesplit ui` installs its packages on first run.
+`setup.sh` checks for Python 3.11+, ffmpeg, whisper.cpp and Node 20+ and installs what's missing with Homebrew on macOS or apt, dnf or pacman on Linux (where it builds whisper.cpp from source). Then it creates `.venv` with the extras for your platform and copies `.env.example` to `.env`; every key in it is optional. It's safe to run again, and `--check` only reports. Add `--with-model` to download a whisper.cpp model ([`ggml-large-v3-turbo.bin`](https://huggingface.co/ggerganov/whisper.cpp/tree/main), about 1.6 GB) and point `WHISPER_CPP_MODEL` at it, `--minimal` for the core package without the local AI extras, or `--skip-system` to leave system packages alone. The review app's own packages install on the first `tapesplit ui`.
+
+To do it by hand instead:
+
+```bash
+brew install ffmpeg whisper-cpp node   # on Linux: your package manager, and build whisper.cpp
+python3.12 -m venv .venv
+.venv/bin/pip install -e '.[local-ai,vision,macos,visual-ai,face-ai,speaker-ai]'   # drop macos on Linux
+cp .env.example .env
+.venv/bin/tapesplit doctor
+```
 
 | Extra | Adds |
 | --- | --- |
@@ -220,7 +226,7 @@ For transcription, point `WHISPER_CPP_MODEL` in `.env` at a whisper.cpp model su
 | `vision` | OpenCV face detection and frame analysis |
 | `macos` | Apple Vision OCR and face detection |
 | `visual-ai` | Image captions and visual embeddings |
-| `face-ai` | InsightFace / ArcFace identity embeddings on ONNX Runtime (Core ML on Apple Silicon) |
+| `face-ai` | Face identity embeddings on ONNX Runtime (Core ML on Apple Silicon) |
 | `speaker-ai` | pyannote.audio and SpeechBrain diarization |
 
 Useful variants:
