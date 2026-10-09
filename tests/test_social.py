@@ -192,3 +192,16 @@ def test_a_line_that_continues_a_sentence_keeps_its_my(tmp_path: Path):
     ])
 
     assert [(row["subject_label"], row["object_label"]) for row in social] == [("Лариса", "the speaker")]
+
+
+def test_a_patronymic_alone_is_not_the_person(tmp_path: Path):
+    people = [{"id": "people_group_000004", "label": "Olga", "aliases": ["Olga", "Ольга"], "metadata": {"normalized_key": "olga"}},
+              {"id": "people_group_000005", "label": "Olga Nikolaevna", "aliases": ["Olga Nikolaevna", "Ольга Николаевна"],
+               "metadata": {"normalized_key": "olga nikolaevna"}}]
+    social = _project(tmp_path, FAMILY + [
+        _line("tr_000002", 100, "В школе осталась Ольга Николаевна, моя учительница физики."),
+        _line("tr_000003", 700, "Наталья Николаевна и Сергей."),
+        _line("tr_000004", 900, "Ольга, иди сюда."),
+    ], people=people)
+
+    assert [(row["subject_label"], row["scope"]["moments"]) for row in social] == [("Olga Nikolaevna", 1)]

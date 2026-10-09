@@ -42,6 +42,7 @@ CLASSMATE_PATTERNS = (
 HONORIFIC = re.compile(r"(?<![\w])(дяд[яеюи]|т[её]т[яеюи])\s+([А-ЯЁ][а-яё]{2,})")
 
 _WORD = re.compile(r"\w+", re.UNICODE)
+PATRONYMIC = re.compile(r"(?:ovna|evna|ichna|ovich|evich)$")  # Николаевна, Петрович: not a name on its own
 
 
 def _term_pattern(terms: tuple[str, ...]) -> re.Pattern[str]:
@@ -182,10 +183,12 @@ def build_social_candidates(
              title.casefold(), "honorific")
 
     family = [e for e in person_entities if e["id"] in family_ids]
+    owners = Counter(alias for e in person_entities
+                     for alias in {_latin(a) for a in e.get("aliases", ()) if " " not in str(a)})
     candidates = []
     for bucket in buckets.values():
-        scope = _scope(bucket["entity"], events, lines, event_dates, era_contexts, family, event_for_segment,
-                       contains_term, event_regions)
+        scope = _scope(_specific(bucket["entity"], owners), events, lines, event_dates, era_contexts, family,
+                       event_for_segment, contains_term, event_regions)
         distinct = len(bucket["moments"])
         confidence = min(0.9, BASE_CONFIDENCE[bucket["source"]] + min(distinct - 1, 3) * 0.04)
         candidates.append({
@@ -350,6 +353,16 @@ def _mentions(text: str, entity: dict[str, Any], contains_term: Any, words: set[
         if len(stem) >= 4 and any(word.startswith(stem) and len(word) - len(stem) <= 3 for word in words):
             return True
     return False
+
+
+def _specific(entity: dict[str, Any], owners: Counter) -> dict[str, Any]:
+    """For someone with a full name, the spellings that point only at them: not a patronymic on its
+    own (Наталья Николаевна is not Ольга Николаевна), nor a first name someone else also goes by."""
+    aliases = {_latin(alias) for alias in entity.get("aliases", ())}
+    if not any(" " in alias and "/" not in alias for alias in aliases):
+        return entity
+    keep = {alias for alias in aliases if " " in alias or (not PATRONYMIC.search(alias) and owners[alias] <= 1)}
+    return {**entity, "aliases": keep}
 
 
 def _name_key(name: str) -> str:
